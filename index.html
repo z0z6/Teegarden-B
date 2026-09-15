@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Game — Krok 1: Scena</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+    }
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      color: #9fd8ff;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 13px;
+      opacity: 0.75;
+      pointer-events: none;
+      text-shadow: 0 0 6px rgba(0, 150, 255, 0.6);
+    }
+  </style>
+
+  <!-- Importmap: mówimy przeglądarce skąd brać moduł "three" -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">Krok 1: Scena kosmiczna — LPM + przeciąganie, aby się rozejrzeć</div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
