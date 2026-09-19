@@ -128,6 +128,15 @@
            wyprowadzona automatycznie z rozmiaru modelu.</p>
         <span class="open">Otwórz →</span>
       </a>
+      <a class="step-card" href="./step4-stellar-physics/">
+        <span class="badge">✓ gotowe</span>
+        <span class="label">KROK 4</span>
+        <h3>Układ potrójny</h3>
+        <p>Prawdziwa fizyka grawitacyjna N-ciał (integracja leapfrog),
+           hierarchiczny układ: para wewnętrzna + czerwony olbrzym na
+           orbicie zewnętrznej. Sztuczne oświetlenie statku gracza.</p>
+        <span class="open">Otwórz →</span>
+      </a>
     </div>
   </section>
 
@@ -154,7 +163,7 @@
     <ul class="roadmap">
       <li><span class="dot"></span><span class="text">
         LOD zależny od dystansu kamery
-        <small>lod_helper.js już gotowe (THREE.LOD) — trzeba podpiąć w step3-ships zamiast bezpośredniego GLTFLoader.load()</small>
+        <small>lod_helper.js już gotowe (THREE.LOD) — trzeba podpiąć zamiast bezpośredniego GLTFLoader.load() (step3-ships i step4-stellar-physics na razie zawsze ładują LOD0)</small>
       </span></li>
       <li><span class="dot"></span><span class="text">
         Płynne przejście kamery przy zaokrętowaniu
@@ -169,6 +178,18 @@
       </span></li>
       <li><span class="dot"></span><span class="text">
         Przeciwnicy AI pilotujący pozostałe statki floty
+      </span></li>
+      <li><span class="dot"></span><span class="text">
+        Kolizje statek-gwiazda / statek-planeta
+        <small>obecnie można przelecieć przez środek dowolnego ciała bez konsekwencji — bardziej zauważalne odkąd gwiazdy są duże i ruchome (krok 4)</small>
+      </span></li>
+      <li><span class="dot"></span><span class="text">
+        Porządne oświetlenie sceny zamiast tymczasowego światła na statku
+        <small>krok 4 doczepił prosty PointLight do statku jako prowizorkę — docelowo IBL albo kilka świateł kierunkowych dobranych pod kamerę</small>
+      </span></li>
+      <li><span class="dot"></span><span class="text">
+        Wzajemne nachylenie orbit w układzie potrójnym
+        <small>obecnie orbita wewnętrzna i zewnętrzna są komplanarne (obie w płaszczyźnie XZ) — realne hierarchiczne układy potrójne bywają nachylone</small>
       </span></li>
     </ul>
     <p class="note">Ta lista jest ręcznie aktualizowana, nie generuje się
