@@ -227,7 +227,11 @@ window.addEventListener('keydown', (e) => {
   // Cyfry 1-4 = zaokrętowanie na inny statek z floty
   const digit = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[e.code];
   if (digit !== undefined && digit < SHIPS.length) {
-    loadShip(digit).catch((err) => console.error('Nie udało się wczytać statku:', err));
+    loadShip(digit).catch((err) => {
+      console.error('Nie udało się wczytać statku:', err);
+      loadingEl.textContent = `Błąd wczytywania: ${err?.message || err}`;
+      loadingEl.classList.add('visible');
+    });
   }
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
@@ -328,10 +332,21 @@ function animate() {
 loadShip(0)
   .then(() => {
     camera.position.copy(shipGroup.position).add(cameraOffset); // start bez "najazdu" kamery
-    animate();
   })
   .catch((err) => {
+    // WAŻNE: nie zostawiamy sceny czarnej bez wyjaśnienia. Najczęstsza
+    // przyczyna: serwer deweloperski odpalony z WNĘTRZA step3-ships/
+    // zamiast z korzenia repo - wtedy ścieżka względna "../shared/..."
+    // próbuje wyjść poza katalog serwowany przez `npx serve`/`http.server`
+    // i dostaje 404 dla WSZYSTKICH 4 statków naraz.
     console.error('Nie udało się wczytać pierwszego statku:', err);
-    loadingEl.textContent = 'Błąd wczytywania modelu — sprawdź konsolę.';
+    loadingEl.textContent =
+      `Błąd wczytywania modelu (${def_file_hint()}): ${err?.message || err}. ` +
+      'Sprawdź, czy serwer działa z KATALOGU GŁÓWNEGO repo, nie z tego podfolderu.';
     loadingEl.classList.add('visible');
-  });
+  })
+  .finally(() => animate()); // scena (gwiazdy/kamera) renderuje się ZAWSZE, nawet gdy statek padnie
+
+function def_file_hint() {
+  return SHIPS[0]?.file ?? '?';
+}
