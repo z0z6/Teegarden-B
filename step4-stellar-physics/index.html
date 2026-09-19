@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Space Game — Krok 4: Układ potrójny</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+    }
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      color: #9fd8ff;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 13px;
+      opacity: 0.85;
+      pointer-events: none;
+      text-shadow: 0 0 6px rgba(0, 150, 255, 0.6);
+      line-height: 1.6;
+    }
+    #hud .ship-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #d9f3ff;
+    }
+    #hud .dim {
+      opacity: 0.7;
+    }
+    #loading-model {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      color: #9fd8ff;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      text-shadow: 0 0 6px rgba(0, 150, 255, 0.6);
+    }
+    #loading-model.visible {
+      opacity: 0.9;
+    }
+  </style>
+
+  <!-- Importmap: three@0.184.0 (ta sama wersja co w narzędziach, którymi
+       generowaliśmy modele statków — trzymamy to spójne w całym repo) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <div class="ship-name" id="ship-name">—</div>
+    <div class="dim">W/S — ciąg · A/D — skręt · Shift — boost · Spacja — hamulec</div>
+    <div class="dim">1-4 — zaokrętuj na inny statek</div>
+    <div class="dim">Układ potrójny: gwiazda G + biały karzeł (ciasna para) + czerwony olbrzym (orbita zewn.)</div>
+  </div>
+  <div id="loading-model">Cumowanie… ładowanie statku</div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
