@@ -188,10 +188,13 @@ async function loadShip(index) {
   if (currentModel) visualGroup.remove(currentModel);
 
   const model = gltf.scene;
-  visualGroup.add(model);
-  currentModel = model;
-  currentShipIndex = index;
 
+  // WAŻNE — kolejność ma znaczenie: liczymy bounding box PRZED dodaniem
+  // modelu do drzewa sceny (visualGroup.add), nie po. Box3().setFromObject()
+  // liczy w przestrzeni ŚWIATA, uwzględniając transformy WSZYSTKICH
+  // przodków - w tym kroku shipGroup stoi w (0,0,0), więc błąd akurat tu
+  // nigdy się nie ujawnia, ale poprawna kolejność jest tania i zabezpiecza
+  // na przyszłość (np. gdyby ktoś przesunął shipGroup, tak jak w kroku 4).
   const box = new THREE.Box3().setFromObject(model);
   const size = new THREE.Vector3();
   box.getSize(size);
@@ -201,10 +204,15 @@ async function loadShip(index) {
   // żeby rotacje shipGroup nie kręciły statkiem "mimośrodowo".
   model.position.set(-center.x, -box.min.y, -center.z);
 
+  visualGroup.add(model);
+  currentModel = model;
+  currentShipIndex = index;
+
   flightProfile = deriveFlightProfile(size);
   const rig = deriveCameraRig(size);
   cameraOffset = rig.offset;
   cameraLookOffset = rig.lookOffset;
+
 
   // Stała korekta "180° dziobu" (patrz komentarz przy SHIPS) - ustawiana
   // RAZ tutaj, nie co klatkę, bo teraz visualGroup nie dźwiga już żadnej
