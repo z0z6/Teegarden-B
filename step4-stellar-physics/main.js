@@ -175,9 +175,7 @@ function deriveFlightProfile(boundingSize) {
     maxSpeed: 46 / Math.sqrt(scale),
     boostMultiplier: 2.2,
     drag: 0.7,
-    turnAcceleration: 6.0 / scale,
-    maxYawSpeed: 2.2 / Math.sqrt(scale),
-    turnDrag: 3.2,
+    maxYawSpeed: 2.2 / Math.sqrt(scale), // używane jako proxy "zwinności" do skalowania czułości myszy/rolla, patrz updateShip
   };
 }
 
@@ -231,18 +229,43 @@ async function loadShip(index) {
   shipLight.intensity = 1.6;
   shipLight.position.set(0, diag * 0.2, diag * 0.15);
 
+  // Stała korekta "180° dziobu" (patrz komentarz przy SHIPS) - ustawiana
+  // RAZ tutaj, nie co klatkę, bo teraz visualGroup nie dźwiga już żadnej
+  // rotacji zależnej od sterowania (to całe pełne 3D - patrz updateShip).
+  visualGroup.rotation.set(0, Math.PI, 0);
+
   nameEl.textContent = def.name;
   loadingEl.classList.remove('visible');
 }
 
 // ============================================================
-// FIZYKA RUCHU (identyczna zasada co w kroku 2, tylko parametry
-// pochodzą teraz z flightProfile aktualnego statku)
+// FIZYKA RUCHU: mysz = celowanie (pitch/yaw), A/D = roll, W/S = ciąg.
+// To zmiana względem kroku 2/3 (tam A/D robiło skręt/yaw z bezwładnością
+// i klawiatury). Teraz statek ma PEŁNE 3D (może pochylić nos w górę/dół,
+// nie tylko skręcać w poziomie) - dlatego to już nie jest jeden `yawVelocity`,
+// tylko trzy niezależne osie rotacji nakładane bezpośrednio na shipGroup.
 // ============================================================
 const shipState = {
   speed: 0,
-  yawVelocity: 0,
 };
+
+// Celowanie myszą: pozycja kursora względem ŚRODKA EKRANU (nie ruch
+// względny/pointer lock - prościej, działa bez klikania w canvas, typowe
+// dla trybu "mouse flight" w grach kosmicznych typu Descent/Freespace).
+let mouseX = 0, mouseY = 0; // znormalizowane -1..1
+window.addEventListener('mousemove', (e) => {
+  mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+  mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+});
+window.addEventListener('touchmove', (e) => {
+  const t = e.touches[0]; if (!t) return;
+  mouseX = (t.clientX / window.innerWidth) * 2 - 1;
+  mouseY = (t.clientY / window.innerHeight) * 2 - 1;
+}, { passive: true });
+
+const PITCH_RATE = 0.9; // rad/s przy maksymalnym wychyleniu myszy od środka
+const YAW_RATE = 0.9;
+const ROLL_RATE = 1.6;  // rad/s przy wciśniętym A/D
 
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
@@ -264,8 +287,6 @@ function updateShip(delta) {
 
   const forwardInput = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0)
     - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-  const turnInput = (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0)
-    - (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0);
   const boosting = keys.has('ShiftLeft') || keys.has('ShiftRight');
   const braking = keys.has('Space');
 
@@ -281,19 +302,23 @@ function updateShip(delta) {
   }
   shipState.speed = THREE.MathUtils.clamp(shipState.speed, -maxSpeed * 0.4, maxSpeed);
 
-  shipState.yawVelocity += turnInput * P.turnAcceleration * delta;
-  shipState.yawVelocity *= Math.max(0, 1 - P.turnDrag * delta);
-  shipState.yawVelocity = THREE.MathUtils.clamp(shipState.yawVelocity, -P.maxYawSpeed, P.maxYawSpeed);
-  shipGroup.rotation.y += shipState.yawVelocity * delta;
+  // Celowanie: im większy statek (proxy masy z flightProfile - patrz
+  // deriveFlightProfile), tym wolniej reaguje na mysz/A-D - ten sam
+  // "bezwładnościowy" duch co reszta silnika, tylko przeniesiony na
+  // 3 osie zamiast jednej.
+  const rateScale = Math.sqrt(P.maxYawSpeed / 2.2); // 1.0 dla warbird-light, mniej dla cięższych
+  const targetPitch = -mouseY * PITCH_RATE * rateScale;
+  const targetYaw = -mouseX * YAW_RATE * rateScale;
+  let roll = 0;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) roll += ROLL_RATE * rateScale;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) roll -= ROLL_RATE * rateScale;
+
+  shipGroup.rotateY(targetYaw * delta);
+  shipGroup.rotateX(targetPitch * delta);
+  shipGroup.rotateZ(roll * delta);
 
   const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(shipGroup.quaternion);
   shipGroup.position.addScaledVector(forwardDir, shipState.speed * delta);
-
-  // Bank (przechył) - nakładany na visualGroup, NIE na shipGroup, żeby
-  // nie mieszał się z korektą "180° dziobu" (patrz komentarz przy SHIPS).
-  const targetRoll = -shipState.yawVelocity * 0.6;
-  visualGroup.rotation.y = Math.PI; // stała korekta dziobu (+Z modelu -> -Z gry)
-  visualGroup.rotation.z = THREE.MathUtils.lerp(visualGroup.rotation.z, targetRoll, delta * 5);
 }
 
 // ============================================================
@@ -312,6 +337,12 @@ function updateCamera(delta) {
 
   const followLerp = 1 - Math.pow(0.0001, delta);
   camera.position.lerp(desiredCamPos, followLerp);
+
+  // Statek ma teraz pełne 3D (pitch/roll, nie tylko yaw) - kamera musi
+  // dziedziczyć jego "up", inaczej przy przechyle horyzont statku i kamery
+  // się rozjadą (statek się przechyla, kamera zostaje "pozioma").
+  const desiredUp = new THREE.Vector3(0, 1, 0).applyQuaternion(shipGroup.quaternion);
+  camera.up.lerp(desiredUp, followLerp);
 
   const currentLookAt = camera.position.clone().add(
     new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).multiplyScalar(10)

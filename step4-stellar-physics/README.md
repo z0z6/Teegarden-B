@@ -1,7 +1,10 @@
 # Krok 4 — Układ potrójny (prawdziwa fizyka) + sztuczne oświetlenie statku
 
 ## Sterowanie
-Bez zmian względem kroku 3 (W/S/A/D, Shift, Spacja, 1-4 zaokrętowanie).
+Bez zmian względem kroku 3: mysz — celowanie (pitch/yaw), W/S — ciąg,
+A/D — przechył (roll), Shift — boost, Spacja — hamulec, 1-4 —
+zaokrętowanie. Szczegóły schematu sterowania (dlaczego mysz, nie tylko
+A/D jak w kroku 2) — patrz `step3-ships/README.md`.
 
 ## Co się zmieniło i dlaczego
 
