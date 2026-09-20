@@ -49,6 +49,20 @@ shared/
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
 Szczegóły fizyki układu gwiezdnego: [`step4-stellar-physics/README.md`](./step4-stellar-physics/README.md).
 
+## `tools/`
+
+Narzędzia deweloperskie/QA, nie kroki gry (nienumerowane, nie wchodzą
+w postęp fabularny). Na razie jedno: [`tools/ship-gallery`](./tools/ship-gallery) —
+wszystkie 4 statki naraz, ta sama perspektywa (za plecami, z góry,
+proporcjonalnie do rozmiaru każdego statku). Przydatne do porównania floty
+i do szybkiej diagnozy, gdy któryś model się nie ładuje.
+
+## Sterowanie (od step3-ships)
+
+Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
+W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
+1-4 — zaokrętowanie (tylko step3-ships/step4-stellar-physics).
+
 ## Wersja three.js
 
 Cały projekt trzyma się jednej wersji three.js (`0.184.0`) przez importmapy
