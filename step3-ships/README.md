@@ -1,9 +1,11 @@
 # Krok 3 — Prawdziwe modele statków (glTF) + zaokrętowanie
 
 ## Sterowanie
+- **Mysz** — celowanie: pitch/yaw zależne od pozycji kursora względem
+  środka ekranu (bez pointer lock — działa od razu, bez klikania w canvas)
 - **W / ↑** — przyspiesz do przodu
 - **S / ↓** — cofaj / hamuj
-- **A / ←**, **D / →** — skręt (yaw)
+- **A / ←**, **D / →** — przechył (roll)
 - **Shift** — boost
 - **Spacja** — aktywne hamowanie
 - **1 / 2 / 3 / 4** — zaokrętuj na inny statek z floty
@@ -39,9 +41,22 @@ które: (1) wczytuje nowy model, (2) dopiero PO sukcesie usuwa stary
 **Korekta "180° dziobu".** Wszystkie 4 modele mają dziób w lokalnym `+Z`
 (tak wyszły z narzędzia, którym były projektowane), a silnik z kroku 2
 zakłada przód statku w lokalnym `-Z`. Zamiast przerabiać fizykę, po prostu
-obracamy `visualGroup` (kontener na wczytany model) o `Math.PI` wokół Y.
-Bank/przechył przy skręcie jest nałożony na TEN SAM obiekt, ale jako osobna
-składowa rotacji (`rotation.z`), żeby nie kolidował z korektą dziobu.
+obracamy `visualGroup` (kontener na wczytany model) o stałe `Math.PI`
+wokół Y, ustawiane raz w `loadShip()`. Wcześniej `visualGroup` dźwigał
+też kosmetyczny "bank" przy skręcie — po przejściu na mysz+pełne 3D (patrz
+niżej) prawdziwy przechył liczy się już bezpośrednio na `shipGroup`, więc
+ten hack zniknął.
+
+**Mysz zamiast samego A/D do skrętu.** Krok 2 miał tylko skręt w poziomie
+(`yawVelocity`, jedna oś). Teraz statek ma pełne 3D: mysz steruje
+pitch+yaw proporcjonalnie do odległości kursora od środka ekranu (bez
+pointer lock — prościej, działa bez klikania w canvas), A/D dają realny
+przechył (roll), nie tylko kosmetyczny. To wymagało zmiany kamery
+(`updateCamera()` musi teraz dziedziczyć `up` statku, inaczej przy
+przechyle horyzont kamery i statku by się rozjechały) i uproszczenia
+`deriveFlightProfile()` (zniknęły `turnAcceleration`/`turnDrag` — czułość
+sterowania skaluje się teraz przez `rateScale` w `updateShip()`, jeden
+parametr zamiast trzech).
 
 **`deriveFlightProfile()` — fizyka z geometrii.** Zamiast ręcznie tuningować
 4 zestawy stałych (`acceleration`, `maxSpeed`, ...), liczymy jeden
@@ -77,6 +92,10 @@ w `shared/ships/source/README.md`.
   "doskakuje" do nowej pozycji w tej samej klatce, w której zmienia się
   offset (ruch `lerp` w `updateCamera()` złagodzi tylko POZYCJĘ, nie sam
   offset docelowy).
+- Zamień celowanie myszą "względem środka ekranu" na `pointer lock`
+  (prawdziwe sterowanie w stylu FPS, ruch względny kursora zamiast
+  pozycji bezwzględnej) — kosztem konieczności kliknięcia w canvas, żeby
+  zablokować kursor.
 
 ## Co dalej (Krok 4?)
 Pomysły: LOD zależny od dystansu (patrz `lod_helper.js`), HUD z prędkością/
