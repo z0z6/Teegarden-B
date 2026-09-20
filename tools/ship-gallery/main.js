@@ -5,7 +5,9 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 // ============================================================
 // Galeria statków: narzędzie deweloperskie, nie krok gry.
 // Cel: pokazać wszystkie 4 statki z floty z tej samej, spójnej
-// perspektywy (nieco za plecami, z góry) - I zdiagnozować, czy któryś
+// perspektywy (nieco za plecami, z góry), każdy zajmujący DOKŁADNIE
+// tę samą proporcję kadru (dopasowanie kuli otaczającej do FOV kamery,
+// patrz komentarz przy `sphere` niżej) - I zdiagnozować, czy któryś
 // się nie ładuje (błąd wyświetlony wprost w panelu, nie tylko w konsoli).
 // ============================================================
 
@@ -60,12 +62,17 @@ function buildPanel(def) {
 
   function resize() {
     const w = panel.clientWidth, h = panel.clientHeight;
+    if (w === 0 || h === 0) return; // layout jeszcze nie policzony - poczekaj na kolejne wywołanie ResizeObserver
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(panel);
-  resize();
+  // Wywołanie na starcie bywa za wczesne (panel.clientWidth może być
+  // jeszcze 0, zanim CSS grid policzy layout) - rAF daje przeglądarce
+  // jedną klatkę na policzenie rozmiarów. ResizeObserver i tak złapie
+  // każdą kolejną zmianę, to tylko na pierwszą klatkę.
+  requestAnimationFrame(resize);
 
   let pivotGroup = new THREE.Group(); // obrót "turntable", niezależny od kamery
   scene.add(pivotGroup);
@@ -82,19 +89,31 @@ function buildPanel(def) {
       model.position.set(-center.x, -box.min.y, -center.z);
       pivotGroup.add(model);
 
-      // TA SAMA perspektywa dla każdego statku = te same PROPORCJE
-      // względem rozmiaru (nie ten sam dosłowny offset w jednostkach
-      // świata - przy 10x różnicy skali między myśliwcem a Kharathem to
-      // by nie miało sensu). Dokładnie te same mnożniki co
-      // deriveCameraRig() w step3-ships/step4-stellar-physics/main.js.
-      // pivotGroup ma taki sam układ odniesienia jak shipGroup w grze
-      // (model wyśrodkowany w X/Z, spód w Y=0) - offset liczymy więc
-      // od (0,0,0) pivotGroup, bez dodatkowych przesunięć.
-      const diag = size.length();
-      const camOffset = new THREE.Vector3(0, size.y * 0.5 + diag * 0.12, diag * 0.85);
-      const lookAt = new THREE.Vector3(0, size.y * 0.15, 0);
-      camera.position.copy(camOffset);
-      camera.lookAt(lookAt);
+      // DOPASOWANIE KULI OTACZAJĄCEJ DO POLA WIDZENIA - w przeciwieństwie
+      // do poprzedniej wersji (dystans liczony z przekątnej bounding boxa,
+      // co dla wydłużonych kształtów jak Kharath nie gwarantowało realnego
+      // zmieszczenia się w kadrze - przekątna "po skosie" to nie to samo,
+      // co kątowy rozmiar widziany z danego kierunku patrzenia), liczymy
+      // dystans wprost z geometrii: promień kuli otaczającej / sin(FOV/2).
+      // To JEST matematyczna gwarancja, że cały statek zmieści się w kadrze,
+      // niezależnie od proporcji/kształtu - i że każdy statek zajmie
+      // DOKŁADNIE tę samą proporcję ekranu (ten sam margines), więc są
+      // ze sobą realnie porównywalne.
+      const recentered = new THREE.Box3().setFromObject(model);
+      const sphere = recentered.getBoundingSphere(new THREE.Sphere());
+
+      const margin = 1.35; // odrobina oddechu wokół statku (35% zapasu)
+      const fovRad = THREE.MathUtils.degToRad(camera.fov);
+      const distance = (sphere.radius / Math.sin(fovRad / 2)) * margin;
+
+      // Kierunek "nieco za plecami, z góry" - stały, znormalizowany wektor,
+      // przeskalowany do WYLICZONEGO dystansu (a nie odwrotnie).
+      const viewDir = new THREE.Vector3(0, 0.35, 1).normalize();
+      camera.position.copy(sphere.center).addScaledVector(viewDir, distance);
+      camera.lookAt(sphere.center);
+      camera.near = Math.max(distance - sphere.radius * 3, 0.05);
+      camera.far = distance + sphere.radius * 6;
+      camera.updateProjectionMatrix();
     },
     undefined,
     (err) => {

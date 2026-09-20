@@ -60,8 +60,9 @@
   <header>
     <h1>🛰️ Galeria statków</h1>
     <p>Wszystkie 4 statki z floty, ta sama perspektywa (nieco za plecami, z góry) —
-       kąt/dystans kamery skalowany proporcjonalnie do rozmiaru KAŻDEGO statku
-       (te same proporcje co kamera w grze, patrz deriveCameraRig w step3/step4).
+       dystans kamery liczony z promienia kuli otaczającej każdy statek względem
+       pola widzenia (FOV), więc każdy zajmuje DOKŁADNIE tę samą proporcję kadru,
+       niezależnie od kształtu czy 10× różnicy skali między myśliwcem a Kharathem.
        Jeśli któryś panel pokazuje czerwony błąd zamiast statku — to jest
        dokładnie ta informacja, której potrzeba do zdiagnozowania problemu
        z ładowaniem modelu.</p>
