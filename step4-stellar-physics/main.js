@@ -15,8 +15,10 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
   60,
   window.innerWidth / window.innerHeight,
-  0.1,
-  20000 // statki bywają duże (Kharath ma ~180 jednostek długości) - dalekie far plane
+  1, // near=1 (nie 0.1) - przy far=500000 zbyt mały near psuje precyzję z-bufora (z-fighting)
+  500000 // układ potrójny ma teraz skalę rzędu dziesiątek tysięcy jednostek
+  // (orbita zewnętrzna czerwonego olbrzyma ~23000, orbita planety ~39000,
+  // start statku ~48000) - far plane z dużym zapasem, żeby nic się nie ucinało
 );
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -69,7 +71,7 @@ function createStarfield(count = 6000, radius = 1500) {
 
   return new THREE.Points(geometry, material);
 }
-scene.add(createStarfield());
+scene.add(createStarfield(6000, 200000)); // tło dalej niż cały układ (skala ~48000) - żeby gwiazdy w tle faktycznie wyglądały na odległe
 
 // Oświetlenie bazowe: bardzo słaby ambient, żeby ciemna strona statku
 // nigdy nie była całkowicie czarna (w kroku 1/2/3 to samo światło "dorabiał"
@@ -127,10 +129,14 @@ loader.setMeshoptDecoder(MeshoptDecoder); // LOD1/LOD2 są skompresowane (meshop
 // obiekcie, nigdy bezpośrednio na wczytanym modelu - dzięki temu zamiana
 // statku (zaokrętowanie) nie wymaga przepisywania reszty gry.
 const shipGroup = new THREE.Group();
-// Origin (0,0,0) to teraz barycentrum WEWNĘTRZNEJ PARY gwiazd - dosłownie
-// wnętrze gwiazdy A (jej promień 12 > odległość ~7 od origin)! Statek MUSI
-// startować gdzieś bezpiecznie z dala od układu, nie w (0,0,0) jak w kroku 3.
-shipGroup.position.set(0, 60, 340); // poza orbitą planety (~260) - dobry punkt widokowy na cały układ
+// Origin (0,0,0) to barycentrum WEWNĘTRZNEJ PARY gwiazd - dosłownie
+// wnętrze gwiazdy A! Statek MUSI startować gdzieś bezpiecznie z dala od
+// układu. Pozycja liczona z constants zwróconych przez starSystem (nie
+// na sztywno) - dzięki temu, jeśli kiedyś znów zmienimy skalę układu
+// (RADIUS/SEPARATION w triple-star-system.js), spawn statku "sam się"
+// dostosuje zamiast znowu lądować w środku gwiazdy.
+const spawnRadius = starSystem.constants.PLANET_ORBIT_RADIUS * 1.25; // wyraźnie poza orbitą planety
+shipGroup.position.set(0, spawnRadius * 0.08, spawnRadius);
 scene.add(shipGroup);
 
 // visualGroup trzyma stały obrót "180° korekty dziobu" (patrz wyżej),
@@ -141,16 +147,22 @@ shipGroup.add(visualGroup);
 
 // ------------------------------------------------------------
 // TYMCZASOWE sztuczne oświetlenie statku gracza.
-// W krokach 1-3 jedna nieruchoma gwiazda dawała stałe, przewidywalne
-// oświetlenie. Teraz gwiazdy krążą względem siebie (patrz układ
-// potrójny niżej) - statek może się znaleźć w słabo oświetlonym
-// rejonie między nimi. Zamiast dorabiać porządne oświetlenie sceny
-// (IBL / kilka świateł kierunkowych dobranych pod kamerę - dobry
-// temat na osobny krok), doczepiamy prosty PointLight bezpośrednio
-// do statku: zawsze dobrze widoczny, niezależnie od układu gwiazd.
+// Od kroku 4 gwiazdy realnie świecą wg prawa odwrotnych kwadratów
+// (patrz triple-star-system.js) - fizycznie poprawne, ale oznacza, że
+// na typowych dystansach lotu (dziesiątki tysięcy jednostek) same
+// gwiazdy już praktycznie NIE doświetlają statku (dokładnie jak w
+// realu: światło gwiazd widać, ale nie oświetla ono niczego z daleka
+// na tyle, żeby czytać przy nim). Zamiast dorabiać porządne oświetlenie
+// sceny (IBL / kilka świateł kierunkowych dobranych pod kamerę - dobry
+// temat na osobny krok), doczepiamy PointLight bezpośrednio do statku:
+// zawsze dobrze widoczny, niezależnie od odległości do najbliższej
+// gwiazdy. Intensity=400 (nie fizycznie "realistyczne" - to celowo
+// umowna, gameplayowa wartość) dobrane empirycznie tak, żeby dawało
+// wyraźny, czytelny akcent świetlny na kadłubie nawet w scenariuszu
+// "pod światło" (patrz README, sekcja o kalibracji).
 // Zasięg/intensywność są przeliczane w loadShip() pod rozmiar
 // aktualnego statku (ten sam wzorzec co deriveFlightProfile/deriveCameraRig).
-const shipLight = new THREE.PointLight(0xbfe4ff, 1.6, 100, 1.3);
+const shipLight = new THREE.PointLight(0xbfe4ff, 400, 100, 2);
 shipLight.position.set(0, 3, 4);
 shipGroup.add(shipLight);
 
@@ -166,6 +178,18 @@ let cameraLookOffset = new THREE.Vector3(0, 1, -6);
  * per-statek: większy statek = trudniej rozpędzić i skręcić (proxy masy),
  * mniejszy = zwinniejszy. `refLength` to długość "wzorcowego" myśliwca
  * (warbird-light), względem której skalujemy resztę floty.
+ *
+ * BOOST = "napęd przelotowy" (×14, nie ×2.2 jak w kroku 3). Po
+ * powiększeniu układu (patrz README, "Aktualizacja skali i światła")
+ * dystanse urosły ~140× (separacja wewnętrzna 18→2560 j.), a prędkość
+ * statku - nie. Przy starym mnożniku 2.2 dolot z punktu startowego
+ * (~48000 j.) do układu trwałby kilkanaście minut. ×14 dobrane tak, żeby
+ * ten sam dystans zajął ~60-90s dla warbird-light (46×14≈644 j./s,
+ * 48000/644≈75s) - "przelotowo szybko", ale wciąż wymaga świadomego
+ * przytrzymania Shift, nie jest to prędkość domyślna do walki z bliska.
+ * Cięższe statki (Kharath) są proporcjonalnie wolniejsze nawet z
+ * boostem - to zamierzone, zgodne z ich "ociężałym kolosem" charakterem
+ * (patrz deriveFlightProfile - ten sam wzór co przed boostem).
  */
 function deriveFlightProfile(boundingSize) {
   const refLength = 20; // w przybliżeniu długość warbird-light
@@ -173,7 +197,7 @@ function deriveFlightProfile(boundingSize) {
   return {
     acceleration: 24 / scale,
     maxSpeed: 46 / Math.sqrt(scale),
-    boostMultiplier: 2.2,
+    boostMultiplier: 14,
     drag: 0.7,
     maxYawSpeed: 2.2 / Math.sqrt(scale), // używane jako proxy "zwinności" do skalowania czułości myszy/rolla, patrz updateShip
   };
@@ -204,10 +228,20 @@ async function loadShip(index) {
   if (currentModel) visualGroup.remove(currentModel);
 
   const model = gltf.scene;
-  visualGroup.add(model);
-  currentModel = model;
-  currentShipIndex = index;
 
+  // WAŻNE — kolejność ma znaczenie: liczymy bounding box PRZED dodaniem
+  // modelu do drzewa sceny (visualGroup.add), nie po. Box3().setFromObject()
+  // liczy w przestrzeni ŚWIATA, uwzględniając transformy WSZYSTKICH
+  // przodków (shipGroup, visualGroup) - a shipGroup w tym kroku NIE stoi
+  // w (0,0,0)! Jeśli model jest już dodany do sceny w momencie liczenia
+  // box3, wynik "wciąga" pozycję shipGroup, a poniższy kod błędnie
+  // potraktowałby to jako współrzędne LOKALNE względem visualGroup -
+  // wysyłając model dziesiątki tysięcy jednostek od właściwego miejsca.
+  // Licząc box3 na modelu, który nie ma jeszcze rodzica, mamy gwarancję
+  // "czystych" współrzędnych. (Ten błąd bywał niewidoczny dla PIERWSZEGO
+  // wczytanego statku - w tej jednej chwili scena jeszcze nie przeliczyła
+  // matrixWorld shipGroup, więc przypadkiem wychodziło poprawnie - i
+  // ujawniał się dopiero przy KOLEJNYCH zaokrętowaniach.)
   const box = new THREE.Box3().setFromObject(model);
   const size = new THREE.Vector3();
   box.getSize(size);
@@ -216,6 +250,10 @@ async function loadShip(index) {
   // Wyśrodkuj model względem pivotu (środek masy w XZ, spód w Y),
   // żeby rotacje shipGroup nie kręciły statkiem "mimośrodowo".
   model.position.set(-center.x, -box.min.y, -center.z);
+
+  visualGroup.add(model);
+  currentModel = model;
+  currentShipIndex = index;
 
   flightProfile = deriveFlightProfile(size);
   const rig = deriveCameraRig(size);
@@ -226,7 +264,7 @@ async function loadShip(index) {
   // przy tworzeniu shipLight wyżej) - większy statek = szerszy zasięg.
   const diag = size.length();
   shipLight.distance = diag * 6;
-  shipLight.intensity = 1.6;
+  shipLight.intensity = 400;
   shipLight.position.set(0, diag * 0.2, diag * 0.15);
 
   // Stała korekta "180° dziobu" (patrz komentarz przy SHIPS) - ustawiana
@@ -291,16 +329,36 @@ function updateShip(delta) {
   const braking = keys.has('Space');
 
   const P = flightProfile;
+  // Boost skaluje RÓWNIEŻ przyspieszenie, nie tylko pułap prędkości -
+  // inaczej rozpędzenie się do dużo wyższego pułapu (×14) trwałoby
+  // kilkanaście razy dłużej niż normalnie (bo ciągle to samo, niskie
+  // przyspieszenie bazowe). Dzięki skalowaniu obu razem, CZAS rozpędzania
+  // do pełnej prędkości zostaje taki sam z boostem i bez (się skraca
+  // proporcjonalnie tylko dystans-do-pełnej-prędkości, bo jedziemy szybciej).
   const maxSpeed = P.maxSpeed * (boosting ? P.boostMultiplier : 1);
+  const acceleration = P.acceleration * (boosting ? P.boostMultiplier : 1);
 
+  // WAŻNE: pułap prędkości stosujemy TYLKO gdy jesteśmy POD nim -
+  // jeśli aktualna prędkość już go przekracza (np. bo przed chwilą był
+  // boost, a teraz go puszczono - nowy, niższy pułap obowiązuje od razu,
+  // ale sama prędkość NIE), spadek do nowego pułapu odbywa się przez
+  // naturalny opór (drag), nie przez twarde obcięcie w jednej klatce.
+  // Przy ×14 boost bezwarunkowe klamrowanie wyglądałoby jak zderzenie
+  // ze ścianą przy puszczeniu Shift.
   if (braking) {
     shipState.speed *= Math.max(0, 1 - P.drag * 2 * delta);
-  } else if (forwardInput !== 0) {
-    shipState.speed += forwardInput * P.acceleration * delta;
+  } else if (forwardInput > 0) {
+    shipState.speed = shipState.speed < maxSpeed
+      ? Math.min(shipState.speed + acceleration * delta, maxSpeed)
+      : shipState.speed * Math.max(0, 1 - P.drag * delta);
+  } else if (forwardInput < 0) {
+    const minSpeed = -maxSpeed * 0.4;
+    shipState.speed = shipState.speed > minSpeed
+      ? Math.max(shipState.speed - acceleration * delta, minSpeed)
+      : shipState.speed * Math.max(0, 1 - P.drag * delta);
   } else {
     shipState.speed *= Math.max(0, 1 - P.drag * delta);
   }
-  shipState.speed = THREE.MathUtils.clamp(shipState.speed, -maxSpeed * 0.4, maxSpeed);
 
   // Celowanie: im większy statek (proxy masy z flightProfile - patrz
   // deriveFlightProfile), tym wolniej reaguje na mysz/A-D - ten sam
