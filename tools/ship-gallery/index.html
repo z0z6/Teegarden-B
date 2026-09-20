@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Galeria statków</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #05070a; height: 100%;
+      font-family: 'Segoe UI', sans-serif; color: #d9f3ff; }
+    header { padding: 20px 24px 8px; }
+    header h1 { margin: 0; font-size: 20px; letter-spacing: .04em; text-shadow: 0 0 10px rgba(0,150,255,.5); }
+    header p { color: #7fa3c2; font-size: 13px; margin-top: 6px; }
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      padding: 16px 24px 32px;
+    }
+    @media (min-width: 900px) {
+      #grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    .panel {
+      position: relative;
+      background: #0d131c;
+      border: 1px solid rgba(159,216,255,.16);
+      border-radius: 12px;
+      overflow: hidden;
+      aspect-ratio: 4 / 3;
+    }
+    .panel canvas { display: block; width: 100%; height: 100%; }
+    .panel .label {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 8px 12px; font-size: 12px;
+      background: linear-gradient(transparent, rgba(0,0,0,.75));
+      pointer-events: none;
+    }
+    .panel .label .name { font-weight: 600; color: #d9f3ff; }
+    .panel .label .meta { color: #7fa3c2; font-size: 11px; margin-top: 2px; }
+    .panel .error {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      padding: 16px; text-align: center; font-size: 12px; color: #ffb4b4;
+      background: rgba(80,10,10,.25);
+    }
+    .panel .loading {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 12px; color: #7fa3c2;
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>🛰️ Galeria statków</h1>
+    <p>Wszystkie 4 statki z floty, ta sama perspektywa (nieco za plecami, z góry) —
+       kąt/dystans kamery skalowany proporcjonalnie do rozmiaru KAŻDEGO statku
+       (te same proporcje co kamera w grze, patrz deriveCameraRig w step3/step4).
+       Jeśli któryś panel pokazuje czerwony błąd zamiast statku — to jest
+       dokładnie ta informacja, której potrzeba do zdiagnozowania problemu
+       z ładowaniem modelu.</p>
+  </header>
+  <div id="grid"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
