@@ -50,6 +50,71 @@
     #loading-model.visible {
       opacity: 0.9;
     }
+
+    /* ============================================================
+       UI DOTYKOWE (Android/mobile) - widoczne TYLKO na urządzeniach,
+       gdzie główny wskaźnik to dotyk (pointer: coarse). Na desktopie
+       z myszą ten cały blok jest ukryty przez media query niżej, więc
+       nie przeszkadza graczom na klawiaturze/myszy.
+       Schemat "twin-stick": lewy joystick = celowanie (pitch/yaw),
+       prawy joystick = przechył (X) + ciąg (Y). touch-action: none
+       jest konieczne, żeby przeglądarka nie próbowała przewijać/
+       przybliżać strony przy przeciąganiu palcem po joysticku.
+       ============================================================ */
+    #touch-controls { display: none; }
+    @media (pointer: coarse) {
+      #touch-controls { display: block; }
+      #hud .dim.desktop-only { display: none; }
+    }
+
+    .joystick-zone {
+      position: fixed;
+      bottom: 28px;
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      background: rgba(159, 216, 255, 0.08);
+      border: 1px solid rgba(159, 216, 255, 0.25);
+      touch-action: none;
+      z-index: 20;
+    }
+    #touch-left-zone { left: 24px; }
+    #touch-right-zone { right: 24px; }
+    .joystick-knob {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 56px; height: 56px;
+      margin: -28px 0 0 -28px;
+      border-radius: 50%;
+      background: rgba(159, 216, 255, 0.35);
+      border: 1px solid rgba(217, 243, 255, 0.6);
+      pointer-events: none;
+      transition: transform 0.02s linear;
+    }
+
+    .touch-btn {
+      position: fixed;
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: rgba(159, 216, 255, 0.12);
+      border: 1px solid rgba(159, 216, 255, 0.35);
+      color: #d9f3ff;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 11px;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: none;
+      z-index: 20;
+      user-select: none;
+    }
+    .touch-btn:active { background: rgba(159, 216, 255, 0.3); }
+    #touch-boost { right: 110px; bottom: 175px; }
+    #touch-brake { right: 24px; bottom: 175px; }
+    #touch-ship-switch {
+      position: fixed; top: 12px; right: 12px; z-index: 20;
+      width: auto; height: auto; padding: 8px 14px; border-radius: 8px;
+      background: rgba(159, 216, 255, 0.12); border: 1px solid rgba(159, 216, 255, 0.35);
+      color: #d9f3ff; font-family: 'Segoe UI', sans-serif; font-size: 12px;
+    }
   </style>
 
   <!-- Importmap: three@0.184.0 (ta sama wersja co w narzędziach, którymi
@@ -66,11 +131,20 @@
 <body>
   <div id="hud">
     <div class="ship-name" id="ship-name">—</div>
-    <div class="dim">Mysz — celowanie · W/S — ciąg · A/D — przechył (roll)</div>
-    <div class="dim">Shift — boost · Spacja — hamulec · 1-4 — zaokrętuj na inny statek</div>
+    <div class="dim desktop-only">Mysz — celowanie · W/S — ciąg · A/D — przechył (roll)</div>
+    <div class="dim desktop-only">Shift — boost · Spacja — hamulec · 1-4 — zaokrętuj na inny statek</div>
     <div class="dim">Układ potrójny: gwiazda G + biały karzeł (ciasna para) + czerwony olbrzym (orbita zewn.)</div>
   </div>
   <div id="loading-model">Cumowanie… ładowanie statku</div>
+
+  <div id="touch-controls">
+    <div class="joystick-zone" id="touch-left-zone"><div class="joystick-knob" id="touch-left-knob"></div></div>
+    <div class="joystick-zone" id="touch-right-zone"><div class="joystick-knob" id="touch-right-knob"></div></div>
+    <div class="touch-btn" id="touch-boost">BOOST</div>
+    <div class="touch-btn" id="touch-brake">STOP</div>
+    <div class="touch-btn" id="touch-ship-switch">Zmień statek</div>
+  </div>
+
   <script type="module" src="./main.js"></script>
 </body>
 </html>

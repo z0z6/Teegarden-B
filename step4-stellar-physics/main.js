@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { createTripleStarSystem } from '../shared/systems/triple-star-system.js';
+import { createFlightInput } from '../shared/input/flight-controls.js';
 
 // ============================================================
 // KROK 4: Układ potrójny (prawdziwa fizyka N-ciał) + sztuczne
-// oświetlenie statku gracza
+// oświetlenie statku gracza + sterowanie dotykowe (Android) i VR (WebXR)
 // Nowe pojęcia: integracja leapfrog, hierarchiczny układ potrójny,
-// cząstka testowa (planeta pod wpływem grawitacji, bez wpływu zwrotnego)
+// cząstka testowa (planeta pod wpływem grawitacji, bez wpływu zwrotnego),
+// zunifikowany input (klawiatura/dotyk/XR), rig kamery pod WebXR
 // ============================================================
 
 const scene = new THREE.Scene();
@@ -21,12 +24,32 @@ const camera = new THREE.PerspectiveCamera(
   // start statku ~48000) - far plane z dużym zapasem, żeby nic się nie ucinało
 );
 
+// cameraRig: POZYCJA/ROTACJA W ŚWIECIE steruje TYM obiektem, nie samą
+// kamerą. Poza VR to różnica bez znaczenia (kamera siedzi w (0,0,0)
+// względem rig-a, więc rig.position === efektywna pozycja kamery). W VR
+// jest to konieczne: WebXR sam nadpisuje lokalną pozycję/rotację `camera`
+// na podstawie śledzenia headsetu - gdybyśmy sterowali kamerą
+// bezpośrednio, każda nasza zmiana zostałaby nadpisana przez headset.
+// Zamiast tego poruszamy/obracamy RODZICA (rig = "gdzie w statku siedzi
+// gracz"), a headset dokłada swobodny look w jego wnętrzu.
+const cameraRig = new THREE.Group();
+cameraRig.add(camera);
+camera.position.set(0, 0, 0);
+camera.rotation.set(0, 0, 0);
+scene.add(cameraRig);
+
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
+renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
+
+// Przycisk "Enter VR" - three.js sam sprawdza navigator.xr i chowa/
+// wyłącza się, jeśli przeglądarka/urządzenie nie wspiera WebXR (np. na
+// zwykłym desktopie bez headsetu, albo w Safari bez flagi eksperymentalnej).
+document.body.appendChild(VRButton.createButton(renderer));
 
 // ============================================================
 // GWIAZDY W TLE (bez zmian względem kroku 1/2)
@@ -171,6 +194,10 @@ let currentModel = null;
 let flightProfile = null;
 let cameraOffset = new THREE.Vector3(0, 4, 11);
 let cameraLookOffset = new THREE.Vector3(0, 1, -6);
+// Pozycja "kokpitu" w VR - bliżej niż kamera pogoniowa (patrz updateCamera).
+// Przeliczana per-statek w loadShip(), tak jak cameraOffset.
+let cockpitOffsetY = 1.5;
+let cockpitOffsetZ = 1.5;
 
 /**
  * Wyprowadza "czułość" fizyki z fizycznego rozmiaru modelu (przekątna
@@ -208,6 +235,10 @@ function deriveCameraRig(boundingSize) {
   return {
     offset: new THREE.Vector3(0, boundingSize.y * 0.5 + diag * 0.12, diag * 0.85),
     lookOffset: new THREE.Vector3(0, boundingSize.y * 0.15, -diag * 0.35),
+    // Kokpit (VR): znacznie bliżej niż kamera pogoniowa - "miejsce
+    // pilota" z przodu/góry kadłuba, nie za statkiem.
+    cockpitY: boundingSize.y * 0.55,
+    cockpitZ: diag * 0.08,
   };
 }
 
@@ -259,6 +290,8 @@ async function loadShip(index) {
   const rig = deriveCameraRig(size);
   cameraOffset = rig.offset;
   cameraLookOffset = rig.lookOffset;
+  cockpitOffsetY = rig.cockpitY;
+  cockpitOffsetZ = rig.cockpitZ;
 
   // Przeskaluj sztuczne światło statku pod nowy rozmiar (patrz komentarz
   // przy tworzeniu shipLight wyżej) - większy statek = szerszy zasięg.
@@ -283,50 +316,59 @@ async function loadShip(index) {
 // nie tylko skręcać w poziomie) - dlatego to już nie jest jeden `yawVelocity`,
 // tylko trzy niezależne osie rotacji nakładane bezpośrednio na shipGroup.
 // ============================================================
+// ============================================================
+// FIZYKA RUCHU: mysz/dotyk/kontroler XR = celowanie (pitch/yaw) +
+// przechył (roll) + ciąg, przez zunifikowany moduł wejścia (patrz
+// shared/input/flight-controls.js - jedno źródło prawdy dla trzech
+// różnych metod sterowania, żeby fizyka poniżej nie musiała wiedzieć,
+// skąd input pochodzi).
+// ============================================================
 const shipState = {
   speed: 0,
 };
 
-// Celowanie myszą: pozycja kursora względem ŚRODKA EKRANU (nie ruch
-// względny/pointer lock - prościej, działa bez klikania w canvas, typowe
-// dla trybu "mouse flight" w grach kosmicznych typu Descent/Freespace).
-let mouseX = 0, mouseY = 0; // znormalizowane -1..1
-window.addEventListener('mousemove', (e) => {
-  mouseX = (e.clientX / window.innerWidth) * 2 - 1;
-  mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+const flightInput = createFlightInput({
+  onShipSwitch: (digit) => {
+    if (digit < SHIPS.length) {
+      loadShip(digit).catch((err) => {
+        console.error('Nie udało się wczytać statku:', err);
+        loadingEl.textContent = `Błąd wczytywania: ${err?.message || err}`;
+        loadingEl.classList.add('visible');
+      });
+    }
+  },
 });
-window.addEventListener('touchmove', (e) => {
-  const t = e.touches[0]; if (!t) return;
-  mouseX = (t.clientX / window.innerWidth) * 2 - 1;
-  mouseY = (t.clientY / window.innerHeight) * 2 - 1;
-}, { passive: true });
 
-const PITCH_RATE = 0.9; // rad/s przy maksymalnym wychyleniu myszy od środka
+// Podłącz UI dotykowe (patrz index.html, sekcja #touch-controls) - jeśli
+// elementów nie ma w DOM (np. inna wersja strony), attachTouchUI po
+// prostu nic nie podłączy, bez błędu.
+flightInput.attachTouchUI({
+  leftZone: document.getElementById('touch-left-zone'),
+  leftKnob: document.getElementById('touch-left-knob'),
+  rightZone: document.getElementById('touch-right-zone'),
+  rightKnob: document.getElementById('touch-right-knob'),
+  boostBtn: document.getElementById('touch-boost'),
+  brakeBtn: document.getElementById('touch-brake'),
+});
+
+// Przycisk zmiany statku dla dotyku (brak klawiszy 1-4 na telefonie) -
+// cyklicznie przełącza na kolejny statek z floty.
+const shipSwitchBtn = document.getElementById('touch-ship-switch');
+shipSwitchBtn?.addEventListener('click', () => {
+  const next = (currentShipIndex + 1) % SHIPS.length;
+  loadShip(next).catch((err) => console.error('Nie udało się wczytać statku:', err));
+});
+
+const PITCH_RATE = 0.9; // rad/s przy maksymalnym wychyleniu (myszy/joysticka/drążka XR)
 const YAW_RATE = 0.9;
-const ROLL_RATE = 1.6;  // rad/s przy wciśniętym A/D
-
-const keys = new Set();
-window.addEventListener('keydown', (e) => {
-  keys.add(e.code);
-  // Cyfry 1-4 = zaokrętowanie na inny statek z floty
-  const digit = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[e.code];
-  if (digit !== undefined && digit < SHIPS.length) {
-    loadShip(digit).catch((err) => {
-      console.error('Nie udało się wczytać statku:', err);
-      loadingEl.textContent = `Błąd wczytywania: ${err?.message || err}`;
-      loadingEl.classList.add('visible');
-    });
-  }
-});
-window.addEventListener('keyup', (e) => keys.delete(e.code));
+const ROLL_RATE = 1.6;
 
 function updateShip(delta) {
   if (!flightProfile) return; // jeszcze nic nie wczytane
 
-  const forwardInput = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0)
-    - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-  const boosting = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  const braking = keys.has('Space');
+  const input = flightInput.update(renderer);
+  const boosting = input.boost;
+  const braking = input.brake;
 
   const P = flightProfile;
   // Boost skaluje RÓWNIEŻ przyspieszenie, nie tylko pułap prędkości -
@@ -347,29 +389,27 @@ function updateShip(delta) {
   // ze ścianą przy puszczeniu Shift.
   if (braking) {
     shipState.speed *= Math.max(0, 1 - P.drag * 2 * delta);
-  } else if (forwardInput > 0) {
+  } else if (input.throttle > 0) {
     shipState.speed = shipState.speed < maxSpeed
-      ? Math.min(shipState.speed + acceleration * delta, maxSpeed)
+      ? Math.min(shipState.speed + acceleration * input.throttle * delta, maxSpeed)
       : shipState.speed * Math.max(0, 1 - P.drag * delta);
-  } else if (forwardInput < 0) {
+  } else if (input.throttle < 0) {
     const minSpeed = -maxSpeed * 0.4;
     shipState.speed = shipState.speed > minSpeed
-      ? Math.max(shipState.speed - acceleration * delta, minSpeed)
+      ? Math.max(shipState.speed + acceleration * input.throttle * delta, minSpeed)
       : shipState.speed * Math.max(0, 1 - P.drag * delta);
   } else {
     shipState.speed *= Math.max(0, 1 - P.drag * delta);
   }
 
   // Celowanie: im większy statek (proxy masy z flightProfile - patrz
-  // deriveFlightProfile), tym wolniej reaguje na mysz/A-D - ten sam
+  // deriveFlightProfile), tym wolniej reaguje na sterowanie - ten sam
   // "bezwładnościowy" duch co reszta silnika, tylko przeniesiony na
   // 3 osie zamiast jednej.
   const rateScale = Math.sqrt(P.maxYawSpeed / 2.2); // 1.0 dla warbird-light, mniej dla cięższych
-  const targetPitch = -mouseY * PITCH_RATE * rateScale;
-  const targetYaw = -mouseX * YAW_RATE * rateScale;
-  let roll = 0;
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) roll += ROLL_RATE * rateScale;
-  if (keys.has('KeyD') || keys.has('ArrowRight')) roll -= ROLL_RATE * rateScale;
+  const targetPitch = input.pitch * PITCH_RATE * rateScale;
+  const targetYaw = input.yaw * YAW_RATE * rateScale;
+  const roll = input.roll * ROLL_RATE * rateScale;
 
   shipGroup.rotateY(targetYaw * delta);
   shipGroup.rotateX(targetPitch * delta);
@@ -380,13 +420,34 @@ function updateShip(delta) {
 }
 
 // ============================================================
-// KAMERA TRZECIOOSOBOWA "NA SPRĘŻYNIE" (bez zmian koncepcyjnych
-// względem kroku 2 - offsety są teraz per-statek, patrz deriveCameraRig)
+// KAMERA TRZECIOOSOBOWA "NA SPRĘŻYNIE" (desktop/dotyk) LUB KOKPIT
+// SZTYWNO PRZYPIĘTY DO STATKU (VR) - operujemy na cameraRig, NIE na
+// samej `camera` (patrz komentarz przy tworzeniu cameraRig na górze
+// pliku - w VR to WebXR rusza kamerą wewnątrz rig-a, nie my).
+//
+// DLACZEGO ROZDZIELAMY TRYBY: poza VR chcemy płynnej, "sprężystej"
+// kamery pogoniowej (lerp - patrz krok 2). W VR lerp/opóźnienie kamery
+// względem ruchu gracza to prosta droga do choroby lokomocyjnej (mózg
+// czuje ruch przez błędnik, ale oczy widzą go z doganiającym
+// opóźnieniem - klasyczny trigger VR sickness). W VR rig musi być
+// SZTYWNO przypięty do statku, klatka po klatce, bez wygładzania.
 // ============================================================
 const desiredCamPos = new THREE.Vector3();
 const desiredLookAt = new THREE.Vector3();
 
 function updateCamera(delta) {
+  if (renderer.xr.isPresenting) {
+    // Kokpit: rig siedzi w konkretnym punkcie statku (lekko z przodu/
+    // góry, jak miejsce pilota), sztywno obracany razem z shipGroup.
+    // Headset dokłada swobodny look w tym punkcie - to WebXR robi
+    // automatycznie, nadpisując lokalną pozycję/rotację `camera`.
+    const cockpitOffset = new THREE.Vector3(0, cockpitOffsetY, cockpitOffsetZ);
+    cameraRig.position.copy(shipGroup.position)
+      .add(cockpitOffset.applyQuaternion(shipGroup.quaternion));
+    cameraRig.quaternion.copy(shipGroup.quaternion);
+    return;
+  }
+
   desiredCamPos.copy(cameraOffset).applyQuaternion(shipGroup.quaternion);
   desiredCamPos.add(shipGroup.position);
 
@@ -394,25 +455,26 @@ function updateCamera(delta) {
   desiredLookAt.add(shipGroup.position);
 
   const followLerp = 1 - Math.pow(0.0001, delta);
-  camera.position.lerp(desiredCamPos, followLerp);
+  cameraRig.position.lerp(desiredCamPos, followLerp);
 
   // Statek ma teraz pełne 3D (pitch/roll, nie tylko yaw) - kamera musi
   // dziedziczyć jego "up", inaczej przy przechyle horyzont statku i kamery
   // się rozjadą (statek się przechyla, kamera zostaje "pozioma").
   const desiredUp = new THREE.Vector3(0, 1, 0).applyQuaternion(shipGroup.quaternion);
-  camera.up.lerp(desiredUp, followLerp);
+  cameraRig.up.lerp(desiredUp, followLerp);
 
-  const currentLookAt = camera.position.clone().add(
-    new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).multiplyScalar(10)
+  const currentLookAt = cameraRig.position.clone().add(
+    new THREE.Vector3(0, 0, -1).applyQuaternion(cameraRig.quaternion).multiplyScalar(10)
   );
   currentLookAt.lerp(desiredLookAt, followLerp);
-  camera.lookAt(currentLookAt);
+  cameraRig.lookAt(currentLookAt);
 }
 
 // ============================================================
 // RESIZE
 // ============================================================
 window.addEventListener('resize', () => {
+  if (renderer.xr.isPresenting) return; // WebXR zarządza rozmiarem framebuffera samo w trakcie sesji VR
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -421,6 +483,12 @@ window.addEventListener('resize', () => {
 // ============================================================
 // START + PĘTLA ANIMACJI
 // ============================================================
+// WAŻNE: renderer.setAnimationLoop(), NIE requestAnimationFrame() -
+// to wymóg WebXR. Trzyma się tego samego API poza sesją VR (przeglądarka
+// wywołuje callback jak zwykły rAF), ale gdy gracz wejdzie w VR, ten sam
+// callback zaczyna być synchronizowany z odświeżaniem headsetu (zwykle
+// 90 Hz, nie 60 Hz jak typowy monitor) - requestAnimationFrame by tego
+// nie obsłużył poprawnie.
 const clock = new THREE.Clock();
 
 function animate() {
@@ -431,12 +499,11 @@ function animate() {
   updateCamera(delta);
 
   renderer.render(scene, camera);
-  requestAnimationFrame(animate);
 }
 
 loadShip(0)
   .then(() => {
-    camera.position.copy(shipGroup.position).add(cameraOffset); // start bez "najazdu" kamery
+    cameraRig.position.copy(shipGroup.position).add(cameraOffset); // start bez "najazdu" kamery
   })
   .catch((err) => {
     // WAŻNE: nie zostawiamy sceny czarnej bez wyjaśnienia. Najczęstsza
@@ -450,4 +517,4 @@ loadShip(0)
       'Sprawdź, czy serwer działa z KATALOGU GŁÓWNEGO repo, nie z tego podfolderu.';
     loadingEl.classList.add('visible');
   })
-  .finally(() => animate()); // scena (gwiazdy/kamera/układ potrójny) renderuje się ZAWSZE, nawet gdy statek padnie
+  .finally(() => renderer.setAnimationLoop(animate)); // scena (gwiazdy/kamera/układ potrójny) renderuje się ZAWSZE, nawet gdy statek padnie

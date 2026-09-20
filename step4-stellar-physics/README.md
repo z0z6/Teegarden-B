@@ -1,10 +1,83 @@
 # Krok 4 — Układ potrójny (prawdziwa fizyka) + sztuczne oświetlenie statku
 
 ## Sterowanie
-Bez zmian względem kroku 3: mysz — celowanie (pitch/yaw), W/S — ciąg,
-A/D — przechył (roll), Shift — boost, Spacja — hamulec, 1-4 —
-zaokrętowanie. Szczegóły schematu sterowania (dlaczego mysz, nie tylko
-A/D jak w kroku 2) — patrz `step3-ships/README.md`.
+
+**Desktop:** mysz — celowanie (pitch/yaw), W/S — ciąg, A/D — przechył
+(roll), Shift — boost, Spacja — hamulec, 1-4 — zaokrętowanie. Szczegóły
+schematu sterowania (dlaczego mysz, nie tylko A/D jak w kroku 2) —
+patrz `step3-ships/README.md`.
+
+**Dotyk (Android/mobile):** dwa wirtualne joysticki ("twin-stick",
+typowy schemat mobilnych symulatorów lotu) — lewy celuje (pitch/yaw),
+prawy steruje przechyłem (X) i ciągiem (Y, w górę = do przodu).
+Przyciski BOOST i STOP obok prawego joysticka, "Zmień statek" w rogu
+(brak klawiszy 1-4 na telefonie, więc cykliczne przełączanie). UI
+dotykowe pokazuje się automatycznie na urządzeniach z `pointer: coarse`
+(czyli w praktyce: ekranach dotykowych) — na desktopie z myszą jest
+całkowicie ukryte przez CSS, nie przeszkadza.
+
+**VR (WebXR):** przycisk "ENTER VR" w dolnym rogu ekranu (widoczny
+tylko gdy przeglądarka/urządzenie faktycznie wspiera WebXR — biblioteka
+`VRButton` z three.js sama to wykrywa i w przeciwnym razie pokazuje
+wyszarzone "VR NOT SUPPORTED"). W VR: lewy kontroler = celowanie +
+hamulec (spust), prawy kontroler = przechył/ciąg + spust (dodatkowy
+ciąg) + chwyt boczny (boost). Mapowanie wg profilu `xr-standard`
+WebXR Input Profiles — **nieprzetestowane na realnym headsecie**, patrz
+zastrzeżenie niżej.
+
+## Zunifikowany input (`shared/input/flight-controls.js`)
+
+Trzy zupełnie różne metody sterowania (klawiatura+mysz, dotyk, kontrolery
+XR) zasilają JEDEN wspólny stan (`pitch/yaw/roll/throttle/boost/brake`,
+każde w zakresie -1..1) — `updateShip()` w `main.js` czyta tylko ten
+stan i nie wie (ani nie musi wiedzieć), skąd input pochodzi. Moduł sam
+wybiera, które źródło jest "aktywne" w danej klatce: kontrolery XR mają
+pierwszeństwo (jeśli trwa sesja VR), potem dotyk (jeśli ktoś aktualnie
+trzyma joystick/przycisk), na końcu klawiatura+mysz jako domyślne.
+
+Dzięki tej separacji dodanie NOWEGO sposobu sterowania (np. gamepad USB,
+głosowe komendy) wymagałoby tylko dopisania czwartego "źródła" w
+`flight-controls.js` - reszta silnika lotu zostaje nietknięta.
+
+## Kokpit w VR: `cameraRig`, nie bezpośrednio `camera`
+
+To był największy refaktor pod VR. Poza sesją WebXR kamera i tak
+zachowuje się jak wcześniej (kamera pogoniowa "na sprężynie"), ale
+technicznie steruje teraz obiektem `cameraRig` (pusty `THREE.Group`),
+a nie samą `camera` — bo w VR **WebXR samo nadpisuje lokalną
+pozycję/rotację `camera`** na podstawie śledzenia headsetu. Gdybyśmy
+nadal sterowali `camera` bezpośrednio, każda nasza zmiana byłaby co
+klatkę nadpisywana przez silnik VR. Zamiast tego poruszamy/obracamy
+RODZICA (`cameraRig` = "gdzie w statku siedzi gracz"), a headset dokłada
+swobodny look w jego wnętrzu.
+
+**W VR kamera jest SZTYWNO przypięta do statku (bez lerp/opóźnienia)**,
+inaczej niż poza VR. To świadoma decyzja: opóźnienie kamery względem
+ruchu gracza w VR to prosta droga do choroby lokomocyjnej (mózg czuje
+ruch przez błędnik, ale oczy widzą go z doganiającym opóźnieniem —
+klasyczny trigger VR sickness). Pozycja "kokpitu" (`cockpitOffsetY/Z`)
+jest bliżej kadłuba niż kamera pogoniowa i przeliczana per-statek w
+`loadShip()`, tym samym wzorcem co `cameraOffset`.
+
+## `renderer.setAnimationLoop()`, nie `requestAnimationFrame()`
+
+Wymóg WebXR — poza sesją VR zachowuje się identycznie jak zwykłe rAF,
+ale gdy gracz wejdzie w VR, ten sam callback zaczyna być zsynchronizowany
+z odświeżaniem HEADSETU (zwykle 90 Hz), nie monitora (60 Hz). Zwykły
+`requestAnimationFrame` by tego nie obsłużył poprawnie.
+
+## Zastrzeżenie: VR nieprzetestowane na realnym sprzęcie
+
+Zbudowałem WebXR zgodnie ze specyfikacją (VRButton, cameraRig,
+setAnimationLoop, odczyt gamepadów kontrolerów wg `xr-standard`) i
+zweryfikowałem, co dało się zweryfikować bez headsetu: przycisk VR
+poprawnie wykrywa brak/obecność wsparcia WebXR, nie ma błędów JS przy
+starcie, kod przechodzi przez wszystkie dotychczasowe testy regresji
+(desktop, dotyk). **Nie mam fizycznego headsetu w tym środowisku**, więc
+faktyczne renderowanie stereo, komfort kokpitu i dokładne mapowanie osi/
+przycisków kontrolerów wymagają testu na prawdziwym sprzęcie (Quest i
+podobne). Jeśli Twój kontroler reaguje odwrotnie/nie reaguje wcale,
+pierwsze miejsce do poprawki to `updateXR()` w `flight-controls.js`.
 
 ## Aktualizacja skali i światła (v2)
 
@@ -177,7 +250,14 @@ układzie, nic nie jest oskryptowane osobno).
   od throttle.
 - Dodaj prostą detekcję kolizji statek-gwiazda (choćby sferyczną, patrz
   promienie w `RADIUS` w `triple-star-system.js`).
+- **Przetestuj VR na realnym headsecie** i popraw mapowanie osi/
+  przycisków w `updateXR()` (`shared/input/flight-controls.js`), jeśli
+  Twój kontroler różni się od zakładanego profilu `xr-standard`.
+- Ukryj/przezrocz kadłub statku w widoku kokpitowym VR (obecnie kamera
+  siedzi tuż przy kadłubie, ale wnętrze statku nie ma modelowanej
+  kabiny — możesz zobaczyć fragmenty geometrii kadłuba od środka).
 
 ## Co dalej (Krok 5?)
 LOD zależny od dystansu (nadal czeka z kroku 3), HUD z prędkością,
-kolizje, broń, AI.
+kolizje, broń, AI. Ewentualnie: dodanie tego samego sterowania dotyk/VR
+do step3-ships (obecnie tylko step4 je ma).
