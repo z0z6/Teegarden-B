@@ -5,14 +5,19 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 // ============================================================
 // Galeria statków: narzędzie deweloperskie, nie krok gry.
 // Cel: pokazać wszystkie 4 statki z floty z tej samej, spójnej
-// perspektywy (nieco za plecami, z góry), każdy zajmujący DOKŁADNIE
-// tę samą proporcję kadru (dopasowanie kuli otaczającej do FOV kamery,
-// patrz komentarz przy `sphere` niżej) - I zdiagnozować, czy któryś
-// się nie ładuje (błąd wyświetlony wprost w panelu, nie tylko w konsoli).
+// perspektywy, każdy zajmujący DOKŁADNIE tę samą proporcję kadru
+// (dopasowanie kuli otaczającej do FOV kamery).
+//
+// KAŻDY PANEL POKAZUJE NA STAŁE, W JAKIM JEST STANIE (status w lewym
+// górnym rogu) - "inicjalizacja", "ładowanie", "gotowe" albo "BŁĄD: ...".
+// To nie jest kosmetyka: poprzednia wersja pokazywała błąd tylko przy
+// nieudanym ŁADOWANIU MODELU, ale nie łapała błędów przy tworzeniu samego
+// renderera (np. limit jednoczesnych kontekstów WebGL w przeglądarce) -
+// taki błąd w zwykłej pętli `for` potrafi po cichu przerwać budowanie
+// KOLEJNYCH paneli, więc widać tylko pierwszy. Teraz każdy panel jest
+// budowany w try/catch, niezależnie od pozostałych.
 // ============================================================
 
-// Ścieżki względne z tools/ship-gallery/ (dwa poziomy od korzenia repo) -
-// stąd "../../", nie "../" jak w step3-ships/step4-stellar-physics.
 const SHIPS = [
   { id: 'warbird-light', name: 'Warbird — Light Skirmisher', file: '../../shared/ships/models/warbird-light-lod0.glb' },
   { id: 'raptor-interceptor', name: 'Raptor-class Interceptor', file: '../../shared/ships/models/raptor-interceptor-lod0.glb' },
@@ -25,14 +30,18 @@ loader.setMeshoptDecoder(MeshoptDecoder);
 
 const grid = document.getElementById('grid');
 
-function buildPanel(def) {
+function setStatus(statusEl, text, isError = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('status-error', isError);
+}
+
+function createPanelShell(def) {
   const panel = document.createElement('div');
   panel.className = 'panel';
 
-  const loadingEl = document.createElement('div');
-  loadingEl.className = 'loading';
-  loadingEl.textContent = 'Ładowanie…';
-  panel.appendChild(loadingEl);
+  const statusEl = document.createElement('div');
+  statusEl.className = 'status';
+  panel.appendChild(statusEl);
 
   const label = document.createElement('div');
   label.className = 'label';
@@ -40,14 +49,32 @@ function buildPanel(def) {
   panel.appendChild(label);
 
   grid.appendChild(panel);
+  return { panel, statusEl };
+}
 
-  // --- Każdy panel to NIEZALEŻNA scena/kamera/renderer. Prostsze niż
-  // jeden wspólny canvas z ręcznym scissor testem, kosztem trochę większego
-  // zużycia zasobów - dla narzędzia dev/QA (nie dla właściwej gry) to
-  // akceptowalny kompromis. ---
+function buildPanel(def) {
+  const { panel, statusEl } = createPanelShell(def);
+  setStatus(statusEl, 'inicjalizacja renderera…');
+
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+  } catch (err) {
+    // Najbardziej prawdopodobna przyczyna: limit jednoczesnych kontekstów
+    // WebGL w przeglądarce (zwykle 8-16, ale bywa niżej na słabszym GPU/
+    // starszej przeglądarce) - 4 osobne <canvas> w tym narzędziu to i tak
+    // niedużo, ale jeśli w tej samej karcie jest otwarte coś jeszcze...
+    setStatus(statusEl, `BŁĄD renderera: ${err?.message || err}`, true);
+    console.error(`[galeria] ${def.id}: WebGLRenderer się nie utworzył:`, err);
+    return;
+  }
+  if (!renderer.getContext()) {
+    setStatus(statusEl, 'BŁĄD: przeglądarka nie dała kontekstu WebGL (limit kontekstów?)', true);
+    return;
+  }
+
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 4 / 3, 0.1, 20000);
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   panel.appendChild(renderer.domElement);
@@ -60,27 +87,46 @@ function buildPanel(def) {
   rim.position.set(-1, 0.4, -0.8);
   scene.add(rim);
 
+  // Sześcian-placeholder widoczny OD RAZU, zanim statek się wczyta - jeśli
+  // widzisz obracający się sześcian, ale nigdy statku, to renderer/scena
+  // działają poprawnie i problem jest w samym ładowaniu modelu (patrz
+  // status w panelu). Jeśli NIE widzisz nawet sześcianu - problem jest
+  // w samym renderowaniu/canvasie, nie w modelu.
+  const placeholder = new THREE.Mesh(
+    new THREE.BoxGeometry(4, 4, 4),
+    new THREE.MeshStandardMaterial({ color: 0x88ccff, wireframe: true })
+  );
+  scene.add(placeholder);
+  camera.position.set(6, 6, 10);
+  camera.lookAt(0, 0, 0);
+
   function resize() {
     const w = panel.clientWidth, h = panel.clientHeight;
-    if (w === 0 || h === 0) return; // layout jeszcze nie policzony - poczekaj na kolejne wywołanie ResizeObserver
+    if (w === 0 || h === 0) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(panel);
-  // Wywołanie na starcie bywa za wczesne (panel.clientWidth może być
-  // jeszcze 0, zanim CSS grid policzy layout) - rAF daje przeglądarce
-  // jedną klatkę na policzenie rozmiarów. ResizeObserver i tak złapie
-  // każdą kolejną zmianę, to tylko na pierwszą klatkę.
   requestAnimationFrame(resize);
 
-  let pivotGroup = new THREE.Group(); // obrót "turntable", niezależny od kamery
+  const pivotGroup = new THREE.Group();
   scene.add(pivotGroup);
+
+  setStatus(statusEl, 'ładowanie modelu…');
 
   loader.load(
     def.file,
     (gltf) => {
-      loadingEl.remove();
+      let triCount = 0;
+      gltf.scene.traverse((o) => {
+        if (o.isMesh) {
+          const g = o.geometry;
+          triCount += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+        }
+      });
+
+      scene.remove(placeholder);
       const model = gltf.scene;
 
       const box = new THREE.Box3().setFromObject(model);
@@ -89,49 +135,62 @@ function buildPanel(def) {
       model.position.set(-center.x, -box.min.y, -center.z);
       pivotGroup.add(model);
 
-      // DOPASOWANIE KULI OTACZAJĄCEJ DO POLA WIDZENIA - w przeciwieństwie
-      // do poprzedniej wersji (dystans liczony z przekątnej bounding boxa,
-      // co dla wydłużonych kształtów jak Kharath nie gwarantowało realnego
-      // zmieszczenia się w kadrze - przekątna "po skosie" to nie to samo,
-      // co kątowy rozmiar widziany z danego kierunku patrzenia), liczymy
-      // dystans wprost z geometrii: promień kuli otaczającej / sin(FOV/2).
-      // To JEST matematyczna gwarancja, że cały statek zmieści się w kadrze,
-      // niezależnie od proporcji/kształtu - i że każdy statek zajmie
-      // DOKŁADNIE tę samą proporcję ekranu (ten sam margines), więc są
-      // ze sobą realnie porównywalne.
+      // Dopasowanie kuli otaczającej do FOV - patrz README/komentarz
+      // w poprzedniej wersji tego pliku po pełne wyjaśnienie; w skrócie:
+      // dystans = promień / sin(FOV/2), więc każdy statek zajmuje
+      // dokładnie ten sam kątowy rozmiar w kadrze, niezależnie od kształtu.
       const recentered = new THREE.Box3().setFromObject(model);
       const sphere = recentered.getBoundingSphere(new THREE.Sphere());
-
-      const margin = 1.35; // odrobina oddechu wokół statku (35% zapasu)
+      const margin = 1.35;
       const fovRad = THREE.MathUtils.degToRad(camera.fov);
       const distance = (sphere.radius / Math.sin(fovRad / 2)) * margin;
-
-      // Kierunek "nieco za plecami, z góry" - stały, znormalizowany wektor,
-      // przeskalowany do WYLICZONEGO dystansu (a nie odwrotnie).
       const viewDir = new THREE.Vector3(0, 0.35, 1).normalize();
       camera.position.copy(sphere.center).addScaledVector(viewDir, distance);
       camera.lookAt(sphere.center);
       camera.near = Math.max(distance - sphere.radius * 3, 0.05);
       camera.far = distance + sphere.radius * 6;
       camera.updateProjectionMatrix();
+
+      setStatus(statusEl, `gotowe (${Math.round(triCount)} trójkątów)`);
     },
-    undefined,
+    (progress) => {
+      if (progress.total) {
+        const pct = Math.round((progress.loaded / progress.total) * 100);
+        setStatus(statusEl, `ładowanie modelu… ${pct}%`);
+      }
+    },
     (err) => {
-      loadingEl.remove();
-      const errEl = document.createElement('div');
-      errEl.className = 'error';
-      errEl.textContent = `Błąd wczytywania (${def.file}): ${err?.message || err}`;
-      panel.appendChild(errEl);
+      setStatus(statusEl, `BŁĄD ładowania (${def.file}): ${err?.message || err}`, true);
       console.error(`[galeria] ${def.id} nie wczytał się:`, err);
     }
   );
 
   function animate() {
-    pivotGroup.rotation.y += 0.006; // powolny obrót "na wystawie"
-    renderer.render(scene, camera);
+    pivotGroup.rotation.y += 0.006;
+    placeholder.rotation.y += 0.01;
+    placeholder.rotation.x += 0.006;
+    try {
+      renderer.render(scene, camera);
+    } catch (err) {
+      // Błąd renderowania (np. utrata kontekstu WebGL w trakcie działania)
+      // - zatrzymaj pętlę TEGO panelu, nie zabijaj reszty strony.
+      setStatus(statusEl, `BŁĄD renderowania: ${err?.message || err}`, true);
+      console.error(`[galeria] ${def.id}: błąd w renderer.render():`, err);
+      return;
+    }
     requestAnimationFrame(animate);
   }
   animate();
 }
 
-for (const def of SHIPS) buildPanel(def);
+// Każdy panel budowany NIEZALEŻNIE - błąd przy jednym (np. wyczerpany
+// limit kontekstów WebGL) nie może ubić budowy pozostałych trzech.
+for (const def of SHIPS) {
+  try {
+    buildPanel(def);
+  } catch (err) {
+    console.error(`[galeria] Krytyczny błąd przy budowie panelu ${def.id}:`, err);
+    const { statusEl } = createPanelShell(def);
+    setStatus(statusEl, `BŁĄD KRYTYCZNY: ${err?.message || err}`, true);
+  }
+}

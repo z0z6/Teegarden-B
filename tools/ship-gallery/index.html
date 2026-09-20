@@ -36,14 +36,14 @@
     }
     .panel .label .name { font-weight: 600; color: #d9f3ff; }
     .panel .label .meta { color: #7fa3c2; font-size: 11px; margin-top: 2px; }
-    .panel .error {
-      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      padding: 16px; text-align: center; font-size: 12px; color: #ffb4b4;
-      background: rgba(80,10,10,.25);
+    .panel .status {
+      position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+      padding: 6px 10px; font-size: 11px; font-family: monospace;
+      color: #7fa3c2; background: rgba(0,0,0,.55);
+      pointer-events: none; word-break: break-word;
     }
-    .panel .loading {
-      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      font-size: 12px; color: #7fa3c2;
+    .panel .status.status-error {
+      color: #ffb4b4; background: rgba(90,10,10,.75);
     }
   </style>
 
@@ -63,9 +63,10 @@
        dystans kamery liczony z promienia kuli otaczającej każdy statek względem
        pola widzenia (FOV), więc każdy zajmuje DOKŁADNIE tę samą proporcję kadru,
        niezależnie od kształtu czy 10× różnicy skali między myśliwcem a Kharathem.
-       Jeśli któryś panel pokazuje czerwony błąd zamiast statku — to jest
-       dokładnie ta informacja, której potrzeba do zdiagnozowania problemu
-       z ładowaniem modelu.</p>
+       Każdy panel ma na stałe widoczny pasek statusu (lewy górny róg) i pokazuje
+       obracający się szkieletowy sześcian, zanim statek się wczyta — jeśli widzisz
+       sześcian, ale nigdy statku, problem jest w ładowaniu modelu (czytaj status);
+       jeśli nie widzisz nawet sześcianu, problem jest w samym renderowaniu.</p>
   </header>
   <div id="grid"></div>
   <script type="module" src="./main.js"></script>
