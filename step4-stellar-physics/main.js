@@ -434,6 +434,7 @@ function updateShip(delta) {
 // ============================================================
 const desiredCamPos = new THREE.Vector3();
 const desiredLookAt = new THREE.Vector3();
+const lookMatrix = new THREE.Matrix4();
 
 function updateCamera(delta) {
   if (renderer.xr.isPresenting) {
@@ -467,7 +468,19 @@ function updateCamera(delta) {
     new THREE.Vector3(0, 0, -1).applyQuaternion(cameraRig.quaternion).multiplyScalar(10)
   );
   currentLookAt.lerp(desiredLookAt, followLerp);
-  cameraRig.lookAt(currentLookAt);
+
+  // UWAGA: NIE używamy tu cameraRig.lookAt(currentLookAt)! Object3D.lookAt()
+  // ma DWIE różne konwencje: dla Camera/Light kieruje lokalne -Z na cel,
+  // ale dla zwykłego obiektu (a cameraRig to zwykła THREE.Group) kieruje
+  // na cel lokalne +Z. Kamera wewnątrz rig-a patrzy w -Z rig-a, więc
+  // cameraRig.lookAt() odwracał ją tyłem do statku. Gorzej: powyżej
+  // currentLookAt jest liczony z kierunku -Z rig-a (z poprzedniej klatki),
+  // więc odwrócenie zamieniało się w sprzężenie zwrotne - kamera
+  // przeskakiwała o 180° CO KLATKĘ (obraz drga, czerwony olbrzym mruga,
+  // statku nie widać). Rozwiązanie: Matrix4.lookAt() zawsze używa konwencji
+  // kamery (-Z na cel), niezależnie od typu obiektu.
+  lookMatrix.lookAt(cameraRig.position, currentLookAt, cameraRig.up);
+  cameraRig.quaternion.setFromRotationMatrix(lookMatrix);
 }
 
 // ============================================================
