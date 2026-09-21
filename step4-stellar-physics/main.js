@@ -4,13 +4,20 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { createTripleStarSystem } from '../shared/systems/triple-star-system.js';
 import { createFlightInput } from '../shared/input/flight-controls.js';
+import { createSpaceBackground } from '../shared/systems/space-background.js';
+import { createDebrisField } from '../shared/systems/debris-field.js';
+import { resolveCollisions, collectSolidBodies } from '../shared/systems/collision.js';
+import { createDashboard, CREW } from '../shared/systems/dashboard.js';
+import { SHIPS, visualYawFor, deriveCameraRig } from '../shared/ships/fleet.js';
 
 // ============================================================
 // KROK 4: Układ potrójny (prawdziwa fizyka N-ciał) + sztuczne
 // oświetlenie statku gracza + sterowanie dotykowe (Android) i VR (WebXR)
 // Nowe pojęcia: integracja leapfrog, hierarchiczny układ potrójny,
 // cząstka testowa (planeta pod wpływem grawitacji, bez wpływu zwrotnego),
-// zunifikowany input (klawiatura/dotyk/XR), rig kamery pod WebXR
+// zunifikowany input (klawiatura/dotyk/XR), rig kamery pod WebXR,
+// tło "w nieskończoności" (gwiazdy + mgławice), kolizje, gruz/meteoryty
+// i dashboard gracza (telemetria + komunikaty załogi)
 // ============================================================
 
 const scene = new THREE.Scene();
@@ -52,49 +59,13 @@ document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
 // ============================================================
-// GWIAZDY W TLE (bez zmian względem kroku 1/2)
+// TŁO: gwiazdy + mgławice "w nieskończoności" (patrz
+// shared/systems/space-background.js). Stary starfield z kroków 1-3
+// (Points w promieniu 200000 j.) tu nie działał: rozmiar punktów w
+// jednostkach świata kurczył się do ułamka piksela, a statek lecący
+// kilkadziesiąt tysięcy jednostek widział paralaksę tła.
 // ============================================================
-function createStarfield(count = 6000, radius = 1500) {
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    const r = radius * (0.3 + 0.7 * Math.random());
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-
-    positions.set(
-      [
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.sin(phi) * Math.sin(theta),
-        r * Math.cos(phi),
-      ],
-      i * 3
-    );
-
-    const tint = Math.random();
-    const color = new THREE.Color();
-    if (tint < 0.7) color.setHSL(0.6, 0.2, 0.85 + Math.random() * 0.15);
-    else if (tint < 0.9) color.setHSL(0.15, 0.3, 0.8);
-    else color.setHSL(0.02, 0.5, 0.75);
-    colors.set([color.r, color.g, color.b], i * 3);
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  const material = new THREE.PointsMaterial({
-    size: 2,
-    sizeAttenuation: true,
-    vertexColors: true,
-    transparent: true,
-    depthWrite: false,
-  });
-
-  return new THREE.Points(geometry, material);
-}
-scene.add(createStarfield(6000, 200000)); // tło dalej niż cały układ (skala ~48000) - żeby gwiazdy w tle faktycznie wyglądały na odległe
+const background = createSpaceBackground(renderer, scene);
 
 // Oświetlenie bazowe: bardzo słaby ambient, żeby ciemna strona statku
 // nigdy nie była całkowicie czarna (w kroku 1/2/3 to samo światło "dorabiał"
@@ -114,37 +85,12 @@ const starSystem = createTripleStarSystem(scene);
 // ============================================================
 // FLOTA DO WYBORU
 // ============================================================
-// Modele generowane są proceduralnie (kod w shared/ships/source/),
-// tu wczytujemy gotowe, wyeksportowane .glb (LOD0 - najwyższy detal;
-// przełączanie LOD w zależności od dystansu wciąż czeka - dobry temat
-// na krok 5, patrz README).
-//
-// WAŻNE — konwencja "przodu": wszystkie 4 modele mają dziób w lokalnym
-// +Z, a ten silnik (patrz krok 2) zakłada, że przód statku to lokalne
-// -Z. Dlatego każdy wczytany model obracamy o 180° (patrz loadShip()).
-const SHIPS = [
-  {
-    id: 'warbird-light',
-    name: 'Warbird — Light Skirmisher',
-    file: '../shared/ships/models/warbird-light-lod0.glb',
-  },
-  {
-    id: 'raptor-interceptor',
-    name: 'Raptor-class Interceptor',
-    file: '../shared/ships/models/raptor-interceptor-lod0.glb',
-  },
-  {
-    id: 'warbird-heavy',
-    name: 'Warbird — Heavy Siege Interceptor',
-    file: '../shared/ships/models/warbird-heavy-lod0.glb',
-  },
-  {
-    id: 'kharath-destroyer',
-    name: 'Kharath — Heavy Destroyer',
-    file: '../shared/ships/models/kharath-destroyer-lod0.glb',
-  },
-];
-
+// Definicje statków (plik, nazwa, orientacja dziobu) i kadrowanie kamery
+// siedzą we WSPÓLNYM pliku shared/ships/fleet.js - ten sam dla kroków 3 i 4,
+// żeby poprawka jednego statku nie musiała być powielana ręcznie.
+// Modele generowane są proceduralnie (kod w shared/ships/source/), tu
+// wczytujemy gotowe .glb (LOD0 - przełączanie LOD wg dystansu wciąż czeka,
+// patrz README).
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder); // LOD1/LOD2 są skompresowane (meshopt) - LOD0 też można, patrz README
 
@@ -161,6 +107,18 @@ const shipGroup = new THREE.Group();
 const spawnRadius = starSystem.constants.PLANET_ORBIT_RADIUS * 1.25; // wyraźnie poza orbitą planety
 shipGroup.position.set(0, spawnRadius * 0.08, spawnRadius);
 scene.add(shipGroup);
+
+// Gruz i meteoryty wokół punktu startowego: prawdziwe ciała stałe (dryfują,
+// kolidują ze statkiem) i jednocześnie źródło realnych alertów dla
+// dashboardu ("zbliżające się obiekty"). Więcej i bliżej niż domyślne
+// ustawienia modułu (70 szt./4000-60000 j.), bo statek startuje w
+// pustce daleko od układu i przy domyślnych wartościach niemal nic by
+// się nie zdarzało.
+const debrisField = createDebrisField(scene, shipGroup.position.clone(), {
+  count: 90,
+  innerRadius: 3000,
+  outerRadius: 30000,
+});
 
 // visualGroup trzyma stały obrót "180° korekty dziobu" (patrz wyżej),
 // a na to nakładamy jeszcze kosmetyczny bank (przechył) przy skręcie -
@@ -198,6 +156,8 @@ let cameraLookOffset = new THREE.Vector3(0, 1, -6);
 // Przeliczana per-statek w loadShip(), tak jak cameraOffset.
 let cockpitOffsetY = 1.5;
 let cockpitOffsetZ = 1.5;
+// Promień kolizji statku (sfera) - przeliczany per-statek w loadShip().
+let collisionRadius = 8;
 
 /**
  * Wyprowadza "czułość" fizyki z fizycznego rozmiaru modelu (przekątna
@@ -227,18 +187,6 @@ function deriveFlightProfile(boundingSize) {
     boostMultiplier: 14,
     drag: 0.7,
     maxYawSpeed: 2.2 / Math.sqrt(scale), // używane jako proxy "zwinności" do skalowania czułości myszy/rolla, patrz updateShip
-  };
-}
-
-function deriveCameraRig(boundingSize) {
-  const diag = boundingSize.length();
-  return {
-    offset: new THREE.Vector3(0, boundingSize.y * 0.5 + diag * 0.12, diag * 0.85),
-    lookOffset: new THREE.Vector3(0, boundingSize.y * 0.15, -diag * 0.35),
-    // Kokpit (VR): znacznie bliżej niż kamera pogoniowa - "miejsce
-    // pilota" z przodu/góry kadłuba, nie za statkiem.
-    cockpitY: boundingSize.y * 0.55,
-    cockpitZ: diag * 0.08,
   };
 }
 
@@ -281,13 +229,17 @@ async function loadShip(index) {
   // Wyśrodkuj model względem pivotu (środek masy w XZ, spód w Y),
   // żeby rotacje shipGroup nie kręciły statkiem "mimośrodowo".
   model.position.set(-center.x, -box.min.y, -center.z);
+  // Kamera dobiera dystans tak, żeby KAŻDY statek zajmował na ekranie tyle
+  // samo miejsca (patrz shared/ships/fleet.js, TARGET_SCREEN_SIZE). Pomiar
+  // renderuje model, więc też MUSI być przed visualGroup.add(model).
+  const yaw = visualYawFor(def);
+  const rig = deriveCameraRig({ renderer, model, size, yaw, fov: camera.fov, aspect: camera.aspect });
 
   visualGroup.add(model);
   currentModel = model;
   currentShipIndex = index;
 
   flightProfile = deriveFlightProfile(size);
-  const rig = deriveCameraRig(size);
   cameraOffset = rig.offset;
   cameraLookOffset = rig.lookOffset;
   cockpitOffsetY = rig.cockpitY;
@@ -297,16 +249,30 @@ async function loadShip(index) {
   // przy tworzeniu shipLight wyżej) - większy statek = szerszy zasięg.
   const diag = size.length();
   shipLight.distance = diag * 6;
-  shipLight.intensity = 400;
+  // Natężenie rośnie z KWADRATEM rozmiaru (decay=2): to samo światło 400
+  // dla 25-jednostkowego myśliwca daje czytelny kadłub, ale dla 193-
+  // jednostkowego Kharatha spadało ~60× (kadłub odległy o ~100 j. od
+  // lampy) i statek był prawie czarny. Skalowanie utrzymuje tę samą
+  // jasność kadłuba niezależnie od rozmiaru statku.
+  const REF_DIAG = 25; // przekątna myśliwców, dla których dobrano 400
+  shipLight.intensity = 400 * (diag / REF_DIAG) ** 2;
   shipLight.position.set(0, diag * 0.2, diag * 0.15);
+  collisionRadius = diag * 0.3; // sfera kolizji ~ "ciało" statku (Kharath jest wydłużony - to przybliżenie)
 
-  // Stała korekta "180° dziobu" (patrz komentarz przy SHIPS) - ustawiana
-  // RAZ tutaj, nie co klatkę, bo teraz visualGroup nie dźwiga już żadnej
-  // rotacji zależnej od sterowania (to całe pełne 3D - patrz updateShip).
-  visualGroup.rotation.set(0, Math.PI, 0);
+  // Korekta orientacji dziobu (patrz fleet.js: większość modeli ma dziób
+  // w +Z i wymaga obrotu o 180°, Kharath ma dziób w -Z i obrotu NIE
+  // wymaga) - ustawiana RAZ tutaj, nie co klatkę, bo visualGroup nie
+  // dźwiga żadnej rotacji zależnej od sterowania (patrz updateShip).
+  visualGroup.rotation.set(0, yaw, 0);
 
   nameEl.textContent = def.name;
   loadingEl.classList.remove('visible');
+  dashboard.show('ship-switch', {
+    crew: CREW.navigator,
+    text: `Zaokrętowano: ${def.name}. Systemy statku w gotowości.`,
+    urgency: 'info',
+    ttl: 3500,
+  });
 }
 
 // ============================================================
@@ -326,6 +292,10 @@ async function loadShip(index) {
 const shipState = {
   speed: 0,
 };
+// Ostatni odczyt sterowania i ostatnia kolizja - czytane przez dashboard
+// (updateDashboard), zapisywane w updateShip().
+let lastInput = null;
+let lastHit = { collided: false, body: null, normal: null, penetration: 0 };
 
 const flightInput = createFlightInput({
   onShipSwitch: (digit) => {
@@ -367,6 +337,7 @@ function updateShip(delta) {
   if (!flightProfile) return; // jeszcze nic nie wczytane
 
   const input = flightInput.update(renderer);
+  lastInput = input;
   const boosting = input.boost;
   const braking = input.brake;
 
@@ -417,6 +388,19 @@ function updateShip(delta) {
 
   const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(shipGroup.quaternion);
   shipGroup.position.addScaledVector(forwardDir, shipState.speed * delta);
+
+  // ŻELAZNA ZASADA (patrz collision.js): statek nigdy nie zagłębia się w
+  // gwiazdę/planetę/gruz - jest odpychany na powierzchnię, a prędkość
+  // tłumiona. Stały spadek prędkości w kontakcie (nie natychmiastowe
+  // zero) - statek "zsuwa się" po powierzchni zamiast stawać jak wryty.
+  lastHit = resolveCollisions(
+    shipGroup.position,
+    collisionRadius,
+    collectSolidBodies(starSystem, debrisField)
+  );
+  if (lastHit.collided) {
+    shipState.speed *= Math.max(0, 1 - 6 * delta);
+  }
 }
 
 // ============================================================
@@ -484,6 +468,179 @@ function updateCamera(delta) {
 }
 
 // ============================================================
+// DASHBOARD GRACZA
+// ============================================================
+// Dwie części (HTML/CSS w index.html):
+//  1) TELEMETRIA (lewy dolny róg): prędkość, tryb napędu, najbliższe ciało
+//     i odległość od barycentrum układu - to, co pilot chce widzieć cały czas.
+//  2) KOMUNIKATY ZAŁOGI (prawy górny róg, moduł shared/systems/dashboard.js):
+//     zdarzenia, na które trzeba zareagować, wypowiadane przez role załogi.
+//     Tryb "kanałów": warunek jest sprawdzany cyklicznie i wołamy show() dla
+//     kanału, dopóki jest prawdziwy - karta sama gaśnie po ttl, gdy przestaje.
+//
+// KTÓRE ALERTY SĄ "ŻYWE" (wołane z prawdziwych warunków w grze):
+//   - Nawigator:   zbliżanie do gwiazdy/planety, zaokrętowanie
+//   - Inżynier:    przegrzanie przy gwieździe, kontakt (kolizja)
+//   - Czujniki:    kurs kolizyjny / zbliżające się gruz i meteoryty
+// "Podłączony, ale bez zawartości": Oficer Taktyczny - w grze nie ma jeszcze
+// wrogów ani sojuszników, więc nie ma czego zgłaszać (patrz README).
+const dashboard = createDashboard(document.getElementById('crew-alerts'));
+
+const tm = {
+  speed: document.getElementById('tm-speed'),
+  bar: document.getElementById('tm-speed-bar'),
+  cruiseMark: document.getElementById('tm-cruise-mark'),
+  mode: document.getElementById('tm-mode'),
+  body: document.getElementById('tm-body'),
+  bodyDist: document.getElementById('tm-body-dist'),
+  origin: document.getElementById('tm-origin'),
+};
+
+const fmtDist = (d) => (d >= 10000 ? `${(d / 1000).toFixed(1)} tys.` : Math.round(d).toString());
+
+const _rel = new THREE.Vector3();
+const _vel = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+let dashboardTimer = 0; // alerty/telemetria ~10 Hz (nie co klatkę - mniej pracy dla DOM)
+
+/** Zwraca [{ name, R, position }] dla ciał niebieskich (bez gruzu). */
+function celestialBodies() {
+  const { RADIUS } = starSystem.constants;
+  return [
+    { name: 'gwiazda G', R: RADIUS.starA, position: starSystem.bodies.starA.position, star: true },
+    { name: 'biały karzeł', R: RADIUS.whiteDwarf, position: starSystem.bodies.whiteDwarf.position, star: true },
+    { name: 'czerwony olbrzym', R: RADIUS.redGiant, position: starSystem.bodies.redGiant.position, star: true },
+    { name: 'planeta', R: RADIUS.planet, position: starSystem.planet.position, star: false },
+  ];
+}
+
+function updateDashboard(delta) {
+  dashboard.tick(); // co klatkę: wygaszanie kart po ttl
+
+  dashboardTimer -= delta;
+  if (dashboardTimer > 0 || !flightProfile) return;
+  dashboardTimer = 0.1;
+
+  const shipPos = shipGroup.position;
+  _fwd.set(0, 0, -1).applyQuaternion(shipGroup.quaternion);
+  _vel.copy(_fwd).multiplyScalar(shipState.speed);
+
+  // --- najbliższe ciało niebieskie (odległość od POWIERZCHNI) ---
+  let nearest = null;
+  for (const b of celestialBodies()) {
+    const surf = shipPos.distanceTo(b.position) - b.R - collisionRadius;
+    if (!nearest || surf < nearest.surf) nearest = { ...b, surf };
+  }
+
+  // --- Nawigator/Inżynier: gwiazdy ---
+  // Progi względem promienia gwiazdy (z dolnym limitem dla białego karła,
+  // którego promień 140 j. dałby śmiesznie krótkie ostrzeżenie).
+  let nearestStar = null;
+  for (const b of celestialBodies()) {
+    if (!b.star) continue;
+    const surf = shipPos.distanceTo(b.position) - b.R - collisionRadius;
+    if (!nearestStar || surf < nearestStar.surf) nearestStar = { ...b, surf };
+  }
+  const warnDist = Math.max(nearestStar.R * 2, 1500);
+  const dangerDist = Math.max(nearestStar.R * 0.6, 500);
+  if (nearestStar.surf < dangerDist) {
+    dashboard.show('star-danger', {
+      crew: CREW.engineer, urgency: 'danger',
+      text: `Przegrzanie kadłuba! ${nearestStar.name}: ${fmtDist(Math.max(nearestStar.surf, 0))} j. od powierzchni — odlatuj!`,
+    });
+  } else if (nearestStar.surf < warnDist) {
+    dashboard.show('star-danger', {
+      crew: CREW.navigator, urgency: 'warning',
+      text: `Zbliżamy się do: ${nearestStar.name} (${fmtDist(nearestStar.surf)} j. od powierzchni).`,
+    });
+  }
+
+  // --- Nawigator: planeta ---
+  const planetSurf = shipPos.distanceTo(starSystem.planet.position) - starSystem.constants.RADIUS.planet - collisionRadius;
+  if (planetSurf < 3500) {
+    dashboard.show('planet-near', {
+      crew: CREW.navigator, urgency: 'info',
+      text: `Planeta na kursie: ${fmtDist(Math.max(planetSurf, 0))} j. od powierzchni.`,
+    });
+  }
+
+  // --- Czujniki: gruz i meteoryty ---
+  // Karta pojawia się tylko, gdy jest o czym ostrzegać (inaczej lista
+  // "wykryto: ..." wisiałaby na ekranie przez cały czas, bo w zasięgu
+  // czujników prawie zawsze coś dryfuje):
+  //   danger  - KURS KOLIZYJNY (obiekt zbliża się i minie nas o mniej niż
+  //             ~sumę promieni z zapasem, w ciągu 25 s)
+  //   warning - obiekt bardzo blisko (<1500 j.)
+  //   info    - obiekt zbliża się i w ciągu 90 s minie nas o mniej niż 1500 j.
+  const SENSOR_RANGE = 6000;
+  const URGENCY_RANK = { danger: 0, warning: 1, info: 2 };
+  const contacts = [];
+  for (const it of debrisField.items) {
+    const dist = it.mesh.position.distanceTo(shipPos);
+    if (dist > SENSOR_RANGE) continue;
+    // Punkt największego zbliżenia przy stałych prędkościach (statku i obiektu):
+    // r(t) = r0 + v·t, minimum dla t* = -(r0·v)/|v|². t* > 0 = zbliżamy się.
+    _rel.copy(it.mesh.position).sub(shipPos);
+    const v = it.velocity.clone().sub(_vel);
+    const vv = v.lengthSq();
+    const tca = vv > 1e-6 ? -_rel.dot(v) / vv : Infinity;
+    const approaching = Number.isFinite(tca) && tca > 0;
+    const miss = approaching ? _rel.clone().addScaledVector(v, tca).length() : Infinity;
+    const hitRadius = (it.radius + collisionRadius) * 1.6;
+
+    let urgency = null, text = '';
+    if (approaching && tca < 25 && miss < hitRadius) {
+      urgency = 'danger';
+      text = `KURS KOLIZYJNY: ${it.label} za ${tca.toFixed(0)} s (${fmtDist(dist)} j.)!`;
+    } else if (dist < 1500) {
+      urgency = 'warning';
+      text = `Blisko: ${it.label} — ${fmtDist(dist)} j.`;
+    } else if (approaching && tca < 90 && miss < 1500) {
+      // tylko obiekty, które w ciągu 90 s naprawdę przejdą w pobliżu -
+      // "zbliża się", ale minie nas o 10 tys. j. za 5 minut, to nie alert
+      urgency = 'info';
+      text = `Zbliża się: ${it.label} — ${fmtDist(dist)} j.`;
+    }
+    if (urgency) contacts.push({ it, dist, urgency, text });
+  }
+  contacts.sort((a, b) => URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency] || a.dist - b.dist);
+  for (const c of contacts.slice(0, 3)) {
+    dashboard.show(`debris-${c.it.id}`, { crew: CREW.sensors, urgency: c.urgency, text: c.text });
+  }
+
+  // --- Inżynier: kontakt z ciałem stałym ---
+  if (lastHit.collided) {
+    dashboard.show('collision', {
+      crew: CREW.engineer, urgency: 'danger', ttl: 2000,
+      text: `Kontakt z: ${lastHit.body?.name ?? 'obiekt'}! Wytracamy prędkość.`,
+    });
+  }
+
+  // --- Telemetria ---
+  const P = flightProfile;
+  const topSpeed = P.maxSpeed * P.boostMultiplier;
+  const sp = shipState.speed;
+  tm.speed.textContent = Math.round(Math.abs(sp)).toString() + (sp < -0.5 ? ' ↩' : '');
+  tm.bar.style.width = `${Math.min(100, (Math.abs(sp) / topSpeed) * 100)}%`;
+  tm.cruiseMark.style.left = `${(P.maxSpeed / topSpeed) * 100}%`;
+  tm.bar.classList.toggle('over-cruise', Math.abs(sp) > P.maxSpeed * 1.02);
+
+  const inp = lastInput;
+  let mode = 'DRYF';
+  if (inp?.brake) mode = 'HAMULEC';
+  else if (inp?.boost && inp.throttle > 0) mode = 'BOOST';
+  else if (inp?.throttle > 0) mode = 'CIĄG';
+  else if (inp?.throttle < 0) mode = 'WSTECZ';
+  if (lastHit.collided) mode = 'KONTAKT';
+  tm.mode.textContent = mode;
+  tm.mode.dataset.mode = mode;
+
+  tm.body.textContent = nearest.name;
+  tm.bodyDist.textContent = `${fmtDist(Math.max(nearest.surf, 0))} j.`;
+  tm.origin.textContent = `${fmtDist(shipPos.length())} j.`;
+}
+
+// ============================================================
 // RESIZE
 // ============================================================
 window.addEventListener('resize', () => {
@@ -508,8 +665,11 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.05);
 
   starSystem.update(delta);
+  debrisField.update(delta);
   updateShip(delta);
   updateCamera(delta);
+  background.update(camera); // tło "w nieskończoności": gwiazdy podążają za kamerą (zero paralaksy)
+  updateDashboard(delta);
 
   renderer.render(scene, camera);
 }

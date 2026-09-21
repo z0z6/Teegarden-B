@@ -222,16 +222,65 @@ miała okres orbitalny ~30s — "grywalny" czasowo, ale nadal spójny
 fizycznie (te same G/masy/odległości rządzą WSZYSTKIMI ciałami w
 układzie, nic nie jest oskryptowane osobno).
 
+## Tło, kolizje i dashboard gracza
+
+**Tło (`shared/systems/space-background.js`).** Gwiazdy z kroku 2 (te same
+6000 sztuk i paleta) plus mgławice — w kroku 2 mgławic nie było, tu są nowe.
+Stary `starfield` (Points w promieniu 200 000 j.) w tej skali nie działa:
+rozmiar punktów w jednostkach świata kurczy się do ułamka piksela, a
+statek lecący dziesiątki tysięcy jednostek widzi paralaksę. Dlatego mgławica
+jest generowana proceduralnie w shaderze RAZ przy starcie, "wypiekana" do
+cube mapy i ustawiona jako `scene.background` (three.js rysuje takie tło
+bez translacji kamery — z definicji w nieskończoności, zero kosztu na
+klatkę), a gwiazdy to `Points` o stałym rozmiarze w PIKSELACH doczepione do
+kamery. Zmierzone: ta sama rotacja kamery przesuniętej o 50 000 j. daje
+identyczny obraz (różnica 0.0).
+
+**Kadrowanie kamery i orientacja** pochodzą z `shared/ships/fleet.js` (patrz
+`shared/ships/README.md`): wszystkie 4 statki zajmują na ekranie tyle samo
+miejsca, a Kharath leci dziobem do przodu. Światło statku (`shipLight`)
+rośnie teraz z KWADRATEM rozmiaru statku — stałe 400 dawało Kharathowi
+(przekątna ~193 j.) ~60× mniej oświetlony kadłub niż myśliwcom.
+
+**Gruz i meteoryty** (`shared/systems/debris-field.js`): prawdziwe ciała
+stałe (dryfują, kolidują ze statkiem), rozsiane wokół punktu startu.
+
+**Dashboard gracza** — dwie części:
+- *Telemetria* (lewy dolny róg; na telefonie u góry): prędkość, pasek
+  prędkości ze znacznikiem prędkości przelotowej (powyżej = boost), tryb
+  napędu (DRYF/CIĄG/WSTECZ/BOOST/HAMULEC/KONTAKT), najbliższe ciało i
+  odległość od jego powierzchni, odległość od barycentrum układu.
+- *Komunikaty załogi* (prawy górny róg, `shared/systems/dashboard.js`):
+  kanały odświeżane ~10 razy na sekundę; karta sama gaśnie po `ttl`, gdy
+  warunek przestaje być prawdziwy.
+
+| Rola | Alert (żywy = wołany z prawdziwych warunków w grze) |
+|---|---|
+| Nawigator | zbliżanie do gwiazdy (warning), planeta blisko (info), zaokrętowanie |
+| Główny Inżynier | przegrzanie przy gwieździe (danger), kontakt/kolizja (danger) |
+| Oficer Czujników | KURS KOLIZYJNY z gruzem (danger), gruz <1500 j. (warning), obiekt zbliżający się i mijający nas <1500 j. w 90 s (info) |
+| Oficer Taktyczny | podłączony, ale bez zawartości — w grze nie ma jeszcze wrogów ani sojuszników |
+
+Kurs kolizyjny liczymy z czasu najbliższego zbliżenia dwóch ciał o stałej
+prędkości względnej (`t* = -(r·v)/|v|²`), a nie z samej odległości —
+obiekt oddalający się o 500 j. nie jest zagrożeniem, a szybki meteoryt w
+odległości 2000 j. lecący prosto na nas — jest.
+
 ## Znane uproszczenia (świadome, nie przeoczenia)
 
 - **Orbity są komplanarne** (wszystkie w płaszczyźnie XZ). Realne
   hierarchiczne układy potrójne często mają orbitę wewnętrzną nachyloną
   względem zewnętrznej. Pominięte dla prostoty matematyki wektorów —
   dobry temat do dorzucenia później.
-- **Brak kolizji.** Można przelecieć statkiem przez środek gwiazdy bez
-  konsekwencji (dokładnie jak w kroku 3 można było przelecieć przez
-  planetę). Gwiazdy są teraz OGROMNE (czerwony olbrzym: promień 4200 j.)
-  i ruchome, więc to dużo bardziej zauważalne niż wcześniej.
+- **Kolizje są sferyczne i "twarde"** (`shared/systems/collision.js`):
+  statek jest odpychany na powierzchnię gwiazdy/planety/gruzu, a prędkość
+  tłumiona — bez odbić, uszkodzeń i momentu pędu. Promień kolizji statku to
+  ~0.3 przekątnej modelu, co dla wydłużonego Kharatha (~180 j.) jest
+  przybliżeniem. Test jest chwilowy (bez "sweep"), więc przy ekstremalnej
+  prędkości wobec bardzo małego gruzu w teorii można przeskoczyć obiekt w
+  jednej klatce.
+- **Dashboard nie działa w VR** — telemetria i karty załogi to elementy DOM,
+  niewidoczne w sesji WebXR. Potrzebny byłby panel w scenie 3D.
 - **Zmierzony okres pary wewnętrznej to ~32.7s, nie dokładnie 30s.**
   To NIE błąd do naprawienia — to realne zaburzenie od grawitacji
   czerwonego olbrzyma (który w prostym wzorze Keplera dla pary
@@ -248,8 +297,9 @@ układzie, nic nie jest oskryptowane osobno).
   emissive materiał na silnikach statku (już jest w geometrii — patrz
   `shared/ships/source/*.js`, materiał `glow`), podświetlony zależnie
   od throttle.
-- Dodaj prostą detekcję kolizji statek-gwiazda (choćby sferyczną, patrz
-  promienie w `RADIUS` w `triple-star-system.js`).
+- Dodaj uszkodzenia kadłuba/tarcze (kolizje już są, ale niczego nie
+  niszczą) albo przegrzewanie przy gwieździe — alert "Przegrzanie kadłuba"
+  jest na razie tylko komunikatem.
 - **Przetestuj VR na realnym headsecie** i popraw mapowanie osi/
   przycisków w `updateXR()` (`shared/input/flight-controls.js`), jeśli
   Twój kontroler różni się od zakładanego profilu `xr-standard`.
@@ -258,6 +308,6 @@ układzie, nic nie jest oskryptowane osobno).
   kabiny — możesz zobaczyć fragmenty geometrii kadłuba od środka).
 
 ## Co dalej (Krok 5?)
-LOD zależny od dystansu (nadal czeka z kroku 3), HUD z prędkością,
-kolizje, broń, AI. Ewentualnie: dodanie tego samego sterowania dotyk/VR
+LOD zależny od dystansu (nadal czeka z kroku 3), broń, AI (wtedy
+Oficer Taktyczny w dashboardzie będzie miał co zgłaszać). Ewentualnie: dodanie tego samego sterowania dotyk/VR
 do step3-ships (obecnie tylko step4 je ma).
