@@ -118,8 +118,13 @@ loader.setMeshoptDecoder(MeshoptDecoder);
 
 ## Uwaga: konwencja "przodu"
 
-Wszystkie modele w tym katalogu mają dziób w lokalnym **+Z** (nie -Z).
-Jeśli dodajesz nowy statek i chcesz, żeby pasował do silnika gry
-(`step3-ships/` zakłada przód = lokalne -Z), pamiętaj o tej samej
-korekcie 180°, którą robi `main.js` przy wczytywaniu — albo obróć
-geometrię o 180° już na etapie generatora, żeby uniknąć niespójności.
+Trzy myśliwce (`warbird-light`, `raptor-interceptor`, `warbird-heavy`)
+mają dziób w lokalnym **+Z**. **Wyjątek: `kharath-destroyer` ma dziób w
+-Z** (głowa z oczami i paszczą przy z ≈ -11..-14, dysze syfonów w +Z).
+Silnik gry zakłada przód = lokalne -Z, więc myśliwce wymagają korekty
+180°, a Kharath NIE.
+
+Ta wiedza siedzi w jednym miejscu: pole `bowAxis` w
+`shared/ships/fleet.js`. Dodając nowy statek, wpisz tam `bowAxis` zgodne
+z generatorem (albo obróć geometrię już w generatorze, żeby było `'-Z'`)
+— kroki 3 i 4 same zastosują właściwy obrót.
