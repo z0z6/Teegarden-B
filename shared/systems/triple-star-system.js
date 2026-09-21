@@ -46,6 +46,7 @@ const RADIUS = {
   starA: 500,         // gwiazda typu Słońca (G) - ~2.6x długości Kharatha
   whiteDwarf: 140,     // celowo MAŁY względem starA, ale wciąż > niż każdy statek
   redGiant: 4200,      // ~8.4x starA - typowy rząd wielkości dla czerwonego olbrzyma
+  planet: 220,         // planeta (cząstka testowa) - używane też przez collision.js
 };
 
 // ---- Masy (jednostki gry, nie SI - ale zachowane proporcje jak poprzednio) ----
@@ -193,7 +194,7 @@ export function createTripleStarSystem(scene) {
   for (const v of Object.values(visuals)) scene.add(v.group);
 
   const planetMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(220, 64, 64), // też powiększona (była 8 j. - mniejsza niż niejeden silnik statku)
+    new THREE.SphereGeometry(RADIUS.planet, 64, 64), // też powiększona (była 8 j. - mniejsza niż niejeden silnik statku)
     new THREE.MeshStandardMaterial({ color: 0x3a6ea5, roughness: 0.85, metalness: 0.05 })
   );
   scene.add(planetMesh);
