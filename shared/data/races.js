@@ -3,10 +3,23 @@
  * ras (rozmowa o warstwie fabularnej). Wszystkie liczby siedzą TUTAJ, w
  * jednym miejscu do strojenia; reszta gry tylko je czyta.
  *
- * Cztery rasy mają pełne karty statystyk (wybudzeni, rezonanci, piesniarze,
- * szczepieni). Trzy pozostałe (wykonawcy, heliotropi, swietlisci) mają na
- * razie tylko tożsamość (nazwa, stronnictwa, głos), żeby mogły występować
- * jako sojusznicy/wrogowie w scenach - statystyki dopiszemy później.
+ * Wszystkie siedem ras ma pełne karty. Pola opisujące rasę:
+ *   attrs        atrybuty przykładowego kapitana (baza + modyfikatory
+ *                stronnictwa + wolne punkty = 34) - z tego liczy się gra
+ *   baseAttrs    baza rasy (suma 32), freePoints = wolne punkty do rozdania
+ *   factionMods  modyfikatory atrybutów każdego stronnictwa (+2 / -2)
+ *   ship         szablon statku (lekki myśliwiec)
+ *   resource     nazwa zasobu podpisowego rasy
+ *
+ * UWAGA: gra używa dziś tylko: attrs, ship.hull, ship.armor, hullRegenPct,
+ * factions i voice. Pozostałe pola (thermal, energy, signature, cargo,
+ * slots, baseAttrs, freePoints, factionMods, resource) to dane czekające na
+ * systemy, które ich użyją (Energia, Ciepło, Sygnatura, wybór stronnictwa,
+ * zasoby podpisowe) - są już w kartach, żeby nie trzeba ich było potem
+ * wpisywać drugi raz.
+ *
+ * Trzy rasy dopisane później (wykonawcy, heliotropi, swietlisci) nie mają
+ * jeszcze własnych modeli statków: shipForRace() losuje dla nich model.
  */
 
 // Losowy przydział modeli statków do rasy (wylosowany raz i zapisany, żeby
@@ -22,7 +35,10 @@ export const RACES = {
   wybudzeni: {
     name: 'Wybudzeni', color: '#e0b15a', developed: true,
     attrs: { pilot: 5, nav: 6, sensors: 6, eng: 7, tact: 3, infl: 7 }, // kapitan Cechu Rzeczników (karta)
-    ship: { hull: 100, armor: 5 }, hullRegenPct: 0,
+    ship: { hull: 100, armor: 5, thermal: 60, energy: 100, signature: 50, cargo: 20, slots: 3 }, hullRegenPct: 0,
+    baseAttrs: { pilot: 5, nav: 5, sensors: 5, eng: 5, tact: 5, infl: 5 }, freePoints: 4,
+    factionMods: { hawk: { tact: 2, infl: -2 }, trade: { infl: 2, tact: -2 }, coalition: { pilot: 2, eng: -2 } },
+    resource: 'Manifest',
     factions: { hawk: 'Kwartał Spisowy', trade: 'Cech Rzeczników', coalition: 'Bez Numeru' },
     voice: {
       hail: 'Tu {faction}. Widzimy cię w rejestrze jako nieznany, ale nie wrogi. Możemy się wzajemnie kryć — za uczciwy udział w łupach.',
@@ -35,7 +51,10 @@ export const RACES = {
   rezonanci: {
     name: 'Rezonanci', color: '#7fd1ff', developed: true,
     attrs: { pilot: 5, nav: 6, sensors: 7, eng: 5, tact: 4, infl: 7 }, // kapitan Kworum Pośredniego
-    ship: { hull: 110, armor: 6 }, hullRegenPct: 0,
+    ship: { hull: 110, armor: 6, thermal: 50, energy: 100, signature: 50, cargo: 16, slots: 3 }, hullRegenPct: 0,
+    baseAttrs: { pilot: 4, nav: 6, sensors: 7, eng: 5, tact: 6, infl: 4 }, freePoints: 2,
+    factionMods: { hawk: { tact: 2, infl: -2 }, trade: { infl: 2, tact: -2 }, coalition: { eng: 2, pilot: -2 } },
+    resource: 'Rezonans',
     factions: { hawk: 'Szczyt Okna', trade: 'Kworum Pośrednie', coalition: 'Przesypiający' },
     voice: {
       hail: 'Tu {faction}. Okno się zbliża — pozwól nam lecieć obok. Kworum uznaje cię za sojusznika.',
@@ -48,7 +67,10 @@ export const RACES = {
   piesniarze: {
     name: 'Pieśniarze', color: '#c39bff', developed: true,
     attrs: { pilot: 4, nav: 7, sensors: 7, eng: 5, tact: 4, infl: 7 }, // kapitan Chórów Map
-    ship: { hull: 85, armor: 3 }, hullRegenPct: 0,
+    ship: { hull: 85, armor: 3, thermal: 45, energy: 100, signature: 40, cargo: 14, slots: 3 }, hullRegenPct: 0,
+    baseAttrs: { pilot: 6, nav: 7, sensors: 7, eng: 4, tact: 4, infl: 4 }, freePoints: 2,
+    factionMods: { hawk: { tact: 2, infl: -2 }, trade: { infl: 2, pilot: -2 }, coalition: { eng: 2, tact: -2 } },
+    resource: 'Horyzont',
     factions: { hawk: 'Szpony', trade: 'Chóry Map', coalition: 'Kukułki' },
     voice: {
       hail: 'Tu {faction}. Widzieliśmy twój tor już trzy pieśni temu. Chodź w moją stronę — bezpieczniej razem.',
@@ -61,7 +83,10 @@ export const RACES = {
   szczepieni: {
     name: 'Szczepieni', color: '#7ee08a', developed: true,
     attrs: { pilot: 5, nav: 5, sensors: 6, eng: 8, tact: 3, infl: 7 }, // kapitan Izby Kwarantanny
-    ship: { hull: 95, armor: 4 }, hullRegenPct: 0.2,
+    ship: { hull: 95, armor: 4, thermal: 60, energy: 90, signature: 55, cargo: 18, slots: 2 }, hullRegenPct: 0.2,
+    baseAttrs: { pilot: 5, nav: 4, sensors: 5, eng: 8, tact: 5, infl: 5 }, freePoints: 2,
+    factionMods: { hawk: { tact: 2, infl: -2 }, trade: { infl: 2, tact: -2 }, coalition: { eng: 2, pilot: -2 } },
+    resource: 'Szczepy',
     factions: { hawk: 'Pełny Szczep', trade: 'Izba Kwarantanny', coalition: 'Odporni' },
     voice: {
       hail: 'Tu {faction}. Przechodzimy przez kwarantannę — jeśli jesteś czysty, lećmy razem.',
@@ -72,9 +97,12 @@ export const RACES = {
     },
   },
   wykonawcy: {
-    name: 'Wykonawcy', color: '#9fb4c8', developed: false,
-    attrs: { pilot: 5, nav: 5, sensors: 5, eng: 5, tact: 5, infl: 5 },
-    ship: { hull: 100, armor: 5 }, hullRegenPct: 0,
+    name: 'Wykonawcy', color: '#9fb4c8', developed: true,
+    attrs: { pilot: 5, nav: 5, sensors: 7, eng: 7, tact: 3, infl: 7 }, // kapitan Duchowych
+    ship: { hull: 105, armor: 6, thermal: 55, energy: 105, signature: 50, cargo: 15, slots: 3 }, hullRegenPct: 0,
+    baseAttrs: { pilot: 5, nav: 4, sensors: 7, eng: 7, tact: 5, infl: 4 }, freePoints: 2,
+    factionMods: { hawk: { tact: 2, infl: -2 }, trade: { infl: 2, tact: -2 }, coalition: { pilot: 2, eng: -2 } },
+    resource: 'Pamięć',
     factions: { hawk: 'Literaliści', trade: 'Duchowi', coalition: 'Rewizjoniści' },
     voice: {
       hail: 'Tu {faction}. Klauzula 17 nakazuje pomoc sojusznikom. Zgłoś zamiar.',
@@ -85,9 +113,12 @@ export const RACES = {
     },
   },
   heliotropi: {
-    name: 'Heliotropi', color: '#ff9d5c', developed: false,
-    attrs: { pilot: 5, nav: 5, sensors: 5, eng: 5, tact: 5, infl: 5 },
-    ship: { hull: 100, armor: 5 }, hullRegenPct: 0,
+    name: 'Heliotropi', color: '#ff9d5c', developed: true,
+    attrs: { pilot: 5, nav: 5, sensors: 5, eng: 6, tact: 6, infl: 7 }, // kapitan Chłodnych
+    ship: { hull: 100, armor: 5, thermal: 90, energy: 95, signature: 55, cargo: 16, slots: 3 }, hullRegenPct: 0,
+    baseAttrs: { pilot: 7, nav: 5, sensors: 4, eng: 5, tact: 6, infl: 5 }, freePoints: 2,
+    factionMods: { hawk: { tact: 2, infl: -2 }, trade: { infl: 2, pilot: -2 }, coalition: { nav: 2, tact: -2 } },
+    resource: 'Temperatura ciała',
     factions: { hawk: 'Żar', trade: 'Chłodni', coalition: 'Hibernatorzy Szlaku' },
     voice: {
       hail: 'Tu {faction}. Zwykle trzymamy się blisko gwiazdy, ale dla sojusznika zwolnimy. Lećmy razem.',
@@ -98,9 +129,12 @@ export const RACES = {
     },
   },
   swietlisci: {
-    name: 'Świetliści', color: '#5ff0e0', developed: false,
-    attrs: { pilot: 5, nav: 5, sensors: 5, eng: 5, tact: 5, infl: 5 },
-    ship: { hull: 100, armor: 5 }, hullRegenPct: 0,
+    name: 'Świetliści', color: '#5ff0e0', developed: true,
+    attrs: { pilot: 5, nav: 6, sensors: 7, eng: 6, tact: 2, infl: 8 }, // kapitan Prawdziwych Skór
+    ship: { hull: 90, armor: 4, thermal: 40, energy: 100, signature: 50, cargo: 14, slots: 4 }, hullRegenPct: 0,
+    baseAttrs: { pilot: 5, nav: 5, sensors: 7, eng: 5, tact: 4, infl: 6 }, freePoints: 2,
+    factionMods: { hawk: { tact: 2, infl: -2 }, trade: { infl: 2, tact: -2 }, coalition: { nav: 2, pilot: -2 } },
+    resource: 'Blask',
     factions: { hawk: 'Czerwone Maski', trade: 'Prawdziwe Skóry', coalition: 'Dziedzice' },
     voice: {
       hail: 'Tu {faction}. Nasze maski są zdjęte — mówimy prawdę. Chcemy się sprzymierzyć.',
