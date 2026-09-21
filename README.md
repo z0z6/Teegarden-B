@@ -26,6 +26,7 @@ Potem otwórz np. `http://localhost:3000/step3-ships/` w przeglądarce.
 | [`step2-movement`](./step2-movement) | Sterowanie statkiem (WASD + bezwładność), kamera trzecioosobowa "na sprężynie" |
 | [`step3-ships`](./step3-ships) | Prawdziwe modele statków (glTF), wybór z 4 statków, zaokrętowanie, fizyka skalowana rozmiarem modelu |
 | [`step4-stellar-physics`](./step4-stellar-physics) | Układ potrójny (prawdziwa fizyka N-ciał, integracja leapfrog), sztuczne oświetlenie statku, tło gwiazd i mgławic, kolizje, gruz, dashboard gracza (telemetria + komunikaty załogi) |
+| [`step5-encounters`](./step5-encounters) | Rasy i statystyki (z kart ras), walka, NPC-e i **demo fabularne**: kontakt sojusznika, przechwycenie, atak wrogiego statku |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -43,12 +44,19 @@ shared/
 │   └── lod_helper.js
 ├── physics/
 │   └── n-body.js          generyczny silnik grawitacji N-ciał (leapfrog)
+├── data/
+│   └── races.js            rasy, stronnictwa, relacje, statystyki (jedno miejsce do strojenia)
 └── systems/
     ├── triple-star-system.js   konkretny układ potrójny (masy, orbity, wizualizacja)
     ├── space-background.js     gwiazdy + mgławice "w nieskończoności" (krok 4)
     ├── debris-field.js         gruz i meteoryty (ciała stałe)
     ├── collision.js            twarda bariera: statek nie wchodzi w ciała stałe
-    └── dashboard.js            komunikaty załogi (dashboard gracza)
+    ├── dashboard.js            komunikaty załogi (dashboard gracza)
+    ├── combat.js               pociski, trafienia, efekty (krok 5)
+    ├── npc-ships.js            statki NPC: sojusznicy i wrogowie z prostym AI (krok 5)
+    ├── comms.js                komunikator: rozmowy z wyborami (krok 5)
+    ├── target-labels.js        etykiety celów na ekranie (krok 5)
+    └── encounters.js           reżyser scen fabularnych (krok 5)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
@@ -66,7 +74,7 @@ i do szybkiej diagnozy, gdy któryś model się nie ładuje.
 
 Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
 W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
-1-4 — zaokrętowanie (tylko step3-ships/step4-stellar-physics).
+1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa.
 
 ## Wersja three.js
 

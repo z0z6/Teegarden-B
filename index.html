@@ -135,7 +135,19 @@
         <p>Prawdziwa fizyka grawitacyjna N-ciał (integracja leapfrog),
            hierarchiczny układ: para wewnętrzna + czerwony olbrzym na
            orbicie zewnętrznej. Sterowanie: klawiatura/mysz, dotyk
-           (Android), kontrolery VR (WebXR).</p>
+           (Android), kontrolery VR (WebXR). Tło gwiazd i mgławic,
+           kolizje, gruz i dashboard gracza (telemetria + komunikaty załogi).</p>
+        <span class="open">Otwórz →</span>
+      </a>
+      <a class="step-card" href="./step5-encounters/">
+        <span class="badge">✓ gotowe (demo)</span>
+        <span class="label">KROK 5</span>
+        <h3>Rasy i sceny fabularne</h3>
+        <p>Statek wyznacza rasę kapitana, rasa — statystyki (z kart ras).
+           Walka z pociskami i statki NPC. Demo z trzema scenami: kontakt
+           sojusznika, przechwycenie z żądaniem myta (negocjacje zależne od
+           Wpływu i reputacji) oraz atak wrogiego statku. F — ogień,
+           Z/X/C — komunikator, 7/8/9 — sceny osobno, 0 — demo od nowa.</p>
         <span class="open">Otwórz →</span>
       </a>
     </div>
@@ -186,22 +198,32 @@
         <small>obecnie offset kamery zmienia się skokowo przy zmianie statku, tylko pozycja jest lerpowana</small>
       </span></li>
       <li><span class="dot"></span><span class="text">
-        HUD z prędkością / throttle
-        <small>wzór już istnieje w samodzielnym podglądzie lotu Kharatha — do przeniesienia</small>
+        Pełniejsze AI statków NPC
+        <small>krok 5 ma proste NPC (kinematyczny ruch, przeloty z ostrzałem, eskorta). Brak: kolizji NPC ze statkiem i gwiazdami, tego samego modelu lotu co gracz, więcej niż jednego wroga naraz w scenariuszach, formacji</small>
       </span></li>
       <li><span class="dot"></span><span class="text">
-        Broń / strzelanie
+        Mechaniki podpisowe ras (Manifest, Rezonans, Horyzont, Szczepy)
+        <small>dane są w kartach ras; krok 5 podpina na razie kadłub, pancerz, czujniki, horyzont alertów, obrażenia i wpływ. Potrzebne też systemy Energii i Ciepła</small>
       </span></li>
       <li><span class="dot"></span><span class="text">
-        Przeciwnicy AI pilotujący pozostałe statki floty
+        Karty pozostałych ras (Wykonawcy, Heliotropi, Świetliści)
+        <small>w demo występują jako sojusznicy/wrogowie, ale nie da się nimi grać — mają tylko nazwę, stronnictwa i "głos"</small>
       </span></li>
       <li><span class="dot"></span><span class="text">
-        Kolizje statek-gwiazda / statek-planeta
-        <small>obecnie można przelecieć przez środek dowolnego ciała bez konsekwencji — bardziej zauważalne odkąd gwiazdy są duże i ruchome (krok 4)</small>
+        Własne modele statków dla ras
+        <small>obecnie 4 modele są przypisane do ras losowo (shared/data/races.js → SHIP_RACE)</small>
+      </span></li>
+      <li><span class="dot"></span><span class="text">
+        Ekonomia i stronnictwa w rozgrywce
+        <small>ładunek to na razie licznik, a reputacja żyje tylko w obrębie demo; stronnictwa (agresja / handel / koalicja) są w danych, ale gracz jeszcze ich nie wybiera</small>
+      </span></li>
+      <li><span class="dot"></span><span class="text">
+        Dashboard i komunikator w VR
+        <small>telemetria, karty załogi, komunikator i etykiety celów to elementy DOM — nie są widoczne w sesji WebXR</small>
       </span></li>
       <li><span class="dot"></span><span class="text">
         Porządne oświetlenie sceny zamiast tymczasowego światła na statku
-        <small>krok 4 doczepił prosty PointLight do statku jako prowizorkę — docelowo IBL albo kilka świateł kierunkowych dobranych pod kamerę</small>
+        <small>krok 4 doczepił prosty PointLight do statku jako prowizorkę (krok 5 robi to samo dla każdego NPC) — docelowo IBL albo kilka świateł kierunkowych dobranych pod kamerę</small>
       </span></li>
       <li><span class="dot"></span><span class="text">
         Wzajemne nachylenie orbit w układzie potrójnym
@@ -213,7 +235,7 @@
       </span></li>
       <li><span class="dot"></span><span class="text">
         Test VR na realnym headsecie
-        <small>krok 4 ma zbudowane WebXR (VRButton, cameraRig, kontrolery) zgodnie ze specyfikacją, ale bez fizycznego headsetu w tym środowisku nie da się zweryfikować renderowania stereo ani dokładnego mapowania osi kontrolerów</small>
+        <small>kroki 4-5 mają zbudowane WebXR (VRButton, cameraRig, kontrolery) zgodnie ze specyfikacją, ale bez fizycznego headsetu w tym środowisku nie da się zweryfikować renderowania stereo ani dokładnego mapowania osi kontrolerów</small>
       </span></li>
     </ul>
     <p class="note">Ta lista jest ręcznie aktualizowana, nie generuje się
