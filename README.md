@@ -76,6 +76,8 @@ Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
 W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
 1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa.
 
+**Android (kroki 3-5):** pierwsze dotknięcie włącza pełny ekran i blokadę poziomu; w pionie pokazuje się podpowiedź „Obróć telefon w poziom” (`shared/input/android-landscape.js`).
+
 ## Wersja three.js
 
 Cały projekt trzyma się jednej wersji three.js (`0.184.0`) przez importmapy

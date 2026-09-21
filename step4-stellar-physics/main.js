@@ -9,6 +9,7 @@ import { createDebrisField } from '../shared/systems/debris-field.js';
 import { resolveCollisions, collectSolidBodies } from '../shared/systems/collision.js';
 import { createDashboard, CREW } from '../shared/systems/dashboard.js';
 import { SHIPS, visualYawFor, deriveCameraRig } from '../shared/ships/fleet.js';
+import { setupAndroidLandscape } from '../shared/input/android-landscape.js';
 
 // ============================================================
 // KROK 4: Układ potrójny (prawdziwa fizyka N-ciał) + sztuczne
@@ -52,6 +53,10 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
+
+// Android: pełny ekran + blokada poziomu + podpowiedź "obróć telefon"
+// (patrz shared/input/android-landscape.js). Poza Androidem nic nie robi.
+setupAndroidLandscape({ isSuspended: () => renderer.xr.isPresenting });
 
 // Przycisk "Enter VR" - three.js sam sprawdza navigator.xr i chowa/
 // wyłącza się, jeśli przeglądarka/urządzenie nie wspiera WebXR (np. na

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { SHIPS, visualYawFor, deriveCameraRig } from '../shared/ships/fleet.js';
+import { setupAndroidLandscape } from '../shared/input/android-landscape.js';
 
 // ============================================================
 // KROK 3: Prawdziwe modele statków (glTF) + wybór statku
@@ -24,6 +25,10 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 document.body.appendChild(renderer.domElement);
+
+// Android: pełny ekran + blokada poziomu + podpowiedź "obróć telefon"
+// (patrz shared/input/android-landscape.js). Poza Androidem nic nie robi.
+setupAndroidLandscape({ isSuspended: () => renderer.xr.isPresenting });
 
 // ============================================================
 // GWIAZDY W TLE (bez zmian względem kroku 1/2)

@@ -17,6 +17,32 @@ sojusznika**, **przechwycenie** i **atak wrogiego statku**.
 
 Demo startuje samo ~6 s po wczytaniu statku.
 
+## Android: poziomo, pełny ekran, blokada orientacji
+
+Na telefonie z Androidem (`shared/input/android-landscape.js`, włączone w
+krokach 3, 4 i 5):
+
+- **pierwsze dotknięcie ekranu** wchodzi w pełny ekran i blokuje orientację na
+  poziomą (`screen.orientation.lock('landscape')`); przeglądarki pozwalają na
+  to tylko po geście użytkownika, więc nie da się tego zrobić samo z siebie;
+- **w pionie** cały ekran zakrywa podpowiedź „Obróć telefon w poziom” — dotknięcie
+  jej robi to samo co pierwsze dotknięcie, więc zwykle wystarczy jedno;
+- **przycisk „Pełny ekran”** u góry na środku pokazuje się, gdy gra nie jest na
+  pełnym ekranie (np. po geście „wstecz”);
+- **układ na krótkim ekranie** (~400 px): kompaktowa telemetria, karty załogi na
+  środku u góry (prawą kolumnę zajmują przyciski), komunikator na dole między
+  joystickami.
+
+Blokada orientacji działa w Chrome/Firefoxie na Androidzie **tylko w pełnym
+ekranie** (albo w zainstalowanej aplikacji). Jeśli przeglądarka jej nie
+pozwoli, podpowiedź zmienia treść na „obróć telefon ręcznie”. Poza Androidem
+moduł nic nie robi.
+
+**Nie zweryfikowano na prawdziwym telefonie** — testy szły na emulowanym
+Androidzie z atrapami API pełnego ekranu i blokady (sprawdzają logikę: kiedy
+podpowiedź się pokazuje/znika, ile razy woła się `lock`, czy renderer dopasowuje
+się po obrocie), a nie faktyczne zachowanie systemu.
+
 ## Skąd rasa
 
 `shared/data/races.js` → `SHIP_RACE` przypisuje modele do ras. Przydział jest

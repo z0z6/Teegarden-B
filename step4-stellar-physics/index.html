@@ -157,6 +157,21 @@
     }
 
     /* ============================================================
+       TELEFON W POZIOMIE (tryb Android: pełny ekran + blokada poziomu,
+       patrz shared/input/android-landscape.js). Ekran ma wtedy tylko
+       ~400 px wysokości, a joysticki zajmują dolne ~200 px, więc
+       telemetria i karty załogi muszą być zwarte.
+       ============================================================ */
+    @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+      #telemetry { top: 60px; width: 168px; padding: 6px 8px; font-size: 11px; }
+      #tm-speed { font-size: 20px; min-width: 3.6ch; }
+      #telemetry .tm-row { display: none; }
+      #telemetry .tm-bar + .tm-row, #telemetry .tm-row:has(#tm-hull-text) { display: flex; }
+      /* karty załogi na środek u góry: prawa kolumna jest zajęta przez przyciski BOOST/STOP/OGIEŃ */
+      #crew-alerts { top: 44px; right: auto; left: 50%; transform: translateX(-50%); width: min(300px, 34vw); max-height: 36vh; overflow: hidden; }
+    }
+
+    /* ============================================================
        UI DOTYKOWE (Android/mobile) - widoczne TYLKO na urządzeniach,
        gdzie główny wskaźnik to dotyk (pointer: coarse). Na desktopie
        z myszą ten cały blok jest ukryty przez media query niżej, więc
