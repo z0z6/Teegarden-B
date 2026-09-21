@@ -25,7 +25,7 @@ Potem otwórz np. `http://localhost:3000/step3-ships/` w przeglądarce.
 | [`step1-scene`](./step1-scene) | Scena, kamera, renderer, gwiazdy, planeta na orbicie, placeholder statku |
 | [`step2-movement`](./step2-movement) | Sterowanie statkiem (WASD + bezwładność), kamera trzecioosobowa "na sprężynie" |
 | [`step3-ships`](./step3-ships) | Prawdziwe modele statków (glTF), wybór z 4 statków, zaokrętowanie, fizyka skalowana rozmiarem modelu |
-| [`step4-stellar-physics`](./step4-stellar-physics) | Układ potrójny (prawdziwa fizyka N-ciał, integracja leapfrog), sztuczne oświetlenie statku gracza |
+| [`step4-stellar-physics`](./step4-stellar-physics) | Układ potrójny (prawdziwa fizyka N-ciał, integracja leapfrog), sztuczne oświetlenie statku, tło gwiazd i mgławic, kolizje, gruz, dashboard gracza (telemetria + komunikaty załogi) |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -39,11 +39,16 @@ shared/
 ├── ships/
 │   ├── models/    gotowe .glb (LOD0/1/2) - to wczytuje gra
 │   ├── source/    proceduralne generatory .js - "source of truth" dla modeli
+│   ├── fleet.js   lista statków, orientacja dziobu, kadrowanie kamery (kroki 3+4)
 │   └── lod_helper.js
 ├── physics/
 │   └── n-body.js          generyczny silnik grawitacji N-ciał (leapfrog)
 └── systems/
-    └── triple-star-system.js   konkretny układ potrójny (masy, orbity, wizualizacja)
+    ├── triple-star-system.js   konkretny układ potrójny (masy, orbity, wizualizacja)
+    ├── space-background.js     gwiazdy + mgławice "w nieskończoności" (krok 4)
+    ├── debris-field.js         gruz i meteoryty (ciała stałe)
+    ├── collision.js            twarda bariera: statek nie wchodzi w ciała stałe
+    └── dashboard.js            komunikaty załogi (dashboard gracza)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
