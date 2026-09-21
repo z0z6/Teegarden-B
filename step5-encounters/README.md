@@ -29,9 +29,12 @@ Demo startuje samo ~6 s po wczytaniu statku.
 | Warbird — Heavy Siege Interceptor | Szczepieni |
 | Kharath — Heavy Destroyer | Wybudzeni |
 
-Pozostałe rasy (Wykonawcy, Heliotropi, Świetliści) mają na razie tylko
-tożsamość — nazwę, stronnictwa i "głos" — więc mogą występować jako
-sojusznicy/wrogowie w scenach, ale nie da się nimi grać.
+Wszystkie **siedem ras** ma pełne karty w `races.js` (atrybuty, szablon
+statku, modyfikatory stronnictw). Trzy z nich (Wykonawcy, Heliotropi,
+Świetliści) nie mają jeszcze własnych modeli statków, więc **nie ma statku,
+którym można by nimi zagrać** — występują w scenach jako sojusznicy/wrogowie
+(dostają wtedy losowy model). Żeby nimi grać, wystarczy dopisać wpis do
+`SHIP_RACE` w momencie, gdy powstanie model.
 
 ## Statystyki (co jest już podpięte)
 
@@ -113,6 +116,6 @@ trafieniami obu stron i sojusznikiem, epilog. **Nie** sprawdziłem, jak to
 
 ## Do zrobienia
 
-Własne modele ras, kolizje z NPC, podpięcie Energii/Ciepła i zasobów
+Własne modele dla trzech ras bez statku (żeby były grywalne), kolizje z NPC, podpięcie Energii/Ciepła i zasobów
 podpisowych, ekonomia (dziś ładunek nic nie kosztuje poza myto), rozgałęzienia
 fabuły zależne od stronnictwa gracza, zapis stanu.
