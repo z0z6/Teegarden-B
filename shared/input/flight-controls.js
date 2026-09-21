@@ -97,6 +97,13 @@ export function createFlightInput({ onShipSwitch } = {}) {
 
   let leftStick = null, rightStick = null;
   let touchBoostBtn = null, touchBrakeBtn = null;
+  // LICZNIK aktywnych dotknięć (joysticki + przyciski), NIE "czy elementy
+  // DOM istnieją" - elementy UI dotykowego są w DOM ZAWSZE (ukryte przez
+  // CSS na desktopie), więc sprawdzanie samej ich obecności błędnie
+  // "wygrywało" z klawiaturą nawet gdy nikt niczego nie dotykał.
+  let activeTouchCount = 0;
+  const touchStart = () => { activeTouchCount++; state.source = 'touch'; };
+  const touchEnd = () => { activeTouchCount = Math.max(0, activeTouchCount - 1); };
 
   /**
    * Podłącza UI dotykowe do istniejących elementów DOM (patrz
@@ -105,31 +112,34 @@ export function createFlightInput({ onShipSwitch } = {}) {
    * bez UI dotykowego) - po prostu nic się wtedy nie podłączy.
    */
   function attachTouchUI({ leftZone, leftKnob, rightZone, rightKnob, boostBtn, brakeBtn }) {
-    if (leftZone && leftKnob) leftStick = makeJoystick(leftZone, leftKnob);
-    if (rightZone && rightKnob) rightStick = makeJoystick(rightZone, rightKnob);
+    if (leftZone && leftKnob) {
+      leftStick = makeJoystick(leftZone, leftKnob);
+      leftZone.addEventListener('pointerdown', touchStart);
+      leftZone.addEventListener('pointerup', touchEnd);
+      leftZone.addEventListener('pointercancel', touchEnd);
+    }
+    if (rightZone && rightKnob) {
+      rightStick = makeJoystick(rightZone, rightKnob);
+      rightZone.addEventListener('pointerdown', touchStart);
+      rightZone.addEventListener('pointerup', touchEnd);
+      rightZone.addEventListener('pointercancel', touchEnd);
+    }
     if (boostBtn) {
       touchBoostBtn = boostBtn;
-      const setBoost = (v) => { state.boost = v; state.source = 'touch'; };
-      boostBtn.addEventListener('pointerdown', () => setBoost(true));
-      boostBtn.addEventListener('pointerup', () => setBoost(false));
-      boostBtn.addEventListener('pointercancel', () => setBoost(false));
+      boostBtn.addEventListener('pointerdown', () => { state.boost = true; touchStart(); });
+      boostBtn.addEventListener('pointerup', () => { state.boost = false; touchEnd(); });
+      boostBtn.addEventListener('pointercancel', () => { state.boost = false; touchEnd(); });
     }
     if (brakeBtn) {
       touchBrakeBtn = brakeBtn;
-      const setBrake = (v) => { state.brake = v; state.source = 'touch'; };
-      brakeBtn.addEventListener('pointerdown', () => setBrake(true));
-      brakeBtn.addEventListener('pointerup', () => setBrake(false));
-      brakeBtn.addEventListener('pointercancel', () => setBrake(false));
+      brakeBtn.addEventListener('pointerdown', () => { state.brake = true; touchStart(); });
+      brakeBtn.addEventListener('pointerup', () => { state.brake = false; touchEnd(); });
+      brakeBtn.addEventListener('pointercancel', () => { state.brake = false; touchEnd(); });
     }
   }
 
   function updateTouch() {
-    if (!leftStick && !rightStick) return false; // UI dotykowe niepodłączone
-    if (!leftStick.active && !rightStick?.active && !touchBoostBtn && !touchBrakeBtn) {
-      // brak aktywnego dotyku - nie nadpisujemy state (niech trzyma ostatnią
-      // wartość z innego źródła, np. klawiatury, jeśli user ma i jedno, i drugie)
-      return leftStick.active || rightStick?.active;
-    }
+    if (activeTouchCount <= 0) return false; // nikt niczego nie dotyka - nie przejmuj sterowania
     state.yaw = -(leftStick?.x ?? 0);
     state.pitch = -(leftStick?.y ?? 0);
     state.roll = -(rightStick?.x ?? 0);
