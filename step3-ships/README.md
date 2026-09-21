@@ -26,8 +26,9 @@ pojawia się krótki moment "Cumowanie…" w rogu ekranu.
 **Cztery statki, różna skala.** Warbird-light ma ~17 jednostek długości,
 Kharath (ciężki niszczyciel) — ~180. To dosłownie 10× różnica. Kamera i
 fizyka NIE mają osobnych, ręcznie wpisanych ustawień per statek — zamiast
-tego `deriveFlightProfile()` i `deriveCameraRig()` liczą je z bounding boxa
-wczytanego modelu (patrz sekcja niżej). Spróbuj przelecieć się Kharathem
+tego `deriveFlightProfile()` liczy fizykę z bounding boxa modelu, a
+`deriveCameraRig()` (z `shared/ships/fleet.js`) dobiera kamerę tak, żeby
+każdy statek zajmował na ekranie tyle samo miejsca (patrz sekcja niżej). Spróbuj przelecieć się Kharathem
 zaraz po zwinnym Warbirdzie — różnica w "czuciu" jest natychmiastowa mimo
 że kod fizyki jest dokładnie ten sam co w kroku 2.
 
@@ -38,11 +39,12 @@ które: (1) wczytuje nowy model, (2) dopiero PO sukcesie usuwa stary
 (`shipState`, `shipGroup.position`) NIE resetują się przy zmianie statku —
 "zaokrętowanie" dzieje się w locie, w tym samym miejscu w przestrzeni.
 
-**Korekta "180° dziobu".** Wszystkie 4 modele mają dziób w lokalnym `+Z`
-(tak wyszły z narzędzia, którym były projektowane), a silnik z kroku 2
-zakłada przód statku w lokalnym `-Z`. Zamiast przerabiać fizykę, po prostu
-obracamy `visualGroup` (kontener na wczytany model) o stałe `Math.PI`
-wokół Y, ustawiane raz w `loadShip()`. Wcześniej `visualGroup` dźwigał
+**Korekta dziobu.** Silnik z kroku 2 zakłada przód statku w lokalnym `-Z`.
+Trzy myśliwce mają dziób w `+Z`, więc obracamy je o `Math.PI` wokół Y;
+**Kharath ma dziób w `-Z` i obrotu NIE wymaga** (obrót o 180° kazałby mu
+lecieć tyłem). Ta informacja (`bowAxis`) i funkcja `visualYawFor()` żyją
+we wspólnym `shared/ships/fleet.js`, tym samym dla kroków 3 i 4 — obrót
+ustawiamy raz w `loadShip()` na `visualGroup`. Wcześniej `visualGroup` dźwigał
 też kosmetyczny "bank" przy skręcie — po przejściu na mysz+pełne 3D (patrz
 niżej) prawdziwy przechył liczy się już bezpośrednio na `shipGroup`, więc
 ten hack zniknął.
