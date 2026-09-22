@@ -11,6 +11,14 @@ import * as THREE from 'three';
  *   takeDamage(amount, shooter)
  * Pociski strony 'player'/'ally' trafiają tylko 'hostile' i odwrotnie.
  *
+ * ROZSZERZENIA (krok 7, uzbrojenie - shared/systems/weapons.js), wszystkie
+ * opcjonalne, więc kroki 5-6 działają bez zmian:
+ *   fire({ size, mesh, homing, accel, maxSpeed, aoe, proximity, onUpdate, onEnd })
+ *     - naprowadzanie (rakiety, torpedy), przyspieszanie, wybuch obszarowy,
+ *       zapalnik zbliżeniowy i własny wygląd pocisku
+ *   raycast(origin, dir, maxDist, side)   - broń promieniowa (trafienie natychmiastowe)
+ *   explode(pos, radius, damage, side)    - obrażenia obszarowe ze spadkiem z odległością
+ *
  * TRAFIENIA SĄ "OMIATANE" (segment poprzednia->nowa pozycja vs sfera), nie
  * punktowe: pocisk leci ~1500 j./s, więc w jednej klatce (50 ms) pokonuje
  * 75 j. - dłużej niż średnica myśliwca. Sprawdzanie samej pozycji
@@ -20,6 +28,7 @@ import * as THREE from 'three';
 const BOLT_GEO = new THREE.BoxGeometry(2.2, 2.2, 36);
 const FLASH_GEO = new THREE.SphereGeometry(1, 14, 10);
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
 
 // Sam pocisk (2 x 36 j.) jest na dystansie walki (setki-tysiące j.) mniejszy
 // niż piksel, więc walka wyglądałaby jak niewidzialna wymiana ognia. Każdy
@@ -82,16 +91,89 @@ export function createCombat(scene) {
    * @param {'player'|'ally'|'hostile'} p.side
    * @param {number} [p.hitScale=1] mnożnik promienia trafienia (asysta celowania gracza)
    */
-  function fire({ origin, direction, side, speed = 1500, damage = 12, color = 0x66ffee, life = 2, hitScale = 1, shooter = null }) {
-    const mesh = new THREE.Mesh(BOLT_GEO, boltMaterial(color));
+  function fire({
+    origin, direction, side, speed = 1500, damage = 12, color = 0x66ffee, life = 2, hitScale = 1, shooter = null,
+    size = 1, mesh = null, homing = null, accel = 0, maxSpeed = null, aoe = null, proximity = 0,
+    onUpdate = null, onEnd = null,
+  }) {
+    if (!mesh) {
+      mesh = new THREE.Mesh(BOLT_GEO, boltMaterial(color));
+      mesh.scale.setScalar(size);
+      const glow = new THREE.Sprite(glowMaterial(color));
+      glow.scale.set(0.024 * Math.sqrt(size), 0.024 * Math.sqrt(size), 1);
+      glow.scale.divideScalar(size); // sprite dziedziczy skalę rodzica - kompensujemy
+      mesh.add(glow);
+    }
     mesh.position.copy(origin);
     mesh.quaternion.setFromUnitVectors(Z_AXIS, direction);
     mesh.frustumCulled = false;
-    const glow = new THREE.Sprite(glowMaterial(color));
-    glow.scale.set(0.024, 0.024, 1);
-    mesh.add(glow);
     scene.add(mesh);
-    bolts.push({ mesh, vel: direction.clone().multiplyScalar(speed), side, damage, life, hitScale, shooter });
+    const bolt = {
+      mesh, vel: direction.clone().multiplyScalar(speed), speed, side, damage, life, age: 0, hitScale, shooter,
+      homing, accel, maxSpeed: maxSpeed ?? speed, aoe, proximity, onUpdate, onEnd,
+    };
+    bolts.push(bolt);
+    return bolt;
+  }
+
+  const _dirNow = new THREE.Vector3(), _want = new THREE.Vector3();
+  /** Skręt prędkości pocisku w stronę celu z ograniczoną prędkością kątową. */
+  function steerBolt(b, dt) {
+    const tgt = b.homing?.target;
+    if (b.accel) b.speed = Math.min(b.maxSpeed, b.speed + b.accel * dt);
+    _dirNow.copy(b.vel).normalize();
+    if (tgt && tgt.isAlive() && b.age > (b.homing.delay ?? 0)) {
+      // prosty "pure pursuit" z wyprzedzeniem, jeśli cel zna swoją prędkość
+      _want.copy(tgt.position);
+      if (tgt.velocity) _want.addScaledVector(tgt.velocity, Math.min(tgt.position.distanceTo(b.mesh.position) / Math.max(b.speed, 1), 1.5));
+      _want.sub(b.mesh.position).normalize();
+      _qa.setFromUnitVectors(Z_AXIS, _dirNow);
+      _qb.setFromUnitVectors(Z_AXIS, _want);
+      _qa.rotateTowards(_qb, b.homing.turnRate * dt);
+      _dirNow.copy(Z_AXIS).applyQuaternion(_qa);
+    }
+    b.vel.copy(_dirNow).multiplyScalar(b.speed);
+    b.mesh.quaternion.setFromUnitVectors(Z_AXIS, _dirNow);
+  }
+
+  /** Pierwszy wróg strony `side` na promieniu (sfera = promień aktora × hitScale). */
+  function raycast(origin, dir, maxDist, side, hitScale = 1) {
+    let best = null;
+    for (const actor of actors) {
+      if (!actor.isAlive() || !isEnemy(side, actor.side)) continue;
+      _toActor.copy(actor.position).sub(origin);
+      const t = _toActor.dot(dir);
+      if (t < 0 || t > maxDist) continue;
+      const r = actor.radius * hitScale;
+      const d2 = _toActor.lengthSq() - t * t;
+      if (d2 > r * r) continue;
+      const tHit = t - Math.sqrt(r * r - d2);
+      if (!best || tHit < best.dist) best = { actor, dist: Math.max(0, tHit) };
+    }
+    if (best) best.point = origin.clone().addScaledVector(dir, best.dist);
+    return best;
+  }
+
+  /**
+   * Wybuch: obrażenia dla wrogów strony `side` w promieniu (spadek z odległością
+   * od KRAWĘDZI aktora - duży okręt obrywa, gdy wybuch liźnie jego burtę).
+   */
+  function explode(position, radius, damage, side, shooter = null, { exclude = null } = {}) {
+    for (const actor of [...actors]) {
+      if (actor === exclude || !actor.isAlive() || !isEnemy(side, actor.side)) continue;
+      const d = Math.max(0, actor.position.distanceTo(position) - actor.radius);
+      if (d > radius) continue;
+      const dmg = damage * (1 - 0.6 * (d / radius));
+      actor.takeDamage(dmg, shooter);
+      emit('hit', { target: actor, damage: dmg, shooter, aoe: true });
+    }
+  }
+
+  function endBolt(i, reason, point) {
+    const b = bolts[i];
+    b.onEnd?.(b, reason, point);
+    scene.remove(b.mesh);
+    bolts.splice(i, 1);
   }
 
   function flash(position, size, color = 0xffc36b, duration = 0.45) {
@@ -111,8 +193,11 @@ export function createCombat(scene) {
     for (let i = bolts.length - 1; i >= 0; i--) {
       const b = bolts[i];
       _prev.copy(b.mesh.position);
+      b.age += dt;
+      if (b.homing || b.accel) steerBolt(b, dt);
       b.mesh.position.addScaledVector(b.vel, dt);
       b.life -= dt;
+      b.onUpdate?.(b, dt);
 
       let hitActor = null, hitPoint = null;
       _seg.copy(b.mesh.position).sub(_prev);
@@ -127,13 +212,31 @@ export function createCombat(scene) {
         if (_closest.distanceToSquared(actor.position) <= r * r) { hitActor = actor; hitPoint = _closest.clone(); break; }
       }
 
+      // zapalnik zbliżeniowy (torpedy): detonacja, gdy wróg jest w zasięgu
+      if (!hitActor && b.proximity > 0) {
+        for (const actor of actors) {
+          if (!actor.isAlive() || !isEnemy(b.side, actor.side)) continue;
+          if (actor.position.distanceTo(b.mesh.position) < b.proximity + actor.radius) {
+            if (b.aoe) explode(b.mesh.position, b.aoe.radius, b.aoe.damage, b.side, b.shooter);
+            endBolt(i, 'proximity', b.mesh.position.clone());
+            hitActor = 'done';
+            break;
+          }
+        }
+        if (hitActor === 'done') continue;
+      }
+
       if (hitActor) {
-        hitActor.takeDamage(b.damage, b.shooter);
-        flash(hitPoint, 14, 0xfff0b0, 0.25);
-        emit('hit', { target: hitActor, damage: b.damage, shooter: b.shooter });
-        scene.remove(b.mesh); bolts.splice(i, 1);
+        if (b.damage > 0) {
+          hitActor.takeDamage(b.damage, b.shooter);
+          emit('hit', { target: hitActor, damage: b.damage, shooter: b.shooter });
+        }
+        if (b.aoe) explode(hitPoint, b.aoe.radius, b.aoe.damage, b.side, b.shooter, { exclude: b.damage > 0 ? hitActor : null });
+        if (!b.onEnd) flash(hitPoint, 14 * Math.sqrt(b.mesh.scale.x), 0xfff0b0, 0.25);
+        endBolt(i, 'hit', hitPoint);
       } else if (b.life <= 0) {
-        scene.remove(b.mesh); bolts.splice(i, 1);
+        if (b.aoe?.onExpire) explode(b.mesh.position, b.aoe.radius, b.aoe.damage, b.side, b.shooter);
+        endBolt(i, 'expire', b.mesh.position.clone());
       }
     }
 
@@ -155,7 +258,7 @@ export function createCombat(scene) {
   }
 
   return {
-    register, unregister, fire, flash, update, clear,
+    register, unregister, fire, flash, update, clear, raycast, explode,
     on(type, fn) { listeners[type].push(fn); },
     get boltCount() { return bolts.length; },
   };

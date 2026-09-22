@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { SHIPS, visualYawFor } from '../ships/fleet.js';
 import { RACES, shipForRace } from '../data/races.js';
+import { RACE_WEAPON, WEAPONS } from './weapons.js';
 
 /**
  * Statki NPC (sojusznicy i wrogowie) do dema fabularnego.
@@ -29,6 +30,11 @@ import { RACES, shipForRace } from '../data/races.js';
  *   - ODLATUJE przez fałdę (flee -> depart), zamiast znikać po 14 s,
  *   - sojusznicy w eskorcie SKACZĄ RAZEM z graczem (followJump/arriveJump).
  * Bez `warp` zachowanie jest identyczne jak w kroku 5.
+ *
+ * UZBROJENIE (opcjonalnie, od kroku 7): z `{ weapons }` (shared/systems/weapons.js)
+ * każdy NPC strzela bronią SWOJEJ RASY (RACE_WEAPON): Pieśniarze rakietami,
+ * Rezonanci lancą, Szczepieni śrutem itd. - z zasięgiem i rytmem tej broni.
+ * Bez `weapons` - bolty jak w kroku 5.
  */
 
 const CALLSIGNS = ['Iskra', 'Wrona', 'Kwant', 'Mgła', 'Kolec', 'Zegar', 'Bursztyn', 'Cień', 'Lis', 'Otchłań'];
@@ -60,7 +66,7 @@ function getBeaconTexture() {
  * @param {ReturnType<import('./combat.js').createCombat>} combat
  * @param {object} player - { position, quaternion, getVelocity(out), isAlive() }
  */
-export function createNpcManager(scene, combat, player, { warp = null } = {}) {
+export function createNpcManager(scene, combat, player, { warp = null, weapons = null } = {}) {
   const list = [];
   const listeners = { killed: [], left: [], retreat: [] };
   const emit = (t, p) => listeners[t].forEach((fn) => fn(p));
@@ -118,7 +124,9 @@ export function createNpcManager(scene, combat, player, { warp = null } = {}) {
       beacon, light: null,
       // napęd fałdowy: warping = sekwencja w toku (AI stoi), hidden = "w fałdzie" (niewidoczny, nietrafialny)
       warp: null, warping: false, arriving: false, hidden: false, jumpState: null,
+      weaponId: weapons ? (RACE_WEAPON[raceId] ?? 'pulse') : 'pulse',
     };
+    npc.weaponName = WEAPONS[npc.weaponId].name;
 
     if (warp) {
       npc.warp = warp.createHandle(group, raceId);
@@ -292,7 +300,7 @@ export function createNpcManager(scene, combat, player, { warp = null } = {}) {
     }
   }
 
-  function updateAttackRun(npc, targetPos, getTargetVel, dt) {
+  function updateAttackRun(npc, targetPos, getTargetVel, dt, targetRef = null) {
     const ai = npc.ai;
     const pos = npc.group.position;
     const dist = pos.distanceTo(targetPos);
@@ -306,7 +314,15 @@ export function createNpcManager(scene, combat, player, { warp = null } = {}) {
 
       _fwd.copy(FWD).applyQuaternion(npc.group.quaternion);
       _dir.copy(targetPos).sub(pos).normalize();
-      if (dist < 1500 && _fwd.dot(_dir) > 0.985 && npc.fireCooldown <= 0) {
+      if (weapons) {
+        if (npc.fireCooldown <= 0) {
+          const cd = weapons.npcFire(npc, {
+            weaponId: npc.weaponId, targetPos, targetVel: _pv, targetRef,
+            dist, alignCos: _fwd.dot(_dir), color: BOLT_COLOR[npc.side],
+          });
+          if (cd != null) npc.fireCooldown = cd;
+        }
+      } else if (dist < 1500 && _fwd.dot(_dir) > 0.985 && npc.fireCooldown <= 0) {
         fireAt(npc, targetPos, _pv);
         npc.fireCooldown = rand(0.6, 0.95);
       }
@@ -331,6 +347,14 @@ export function createNpcManager(scene, combat, player, { warp = null } = {}) {
     return best;
   }
 
+  // cel dla rakiet/torped NPC lecących w gracza (prędkość czytana na żywo)
+  const _plVel = new THREE.Vector3();
+  const playerTarget = {
+    position: player.position,
+    get velocity() { return player.getVelocity(_plVel); },
+    isAlive: () => player.isAlive(),
+  };
+
   function update(dt) {
     let landing = 0;
     for (const npc of [...list]) {
@@ -344,7 +368,8 @@ export function createNpcManager(scene, combat, player, { warp = null } = {}) {
         case 'escort': {
           const foe = nearestHostile(npc.group.position, 3500);
           if (foe) {
-            updateAttackRun(npc, foe.group.position, (out) => out.copy(foe.velocity), dt);
+            updateAttackRun(npc, foe.group.position, (out) => out.copy(foe.velocity), dt,
+              { position: foe.group.position, velocity: foe.velocity, isAlive: () => foe.alive && !foe.hidden });
           } else {
             updateFormation(npc, _v.set(160, 30, 280), dt); // za graczem, po prawej
           }
@@ -352,7 +377,7 @@ export function createNpcManager(scene, combat, player, { warp = null } = {}) {
         }
         case 'attack':
           if (player.isAlive()) {
-            updateAttackRun(npc, player.position, (out) => player.getVelocity(out), dt);
+            updateAttackRun(npc, player.position, (out) => player.getVelocity(out), dt, playerTarget);
           } else {
             npc.mode = 'idle';
           }

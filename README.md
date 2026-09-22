@@ -28,6 +28,7 @@ Potem otwórz np. `http://localhost:3000/step3-ships/` w przeglądarce.
 | [`step4-stellar-physics`](./step4-stellar-physics) | Układ potrójny (prawdziwa fizyka N-ciał, integracja leapfrog), sztuczne oświetlenie statku, tło gwiazd i mgławic, kolizje, gruz, dashboard gracza (telemetria + komunikaty załogi) |
 | [`step5-encounters`](./step5-encounters) | Rasy i statystyki (z kart ras), walka, NPC-e i **demo fabularne**: kontakt sojusznika, przechwycenie, atak wrogiego statku |
 | [`step6-warp`](./step6-warp) | **Napęd fałdowy** dla wszystkich statków: wejście w fałdę, relatywistyczna aberracja gwiazd, sygnatura skoku zależna od rasy, NPC wchodzą/odlatują przez fałdę, eskorta skacze z graczem |
+| [`step7-weapons`](./step7-weapons) | **Uzbrojenie**: 5 broni o różnej mechanice (działko, śrutownica, lanca, rakiety z namierzaniem, torpeda z implozją), system **Ciepła** z kart ras, broń rasowa NPC |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -53,12 +54,13 @@ shared/
     ├── debris-field.js         gruz i meteoryty (ciała stałe)
     ├── collision.js            twarda bariera: statek nie wchodzi w ciała stałe
     ├── dashboard.js            komunikaty załogi (dashboard gracza)
-    ├── combat.js               pociski, trafienia, efekty (krok 5)
+    ├── combat.js               pociski, trafienia, efekty (krok 5; naprowadzanie, wybuchy, promienie - krok 7)
     ├── npc-ships.js            statki NPC: sojusznicy i wrogowie z prostym AI (krok 5)
     ├── comms.js                komunikator: rozmowy z wyborami (krok 5)
     ├── target-labels.js        etykiety celów na ekranie (krok 5)
     ├── encounters.js           reżyser scen fabularnych (krok 5)
-    └── warp-drive.js           napęd fałdowy: efekt skoku dla każdego statku (krok 6)
+    ├── warp-drive.js           napęd fałdowy: efekt skoku dla każdego statku (krok 6)
+    └── weapons.js              uzbrojenie: 5 broni, ciepło, namierzanie, broń rasowa NPC (krok 7)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
@@ -76,7 +78,7 @@ i do szybkiej diagnozy, gdy któryś model się nie ładuje.
 
 Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
 W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
-1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy.
+1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy. Krok 7 dodaje: Q/E lub kółko — zmiana broni.
 
 **Android (kroki 3-5):** pierwsze dotknięcie włącza pełny ekran i blokadę poziomu; w pionie pokazuje się podpowiedź „Obróć telefon w poziom” (`shared/input/android-landscape.js`).
 
