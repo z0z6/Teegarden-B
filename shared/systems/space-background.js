@@ -124,10 +124,39 @@ const STAR_VERT = /* glsl */ `
   attribute float aSize;
   varying vec3 vColor;
   uniform float uPixelRatio;
+  // NAPĘD FAŁDOWY (shared/systems/warp-drive.js): relatywistyczna aberracja.
+  // uBeta = v/c obserwatora, uWarpDir = kierunek lotu (świat). Dla uBeta = 0
+  // gwiazdy są dokładnie tam, gdzie były (kroki 4-5 nie widzą różnicy).
+  uniform float uBeta;
+  uniform vec3 uWarpDir;
   void main() {
-    vColor = color;
-    gl_PointSize = aSize * uPixelRatio;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec3 d = normalize(position);
+    vec3 col = color;
+    float size = aSize;
+    if (abs(uBeta) > 1e-4) {
+      // cos(theta') = (cos(theta) + beta) / (1 + beta cos(theta)): przy dużej
+      // prędkości kierunki gwiazd "zbiegają się" przed dziobem
+      float c = dot(d, uWarpDir);
+      vec3 perp = d - uWarpDir * c;
+      float pl = length(perp);
+      perp = pl > 1e-5 ? perp / pl : vec3(0.0);
+      float c2 = (c + uBeta) / (1.0 + uBeta * c);
+      d = uWarpDir * c2 + perp * sqrt(max(0.0, 1.0 - c2 * c2));
+      // czynnik Dopplera D: >1 przed dziobem (jaśniej, ku fioletowi),
+      // <1 za rufą (ciemniej, ku czerwieni)
+      float g = inversesqrt(max(1e-4, 1.0 - uBeta * uBeta));
+      float D = clamp(1.0 / (g * (1.0 - uBeta * c2)), 0.15, 6.0);
+      float sh = clamp(log2(D) / 2.0, -1.0, 1.0);
+      col = sh > 0.0 ? mix(col, vec3(0.45, 0.66, 1.0), sh * 0.9) : mix(col, vec3(1.0, 0.32, 0.18) * 0.8, -sh * 0.85);
+      // jasność rośnie z D, ale z twardym sufitem: tysiące gwiazd zbitych w
+      // stożek przed dziobem inaczej zlewają się w białą plamę, na tle
+      // której ginie statek
+      col *= min(pow(D, 0.7), 1.8);
+      size *= clamp(pow(D, 0.3), 0.6, 1.5);
+    }
+    vColor = col;
+    gl_PointSize = size * uPixelRatio;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(d * 1000.0, 1.0);
   }
 `;
 
@@ -192,7 +221,11 @@ function createStars({ count, rng, pixelRatio }) {
   const material = new THREE.ShaderMaterial({
     vertexShader: STAR_VERT,
     fragmentShader: STAR_FRAG,
-    uniforms: { uPixelRatio: { value: pixelRatio } },
+    uniforms: {
+      uPixelRatio: { value: pixelRatio },
+      uBeta: { value: 0 },
+      uWarpDir: { value: new THREE.Vector3(0, 0, -1) },
+    },
     vertexColors: true,
     blending: THREE.AdditiveBlending,
     depthTest: false,
@@ -213,7 +246,7 @@ function createStars({ count, rng, pixelRatio }) {
  * @param {number} [opts.starCount=6000] - jak w kroku 2
  * @param {number} [opts.seed=7] - zmiana daje inne rozmieszczenie gwiazd i mgławic
  * @param {number} [opts.cubeSize=1024] - rozdzielczość ściany cube mapy mgławicy
- * @returns {{ update(camera: THREE.Camera): void, stars: THREE.Points }}
+ * @returns {{ update(camera: THREE.Camera): void, setWarp(beta: number, dir: THREE.Vector3): void, stars: THREE.Points }}
  */
 export function createSpaceBackground(renderer, scene, {
   starCount = 6000,
@@ -268,5 +301,15 @@ export function createSpaceBackground(renderer, scene, {
     stars.position.copy(camPos);
   }
 
-  return { update, stars };
+  /**
+   * Aberracja gwiazd przy skoku fałdowym (patrz warp-drive.js). beta = v/c
+   * (0 = brak efektu, ujemne = chwilowe "odbicie" nieba po wyjściu z fałdy),
+   * dir = kierunek lotu w świecie (znormalizowany).
+   */
+  function setWarp(beta, dir) {
+    stars.material.uniforms.uBeta.value = beta;
+    if (dir) stars.material.uniforms.uWarpDir.value.copy(dir);
+  }
+
+  return { update, setWarp, stars };
 }

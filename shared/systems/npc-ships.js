@@ -22,12 +22,19 @@ import { RACES, shipForRace } from '../data/races.js';
  *              'run' (atak) i 'break' (zawrotka).
  *   flee       ucieczka od gracza, potem zniknięcie.
  *   idle       dryf prosto.
+ *
+ * NAPĘD FAŁDOWY (opcjonalnie, od kroku 6): gdy do managera przekazano
+ * `{ warp }` (shared/systems/warp-drive.js), każdy NPC:
+ *   - WCHODZI do sceny przez fałdę (zamiast pojawiać się znikąd),
+ *   - ODLATUJE przez fałdę (flee -> depart), zamiast znikać po 14 s,
+ *   - sojusznicy w eskorcie SKACZĄ RAZEM z graczem (followJump/arriveJump).
+ * Bez `warp` zachowanie jest identyczne jak w kroku 5.
  */
 
 const CALLSIGNS = ['Iskra', 'Wrona', 'Kwant', 'Mgła', 'Kolec', 'Zegar', 'Bursztyn', 'Cień', 'Lis', 'Otchłań'];
 const BOLT_SPEED = 900;
-const SIDE_COLOR = { ally: '#4dd6a0', hostile: '#ff5a4a' };
-const BOLT_COLOR = { ally: 0x6cff9a, hostile: 0xff5a4a };
+const SIDE_COLOR = { ally: '#4dd6a0', hostile: '#ff5a4a', neutral: '#9fd8ff' };
+const BOLT_COLOR = { ally: 0x6cff9a, hostile: 0xff5a4a, neutral: 0x9fd8ff };
 
 const UP = new THREE.Vector3(0, 1, 0);
 const FWD = new THREE.Vector3(0, 0, -1);
@@ -53,7 +60,7 @@ function getBeaconTexture() {
  * @param {ReturnType<import('./combat.js').createCombat>} combat
  * @param {object} player - { position, quaternion, getVelocity(out), isAlive() }
  */
-export function createNpcManager(scene, combat, player) {
+export function createNpcManager(scene, combat, player, { warp = null } = {}) {
   const list = [];
   const listeners = { killed: [], left: [], retreat: [] };
   const emit = (t, p) => listeners[t].forEach((fn) => fn(p));
@@ -79,13 +86,14 @@ export function createNpcManager(scene, combat, player) {
     return out.setFromRotationMatrix(_m);
   }
 
-  function spawn({ raceId, factionKey = 'hawk', side, position, shipId, mode = 'idle', offset, maxSpeed, callsign }) {
+  function spawn({ raceId, factionKey = 'hawk', side, position, shipId, mode = 'idle', offset, maxSpeed, callsign, arrival, facing }) {
     const race = RACES[raceId];
     const def = SHIPS.find((s) => s.id === (shipId ?? shipForRace(raceId)));
 
     const group = new THREE.Group();
     group.position.copy(position);
-    lookQuat(position, player.position, group.quaternion); // startowo dziobem do gracza
+    if (facing) group.quaternion.copy(facing);
+    else lookQuat(position, player.position, group.quaternion); // startowo dziobem do gracza
     scene.add(group);
 
     const beacon = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -108,13 +116,25 @@ export function createNpcManager(scene, combat, player) {
       ai: { phase: 'run', timer: 0, breakPoint: new THREE.Vector3() },
       fireCooldown: rand(0.8, 1.6), canFlee: side === 'hostile', fleeT: 0, ready: false,
       beacon, light: null,
+      // napęd fałdowy: warping = sekwencja w toku (AI stoi), hidden = "w fałdzie" (niewidoczny, nietrafialny)
+      warp: null, warping: false, arriving: false, hidden: false, jumpState: null,
     };
+
+    if (warp) {
+      npc.warp = warp.createHandle(group, raceId);
+      npc.warpName = npc.warp.sig.name;
+      if ((arrival ?? 'warp') === 'warp') {
+        npc.warping = npc.arriving = true;
+        beacon.visible = false;
+        warp.warpIn(npc.warp, { onDone: () => finishArrival(npc) });
+      }
+    }
 
     npc.actor = {
       side: side === 'ally' ? 'ally' : 'hostile',
       get position() { return group.position; },
       get radius() { return npc.radius; },
-      isAlive: () => npc.alive,
+      isAlive: () => npc.alive && !npc.hidden,
       takeDamage: (amount) => damage(npc, amount),
     };
     combat.register(npc.actor);
@@ -141,6 +161,7 @@ export function createNpcManager(scene, combat, player) {
       group.add(light);
       npc.light = light;
       npc.ready = true;
+      if (npc.warp) warp.bindModel(npc.warp, model, size);
     }).catch((err) => console.error('NPC: nie udało się wczytać modelu', def.file, err));
 
     return npc;
@@ -164,7 +185,62 @@ export function createNpcManager(scene, combat, player) {
     emit('killed', npc);
   }
 
+  function finishArrival(npc) {
+    npc.warping = npc.arriving = npc.hidden = false;
+    npc.beacon.visible = true;
+    npc.group.visible = true;
+    npc.speed = Math.min(npc.maxSpeed, 160);
+  }
+
+  /** Odlot przez fałdę (albo zwykłe zniknięcie bez napędu). */
+  function depart(npc) {
+    if (!npc.alive || (npc.warping && !npc.arriving)) return;
+    if (!warp) { remove(npc); emit('left', npc); return; }
+    npc.warping = true;
+    warp.warpOut(npc.warp, { speed: npc.speed, onDone: () => { remove(npc); emit('left', npc); } });
+  }
+
+  /**
+   * Gracz wszedł w fałdę: sojusznicy w eskorcie/formacji skaczą za nim.
+   * Wychodzą z fałdy dopiero, gdy gracz jest już po drugiej stronie
+   * (arriveJump), na swoich miejscach w szyku.
+   */
+  function followJump() {
+    if (!warp) return;
+    for (const n of list) {
+      if (!n.alive || n.side === 'hostile' || n.warping) continue;
+      if (n.mode !== 'escort' && n.mode !== 'formation') continue;
+      n.warping = true;
+      n.jumpState = 'out';
+      warp.warpOut(n.warp, {
+        speed: Math.max(n.speed, 120),
+        alignTo: player.quaternion, // w fałdę równolegle do gracza, nie pod prąd
+        onDone: () => { n.hidden = true; n.jumpState = n.jumpState === 'arrive' ? 'arrive-now' : 'waiting'; },
+      });
+    }
+  }
+  function arriveJump() {
+    for (const n of list) {
+      if (!n.jumpState) continue;
+      if (n.jumpState === 'waiting') n.jumpState = 'arrive-now';
+      else if (n.jumpState === 'out') n.jumpState = 'arrive';
+    }
+  }
+  const _slot = new THREE.Vector3();
+  function landAfterJump(npc, index) {
+    const off = npc.mode === 'escort' ? _v.set(160, 30, 280) : npc.offset;
+    // sojusznik wychodzi z fałdy lekko przed swoim miejscem w szyku i z opóźnieniem
+    _slot.copy(off).multiplyScalar(npc.offsetScale).add(_tp.set(0, 0, -260 - 90 * index))
+      .applyQuaternion(player.quaternion).add(player.position);
+    npc.group.position.copy(_slot);
+    npc.group.quaternion.copy(player.quaternion);
+    npc.jumpState = null;
+    npc.arriving = true;
+    warp.warpIn(npc.warp, { onDone: () => finishArrival(npc) });
+  }
+
   function remove(npc) {
+    if (npc.warp) warp.release(npc.warp);
     scene.remove(npc.group);
     combat.unregister(npc.actor);
     const i = list.indexOf(npc);
@@ -256,8 +332,11 @@ export function createNpcManager(scene, combat, player) {
   }
 
   function update(dt) {
+    let landing = 0;
     for (const npc of [...list]) {
       if (!npc.alive) continue;
+      if (npc.jumpState === 'arrive-now') { landAfterJump(npc, landing++); continue; }
+      if (npc.warping) continue; // w trakcie sekwencji fałdy pozycję prowadzi napęd, nie AI
       switch (npc.mode) {
         case 'formation':
           updateFormation(npc, npc.offset, dt);
@@ -284,7 +363,9 @@ export function createNpcManager(scene, combat, player) {
           if (_tp.lengthSq() < 1) _tp.set(0, 0, 1);
           _tp.normalize().multiplyScalar(4000).add(npc.group.position);
           steer(npc, _tp, npc.maxSpeed, dt);
-          if (npc.fleeT > 14 || npc.group.position.distanceTo(player.position) > 6500) {
+          if (warp && npc.fleeT > 2.2) {
+            depart(npc); // odlot przez fałdę: krótki rozbieg i skok
+          } else if (npc.fleeT > 14 || npc.group.position.distanceTo(player.position) > 6500) {
             remove(npc);
             emit('left', npc);
           }
@@ -302,7 +383,7 @@ export function createNpcManager(scene, combat, player) {
   }
 
   return {
-    spawn, update, remove, clear,
+    spawn, update, remove, clear, depart, followJump, arriveJump,
     setMode(npc, mode) { npc.mode = mode; if (mode === 'flee') npc.fleeT = 0; },
     hostiles: () => list.filter((n) => n.side === 'hostile' && n.alive),
     list,

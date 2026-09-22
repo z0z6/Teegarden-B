@@ -27,6 +27,7 @@ Potem otwórz np. `http://localhost:3000/step3-ships/` w przeglądarce.
 | [`step3-ships`](./step3-ships) | Prawdziwe modele statków (glTF), wybór z 4 statków, zaokrętowanie, fizyka skalowana rozmiarem modelu |
 | [`step4-stellar-physics`](./step4-stellar-physics) | Układ potrójny (prawdziwa fizyka N-ciał, integracja leapfrog), sztuczne oświetlenie statku, tło gwiazd i mgławic, kolizje, gruz, dashboard gracza (telemetria + komunikaty załogi) |
 | [`step5-encounters`](./step5-encounters) | Rasy i statystyki (z kart ras), walka, NPC-e i **demo fabularne**: kontakt sojusznika, przechwycenie, atak wrogiego statku |
+| [`step6-warp`](./step6-warp) | **Napęd fałdowy** dla wszystkich statków: wejście w fałdę, relatywistyczna aberracja gwiazd, sygnatura skoku zależna od rasy, NPC wchodzą/odlatują przez fałdę, eskorta skacze z graczem |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -56,7 +57,8 @@ shared/
     ├── npc-ships.js            statki NPC: sojusznicy i wrogowie z prostym AI (krok 5)
     ├── comms.js                komunikator: rozmowy z wyborami (krok 5)
     ├── target-labels.js        etykiety celów na ekranie (krok 5)
-    └── encounters.js           reżyser scen fabularnych (krok 5)
+    ├── encounters.js           reżyser scen fabularnych (krok 5)
+    └── warp-drive.js           napęd fałdowy: efekt skoku dla każdego statku (krok 6)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
@@ -74,7 +76,7 @@ i do szybkiej diagnozy, gdy któryś model się nie ładuje.
 
 Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
 W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
-1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa.
+1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy.
 
 **Android (kroki 3-5):** pierwsze dotknięcie włącza pełny ekran i blokadę poziomu; w pionie pokazuje się podpowiedź „Obróć telefon w poziom” (`shared/input/android-landscape.js`).
 
