@@ -983,12 +983,28 @@ function updateParade(delta) {
 const warpBtn = document.getElementById('touch-warp');
 warpBtn?.addEventListener('touchstart', (e) => { e.preventDefault(); engageWarp(); }, { passive: false });
 
+// Stan przycisku SKOK na dotyku: ładowanie / sekundy chłodzenia / gotowy -
+// bez tego dotknięcie w czasie chłodzenia wyglądało, jakby nic nie zadziałało.
+const warpTouchBtn = document.getElementById('touch-warp');
+let warpBtnKey = '';
+function updateWarpButton() {
+  if (!warpTouchBtn) return;
+  const cd = Math.ceil(playerWarp.cooldown);
+  const key = playerWarp.active ? 'active' : cd > 0 ? `cd${cd}` : speedCap < 1 ? 'jam' : 'ready';
+  if (key === warpBtnKey) return;
+  warpBtnKey = key;
+  warpTouchBtn.classList.toggle('charging', playerWarp.active);
+  warpTouchBtn.classList.toggle('cooling', cd > 0 || speedCap < 1);
+  warpTouchBtn.textContent = playerWarp.active ? '···' : cd > 0 ? `${cd} s` : speedCap < 1 ? 'BLOK' : 'SKOK';
+}
+
 function updateWarp(delta) {
   updateParade(delta);
   _warpPrev.copy(shipGroup.position);
   playerWarp.update(delta);
   warp.update(delta); // wszystkie statki: uniformy kadłubów, sekwencje NPC, echa i szwy
   warpSpeed = delta > 0 ? shipGroup.position.distanceTo(_warpPrev) / delta : 0;
+  updateWarpButton();
 }
 
 // ============================================================

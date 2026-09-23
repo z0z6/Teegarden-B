@@ -379,6 +379,36 @@
       background: rgba(159, 216, 255, 0.12); border: 1px solid rgba(159, 216, 255, 0.35);
       color: #d9f3ff; font-family: 'Segoe UI', sans-serif; font-size: 12px;
     }
+
+    /* ============================================================
+       UKŁAD DOTYKOWY (poprawka): akcje w zwartej grupie przy prawym
+       drążku, zamiast jednej wysokiej kolumny nad nim. Stara kolumna
+       (drążek + BOOST + OGIEŃ/SKOK + BROŃ) potrzebowała ~380 px wysokości;
+       telefon w poziomie z paskiem adresu ma często ~300-340 px, więc
+       SKOK i BROŃ lądowały częściowo POZA EKRANEM. Nowa grupa ma ~220 px.
+                             [BROŃ] [SKOK]
+            [STOP]           prawy drążek
+            [BOOST]
+            (OGIEŃ)
+       ============================================================ */
+    @media (pointer: coarse) {
+      #touch-right-zone { right: 20px; bottom: 20px; }
+      #touch-fire   { right: 162px; bottom: 20px;  width: 76px; height: 76px; font-size: 12px; font-weight: 600;
+                      background: rgba(255, 122, 69, 0.18); border-color: rgba(255, 150, 110, 0.6); }
+      #touch-boost  { right: 170px; bottom: 106px; width: 60px; height: 60px; }
+      #touch-brake  { right: 174px; bottom: 176px; width: 52px; height: 52px; font-size: 10px; }
+      #touch-weapon { right: 92px;  bottom: 162px; width: 58px; height: 58px; font-size: 10px; }
+      #touch-warp   { right: 24px;  bottom: 162px; width: 58px; height: 58px; }
+      #touch-warp.charging { background: rgba(159, 216, 255, 0.45); color: #06121f; }
+      #touch-warp.cooling  { opacity: 0.55; }
+      /* komunikator między lewym drążkiem a grupą akcji */
+      #comms { left: 170px !important; right: auto; transform: none !important; width: min(400px, calc(100vw - 440px)) !important; }
+      /* przycisk VR na górze - na dole zasłaniał prawy drążek */
+      #VRButton { top: 8px !important; bottom: auto !important; left: 50% !important; right: auto !important; transform: translateX(-50%) scale(0.85); }
+    }
+    @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+      #crew-alerts { top: 52px; }
+    }
   </style>
 
   <!-- Importmap: three@0.184.0 (ta sama wersja co w narzędziach, którymi

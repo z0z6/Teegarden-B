@@ -144,6 +144,11 @@ export function createFlightInput({ onShipSwitch } = {}) {
     state.pitch = -(leftStick?.y ?? 0);
     state.roll = -(rightStick?.x ?? 0);
     state.throttle = -(rightStick?.y ?? 0); // joystick w górę (ujemne y ekranu) = do przodu
+    // BOOST na dotyku sam daje pełny ciąg do przodu. Na klawiaturze to
+    // Shift + W, ale na telefonie przycisk BOOST i prawy drążek obsługuje TEN
+    // SAM kciuk - wymaganie obu naraz sprawiało, że boost nie działał wcale.
+    // Drążek pchnięty do przodu nadal steruje ciągiem (np. łagodny boost).
+    if (state.boost && state.throttle < 0.05) state.throttle = 1;
     return true;
   }
 
