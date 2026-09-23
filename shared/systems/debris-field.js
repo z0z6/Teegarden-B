@@ -98,5 +98,12 @@ export function createDebrisField(scene, center, {
     }
   }
 
-  return { group, items, update };
+  /** Usuwa pole ze sceny (zmiana układu gwiezdnego - krok 8). */
+  function dispose() {
+    scene.remove(group);
+    group.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose?.(); } });
+    items.length = 0;
+  }
+
+  return { group, items, update, dispose };
 }

@@ -826,6 +826,7 @@ export function createPlayerWarp({ drive, handle, ship, camera, renderer, scene,
   const p0 = new THREE.Vector3(), pDive = new THREE.Vector3(), pExit = new THREE.Vector3(), pEnd = new THREE.Vector3();
   let gateA = null, gateB = null, crossedB = false;
   let onArrive = null, onDive = null;
+  let relocate = null, relocated = false, transitTime = T.transit;
   let beta = 0, betaVel = 0, betaTarget = 0;
   let fov = BASE_FOV, fovVel = 0, fovTarget = BASE_FOV;
   let bgDim = 1;
@@ -853,7 +854,13 @@ export function createPlayerWarp({ drive, handle, ship, camera, renderer, scene,
    * @param {Array} o.bodies ciała niebieskie ({position, radius, name}) do planu kursu
    * @returns {{ ok: boolean, reason?: string, distance?: number, blockedBy?: string|null }}
    */
-  function engage({ distance = 12000, bodies = [], minDistance = 2500, onArriveCb = null, onDiveCb = null } = {}) {
+  /**
+   * relocateCb (krok 8, skok MIĘDZYGWIEZDNY): wołane w połowie przelotu; zwraca
+   * { exit, dir } - punkt wyjścia i kierunek w NOWYM miejscu (np. innym
+   * układzie). Statek jest wtedy w tunelu (przygaszone niebo, smugi), więc
+   * podmiana świata jest niewidoczna.
+   */
+  function engage({ distance = 12000, bodies = [], minDistance = 2500, onArriveCb = null, onDiveCb = null, relocateCb = null, transit = T.transit } = {}) {
     if (phase !== 'idle') return { ok: false, reason: 'busy' };
     if (cooldown > 0) return { ok: false, reason: 'cooldown' };
     if (!handle.ready) return { ok: false, reason: 'no-ship' };
@@ -861,6 +868,7 @@ export function createPlayerWarp({ drive, handle, ship, camera, renderer, scene,
     plan = planJump(ship.position, dir, distance, bodies);
     if (plan.distance < minDistance) return { ok: false, reason: 'blocked', blockedBy: plan.blockedBy };
     onArrive = onArriveCb; onDive = onDiveCb;
+    relocate = relocateCb; relocated = false; transitTime = transit;
     phase = 'charge'; t = 0;
     return { ok: true, distance: plan.distance, blockedBy: plan.blockedBy };
   }
@@ -919,7 +927,21 @@ export function createPlayerWarp({ drive, handle, ship, camera, renderer, scene,
       }
     } else if (phase === 'transit') {
       t += dt;
-      const k = clamp01(t / T.transit);
+      const k = clamp01(t / transitTime);
+      if (relocate && !relocated && k >= 0.45) {
+        relocated = true;
+        const r = relocate();
+        if (r) {
+          // nowa prosta: ten sam pozostały dystans, ale do nowego punktu wyjścia
+          const s = smoother(k);
+          const remaining = pExit.distanceTo(ship.position);
+          dir.copy(r.dir).normalize();
+          pExit.copy(r.exit).addScaledVector(dir, -(handle.halfLen * 5 + handle.gateR));
+          const cur = pExit.clone().addScaledVector(dir, -remaining);
+          pDive.copy(cur).addScaledVector(pExit, -s).divideScalar(Math.max(1 - s, 1e-3));
+          domFlash(0.9);
+        }
+      }
       ship.position.lerpVectors(pDive, pExit, smoother(k));
       U.uWGateSide.value = 0;
       U.uWGlow.value = 1.2;

@@ -184,10 +184,7 @@ function makeRng(seed) {
   };
 }
 
-function createStars({ count, rng, pixelRatio }) {
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const sizes = new Float32Array(count);
+function fillStars(positions, colors, sizes, count, rng) {
   const color = new THREE.Color();
 
   for (let i = 0; i < count; i++) {
@@ -212,6 +209,13 @@ function createStars({ count, rng, pixelRatio }) {
     colors.set([color.r * dim, color.g * dim, color.b * dim], i * 3);
     sizes[i] = 1.6 + bright * 2.8;
   }
+}
+
+function createStars({ count, rng, pixelRatio }) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  fillStars(positions, colors, sizes, count, rng);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -269,26 +273,26 @@ export function createSpaceBackground(renderer, scene, {
     magFilter: THREE.LinearFilter,
   });
 
-  const bakeScene = new THREE.Scene();
   const bakeMaterial = new THREE.ShaderMaterial({
     vertexShader: NEBULA_VERT,
     fragmentShader: NEBULA_FRAG,
-    uniforms: { uSeed: { value: 3.0 + rng() * 40.0 } },
+    uniforms: { uSeed: { value: 0 } },
     side: THREE.BackSide,
     depthTest: false,
     depthWrite: false,
   });
-  const bakeMesh = new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), bakeMaterial);
-  bakeScene.add(bakeMesh);
-
   const cubeCamera = new THREE.CubeCamera(0.1, 100, cubeRT);
-  cubeCamera.update(renderer, bakeScene);
-
+  /** Wypieka mgławicę dla danego ziarna do tej samej cube mapy (bez nowych alokacji GPU). */
+  function bake(nebulaSeed) {
+    const bakeScene = new THREE.Scene();
+    const geo = new THREE.SphereGeometry(10, 48, 24);
+    bakeMaterial.uniforms.uSeed.value = nebulaSeed;
+    bakeScene.add(new THREE.Mesh(geo, bakeMaterial));
+    cubeCamera.update(renderer, bakeScene);
+    geo.dispose();
+  }
+  bake(3.0 + rng() * 40.0);
   scene.background = cubeRT.texture;
-
-  // po wypieczeniu shader i geometria nie są już potrzebne
-  bakeMesh.geometry.dispose();
-  bakeMaterial.dispose();
 
   // --- Gwiazdy ---
   const stars = createStars({ count: starCount, rng, pixelRatio: renderer.getPixelRatio() });
@@ -311,5 +315,17 @@ export function createSpaceBackground(renderer, scene, {
     if (dir) stars.material.uniforms.uWarpDir.value.copy(dir);
   }
 
-  return { update, setWarp, stars };
+  /**
+   * Nowe niebo (inny układ gwiezdny = inna mgławica i inne gwiazdy tła).
+   * Ta sama cube mapa i ten sam obiekt Points - bez nowych obiektów w scenie.
+   */
+  function reseed(newSeed) {
+    const r = makeRng(newSeed);
+    bake(3.0 + r() * 40.0);
+    const g = stars.geometry;
+    fillStars(g.attributes.position.array, g.attributes.color.array, g.attributes.aSize.array, starCount, r);
+    g.attributes.position.needsUpdate = g.attributes.color.needsUpdate = g.attributes.aSize.needsUpdate = true;
+  }
+
+  return { update, setWarp, reseed, stars };
 }

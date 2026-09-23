@@ -59,7 +59,18 @@ export function resolveCollisions(position, radius, solids) {
  * co klatkę (pozycje gwiazd/gruzu się zmieniają), więc nie cache'ujemy
  * wyniku między klatkami.
  */
-export function collectSolidBodies(starSystem, debrisField) {
+export function collectSolidBodies(starSystem, debrisField, near = null) {
+  // Krok 8+: układy z star-systems.js same wiedzą, co jest ciałem stałym
+  // (gwiazdy, planety, księżyce, planetoidy w pobliżu `near`).
+  if (starSystem.solidBodies) {
+    const solids = starSystem.solidBodies(near).slice();
+    if (debrisField) {
+      for (const item of debrisField.items) {
+        solids.push({ position: item.mesh.position, radius: item.radius, name: item.isMeteor ? 'meteoryt' : 'gruz' });
+      }
+    }
+    return solids;
+  }
   const solids = [
     { position: starSystem.bodies.starA.position, radius: starSystem.constants.RADIUS.starA, name: 'gwiazda G' },
     { position: starSystem.bodies.whiteDwarf.position, radius: starSystem.constants.RADIUS.whiteDwarf, name: 'biały karzeł' },

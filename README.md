@@ -29,6 +29,7 @@ Potem otwórz np. `http://localhost:3000/step3-ships/` w przeglądarce.
 | [`step5-encounters`](./step5-encounters) | Rasy i statystyki (z kart ras), walka, NPC-e i **demo fabularne**: kontakt sojusznika, przechwycenie, atak wrogiego statku |
 | [`step6-warp`](./step6-warp) | **Napęd fałdowy** dla wszystkich statków: wejście w fałdę, relatywistyczna aberracja gwiazd, sygnatura skoku zależna od rasy, NPC wchodzą/odlatują przez fałdę, eskorta skacze z graczem |
 | [`step7-weapons`](./step7-weapons) | **Uzbrojenie**: 5 broni o różnej mechanice (działko, śrutownica, lanca, rakiety z namierzaniem, torpeda z implozją), system **Ciepła** z kart ras, broń rasowa NPC |
+| [`step8-star-systems`](./step8-star-systems) | **Układy gwiezdne**: 5 układów (m.in. prawdziwa Gwiazda Teegardena, para z dyskiem akrecyjnym, nadolbrzym), dużo większe gwiazdy, proceduralne powierzchnie gwiazd (granulacja, plazma, protuberancje, rozbłyski) i planet, skok międzygwiezdny |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -60,7 +61,10 @@ shared/
     ├── target-labels.js        etykiety celów na ekranie (krok 5)
     ├── encounters.js           reżyser scen fabularnych (krok 5)
     ├── warp-drive.js           napęd fałdowy: efekt skoku dla każdego statku (krok 6)
-    └── weapons.js              uzbrojenie: 5 broni, ciepło, namierzanie, broń rasowa NPC (krok 7)
+    ├── weapons.js              uzbrojenie: 5 broni, ciepło, namierzanie, broń rasowa NPC (krok 7)
+    ├── star-systems.js         5 układów ciał niebieskich, ogólny interfejs układu (krok 8)
+    ├── star-surface.js         proceduralne gwiazdy: granulacja, plazma, korona, protuberancje (krok 8)
+    └── planet-surface.js       proceduralne planety i pierścienie (krok 8)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
