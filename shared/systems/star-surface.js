@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { NOISE_TEX_GLSL, noiseUniforms } from './noise-textures.js';
 
 /**
  * POWIERZCHNIA GWIAZDY - proceduralna, żywa, bez żadnych tekstur z pliku.
@@ -83,46 +84,9 @@ export const STAR_TYPES = {
 // ============================================================
 // Wspólne funkcje GLSL
 // ============================================================
-const NOISE_GLSL = /* glsl */ `
-vec3 hash33( vec3 p ) {
-  p = fract( p * vec3( 0.1031, 0.1030, 0.0973 ) );
-  p += dot( p, p.yxz + 33.33 );
-  return fract( ( p.xxy + p.yxx ) * p.zyx );
-}
-float hash13( vec3 p ) {
-  p = fract( p * 0.1031 );
-  p += dot( p, p.zyx + 31.32 );
-  return fract( ( p.x + p.y ) * p.z );
-}
-float vnoise( vec3 x ) {
-  vec3 i = floor( x ), f = fract( x );
-  f = f * f * ( 3.0 - 2.0 * f );
-  return mix(
-    mix( mix( hash13( i ), hash13( i + vec3( 1, 0, 0 ) ), f.x ), mix( hash13( i + vec3( 0, 1, 0 ) ), hash13( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
-    mix( mix( hash13( i + vec3( 0, 0, 1 ) ), hash13( i + vec3( 1, 0, 1 ) ), f.x ), mix( hash13( i + vec3( 0, 1, 1 ) ), hash13( i + vec3( 1, 1, 1 ) ), f.x ), f.y ),
-    f.z );
-}
-float fbm( vec3 p ) {
-  float a = 0.5, s = 0.0;
-  for ( int i = 0; i < 4; i++ ) { s += a * vnoise( p ); p = p * 2.03 + vec3( 11.7, 3.1, 7.3 ); a *= 0.5; }
-  return s / 0.9375;
-}
-// Worley (F1, F2) z "oddychającymi" środkami komórek - granule żyją i przestawiają się
-vec2 worley( vec3 p, float t ) {
-  vec3 i = floor( p ), f = fract( p );
-  float d1 = 8.0, d2 = 8.0;
-  for ( int z = -1; z <= 1; z++ )
-  for ( int y = -1; y <= 1; y++ )
-  for ( int x = -1; x <= 1; x++ ) {
-    vec3 g = vec3( float( x ), float( y ), float( z ) );
-    vec3 o = hash33( i + g );
-    o = 0.5 + 0.42 * sin( t + 6.2831 * o );
-    vec3 r = g + o - f;
-    float d = dot( r, r );
-    if ( d < d1 ) { d2 = d1; d1 = d; } else if ( d < d2 ) { d2 = d; }
-  }
-  return vec2( sqrt( d1 ), sqrt( d2 ) );
-}
+// Szum z tekstur 3D (noise-textures.js) - dawniej liczony proceduralnie
+// w każdym pikselu (8 haszy na próbkę, 27 sąsiadów na komórkę Worleya).
+const NOISE_GLSL = NOISE_TEX_GLSL + /* glsl */ `
 // kolor ciała doskonale czarnego (przybliżenie T. Hellanda), wynik w sRGB 0..1
 vec3 blackbody( float t ) {
   t = clamp( t, 1000.0, 40000.0 ) / 100.0;
@@ -388,7 +352,8 @@ export function createStarVisual({ radius, type = 'yellowDwarf', seed = Math.ran
     vertexShader: PHOTO_VERT,
     fragmentShader: PHOTO_FRAG,
     uniforms: {
-      uTime: { value: rand(0, 100) }, uTemp: { value: T.colorTemp ?? T.temp }, uGran: { value: T.gran },
+
+      ...noiseUniforms(),      uTime: { value: rand(0, 100) }, uTemp: { value: T.colorTemp ?? T.temp }, uGran: { value: T.gran },
       uGranContrast: { value: T.granContrast }, uConv: { value: T.conv }, uPlasma: { value: T.plasma },
       uSpots: { value: T.spots }, uLimb: { value: T.limb }, uBright: { value: T.brightness },
       uRot: { value: T.rotation }, uSeed: { value: seed }, uSat: { value: T.sat ?? 1.4 },
@@ -397,7 +362,7 @@ export function createStarVisual({ radius, type = 'yellowDwarf', seed = Math.ran
     },
   });
   // pochodne ekranowe (fwidth) do antyaliasingu granulacji - w WebGL2 są w standardzie
-  const photo = new THREE.Mesh(new THREE.SphereGeometry(1, 160, 120), photoMat);
+  const photo = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), photoMat);
   group.add(photo);
 
   // --- korona ---
@@ -406,7 +371,8 @@ export function createStarVisual({ radius, type = 'yellowDwarf', seed = Math.ran
     vertexShader: CORONA_VERT,
     fragmentShader: CORONA_FRAG,
     uniforms: {
-      uTime: { value: 0 }, uSize: { value: 1 }, uExtent: { value: EXTENT }, uCorona: { value: T.corona },
+
+      ...noiseUniforms(),      uTime: { value: 0 }, uSize: { value: 1 }, uExtent: { value: EXTENT }, uCorona: { value: T.corona },
       uFall: { value: T.coronaFall }, uStreamers: { value: T.streamers }, uDust: { value: T.dust },
       uFlare: { value: 0 }, uSeed: { value: seed }, uTemp: { value: T.temp },
       uChromo: { value: new THREE.Color(T.promColor) },
@@ -427,7 +393,8 @@ export function createStarVisual({ radius, type = 'yellowDwarf', seed = Math.ran
       const mat = new THREE.ShaderMaterial({
         vertexShader: PROM_VERT, fragmentShader: PROM_FRAG,
         uniforms: {
-          uTime: { value: 0 }, uAlpha: { value: 0 }, uLift: { value: 0 }, uErupt: { value: 0 },
+
+      ...noiseUniforms(),          uTime: { value: 0 }, uAlpha: { value: 0 }, uLift: { value: 0 }, uErupt: { value: 0 },
           uMid: { value: new THREE.Vector3() }, uColor: { value: new THREE.Color(T.promColor) }, uSeed: { value: rand(0, 50) },
         },
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide,
@@ -564,7 +531,7 @@ export function createAccretionFlow({ diskRadius, innerFraction = 0.12, streamLe
   const group = new THREE.Group();
   const diskMat = new THREE.ShaderMaterial({
     vertexShader: DISK_VERT, fragmentShader: DISK_FRAG,
-    uniforms: { uTime: { value: 0 }, uInner: { value: innerFraction }, uHotSpot: { value: 0.35 } },
+    uniforms: { ...noiseUniforms(), uTime: { value: 0 }, uInner: { value: innerFraction }, uHotSpot: { value: 0.35 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
   });
   const disk = new THREE.Mesh(new THREE.CircleGeometry(1, 128), diskMat);
@@ -590,7 +557,7 @@ export function createAccretionFlow({ diskRadius, innerFraction = 0.12, streamLe
       varying vec2 vUv; varying vec3 vN; varying vec3 vV;
       void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4( position, 1.0 ); vN = normalize( normalMatrix * normal ); vV = normalize( -mv.xyz ); gl_Position = projectionMatrix * mv; }`,
     fragmentShader: PROM_FRAG,
-    uniforms: { uTime: { value: 0 }, uAlpha: { value: 1 }, uSeed: { value: 3 }, uColor: { value: new THREE.Color(color) } },
+    uniforms: { ...noiseUniforms(), uTime: { value: 0 }, uAlpha: { value: 1 }, uSeed: { value: 3 }, uColor: { value: new THREE.Color(color) } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide,
   });
   const stream = new THREE.Mesh(streamGeo, streamMat);

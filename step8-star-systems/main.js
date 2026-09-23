@@ -1186,13 +1186,44 @@ function tick(delta) {
 if (new URLSearchParams(location.search).has('debug')) {
   window.__game = {
     tick, npcs, encounters, playerWarp, warp, shipGroup, arsenal, weapons, combat, fireInput, playerState,
-    get starSystem() { return starSystem; }, jumpToSystem, swapSystem, camera,
+    get starSystem() { return starSystem; }, jumpToSystem, swapSystem, camera, renderer, scene, warpParade,
     get speed() { return shipState.speed; },
   };
 }
 
+// ============================================================
+// OPTYMALIZACJA: ADAPTACYJNA ROZDZIELCZOŚĆ
+// ============================================================
+// Koszt klatki rośnie z liczbą pikseli (gwiazda wypełniająca ekran, korony,
+// efekty addytywne). Gdy średni czas klatki przekracza ~21 ms (poniżej ~48 fps)
+// przez sekundę, obniżamy rozdzielczość renderu o 15%; gdy przez 5 s mieścimy
+// się w ~57 fps, podnosimy ją o 8% (histereza - bez "pompowania" obrazu).
+// Najniżej 50% natywnej. HUD (DOM) zostaje ostry - skaluje się tylko scena 3D.
+// ?jakosc=pelna w adresie wyłącza mechanizm. W VR nie ruszamy (WebXR sam
+// zarządza rozdzielczością gogli).
+const MAX_PR = Math.min(window.devicePixelRatio, 2);
+const MIN_PR = Math.max(0.5, MAX_PR * 0.5);
+const ADAPTIVE = new URLSearchParams(location.search).get('jakosc') !== 'pelna';
+let pixelRatio = MAX_PR, frameAvg = 1 / 60, slowFor = 0, fastFor = 0;
+const resEl = document.getElementById('tm-res');
+function adaptResolution(raw) {
+  if (!ADAPTIVE || renderer.xr.isPresenting || raw <= 0 || raw > 0.25) return; // 0,25 s+ = karta w tle / pauza
+  frameAvg += (raw - frameAvg) * 0.05;
+  if (frameAvg > 1 / 48) { slowFor += raw; fastFor = 0; } else if (frameAvg < 1 / 57) { fastFor += raw; slowFor = 0; } else { slowFor = fastFor = 0; }
+  let changed = false;
+  if (slowFor > 1 && pixelRatio > MIN_PR) { pixelRatio = Math.max(MIN_PR, pixelRatio * 0.85); changed = true; frameAvg = 1 / 55; }
+  else if (fastFor > 5 && pixelRatio < MAX_PR) { pixelRatio = Math.min(MAX_PR, pixelRatio * 1.08); changed = true; }
+  if (changed) {
+    slowFor = fastFor = 0;
+    renderer.setPixelRatio(pixelRatio);
+    if (resEl) resEl.textContent = `${Math.round((pixelRatio / MAX_PR) * 100)}%`;
+  }
+}
+
 function animate() {
-  tick(Math.min(clock.getDelta(), 0.05));
+  const raw = clock.getDelta();
+  adaptResolution(raw);
+  tick(Math.min(raw, 0.05));
   renderer.render(scene, camera);
 }
 

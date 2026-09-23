@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { NOISE_TEX_GLSL, noiseUniforms } from './noise-textures.js';
 
 /**
  * PLANETY I KSIĘŻYCE - proceduralne powierzchnie na MeshStandardMaterial
@@ -15,23 +16,11 @@ import * as THREE from 'three';
  *   gas    gazowy olbrzym: pasy, turbulencje, wielka burza; opcjonalnie pierścienie
  */
 
-const NOISE = /* glsl */ `
-float pHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.zyx + 31.32 ); return fract( ( p.x + p.y ) * p.z ); }
-float pNoise( vec3 x ) {
-  vec3 i = floor( x ), f = fract( x ); f = f * f * ( 3.0 - 2.0 * f );
-  return mix( mix( mix( pHash( i ), pHash( i + vec3( 1, 0, 0 ) ), f.x ), mix( pHash( i + vec3( 0, 1, 0 ) ), pHash( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
-              mix( mix( pHash( i + vec3( 0, 0, 1 ) ), pHash( i + vec3( 1, 0, 1 ) ), f.x ), mix( pHash( i + vec3( 0, 1, 1 ) ), pHash( i + vec3( 1, 1, 1 ) ), f.x ), f.y ), f.z );
-}
-float pFbm( vec3 p ) { float a = 0.5, s = 0.0; for ( int i = 0; i < 5; i++ ) { s += a * pNoise( p ); p = p * 2.02 + 17.1; a *= 0.5; } return s / 0.96875; }
-vec2 pCells( vec3 p ) {
-  vec3 i = floor( p ), f = fract( p ); float d1 = 8.0, d2 = 8.0;
-  for ( int z = -1; z <= 1; z++ ) for ( int y = -1; y <= 1; y++ ) for ( int x = -1; x <= 1; x++ ) {
-    vec3 g = vec3( x, y, z ); vec3 o = vec3( pHash( i + g ), pHash( i + g + 7.1 ), pHash( i + g + 3.3 ) );
-    vec3 r = g + o - f; float d = dot( r, r );
-    if ( d < d1 ) { d2 = d1; d1 = d; } else if ( d < d2 ) d2 = d;
-  }
-  return vec2( sqrt( d1 ), sqrt( d2 ) );
-}
+// Szum z tekstur 3D (noise-textures.js) zamiast haszy liczonych w każdym pikselu
+const NOISE = NOISE_TEX_GLSL + /* glsl */ `
+float pNoise( vec3 x ) { return vnoise( x ); }
+float pFbm( vec3 p ) { float a = 0.5, s = 0.0; for ( int i = 0; i < 5; i++ ) { s += a * vnoise( p ); p = p * 2.02 + 17.1; a *= 0.5; } return s / 0.96875; }
+vec2 pCells( vec3 p ) { return texture( uWorley3D, p / 8.0 ).rg; }
 `;
 
 // kolor powierzchni (liniowy) + szorstkość + emisja, zależnie od rodzaju
@@ -90,6 +79,7 @@ const KINDS = { ocean: 0, rock: 1, desert: 2, ice: 3, lava: 4, gas: 5 };
 
 function planetMaterial({ kind, seed, palette }) {
   const U = {
+    ...noiseUniforms(),
     uKind: { value: KINDS[kind] ?? 1 },
     uSeed: { value: seed },
     uTime: { value: 0 },
@@ -117,7 +107,7 @@ diffuseColor.rgb = pSurf( normalize( vObjN ), pRough, pEmit );`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = pRough;')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += pEmit;');
   };
-  mat.customProgramCacheKey = () => 'planet-surface-v1';
+  mat.customProgramCacheKey = () => 'planet-surface-v2';
   return { mat, U };
 }
 
@@ -129,7 +119,7 @@ diffuseColor.rgb = vec3( 0.95 );
 `;
 
 function cloudMaterial(seed) {
-  const U = { uSeed: { value: seed + 3 }, uTime: { value: 0 } };
+  const U = { ...noiseUniforms(), uSeed: { value: seed + 3 }, uTime: { value: 0 } };
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, depthWrite: false });
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -140,7 +130,7 @@ function cloudMaterial(seed) {
       .replace('#include <common>', `#include <common>\nvarying vec3 vObjN;\nuniform float uSeed, uTime;\n${NOISE}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${CLOUD_FRAG_PATCH}`);
   };
-  mat.customProgramCacheKey = () => 'planet-clouds-v1';
+  mat.customProgramCacheKey = () => 'planet-clouds-v2';
   return { mat, U };
 }
 

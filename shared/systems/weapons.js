@@ -170,9 +170,13 @@ function createParticles(scene, capacity = 2400) {
   points.renderOrder = 3;
   scene.add(points);
 
-  let head = 0, dirty = false;
+  // OPTYMALIZACJA: do GPU idzie tylko zmieniony fragment bufora cyklicznego
+  // (nowe cząstki od ostatniej klatki), a nie całe 2400 x 13 liczb co klatkę
+  let head = 0, dirty = false, firstDirty = 0, emitted = 0;
   const tmpC = new THREE.Color();
   function emit(p, v, color, size, life, drag = 2) {
+    if (!dirty) { firstDirty = head; emitted = 0; }
+    emitted++;
     const i = head;
     head = (head + 1) % capacity;
     pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
@@ -195,7 +199,17 @@ function createParticles(scene, capacity = 2400) {
     const h = camera.isPerspectiveCamera ? (window.innerHeight * 0.5) / Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5) : 500;
     mat.uniforms.uPx.value = h * Math.min(window.devicePixelRatio, 2);
     if (dirty) {
-      for (const a of Object.values(attrs)) a.needsUpdate = true;
+      for (const a of Object.values(attrs)) {
+        const n = a.itemSize;
+        a.clearUpdateRanges();
+        if (emitted >= capacity) a.addUpdateRange(0, capacity * n);
+        else if (firstDirty + emitted <= capacity) a.addUpdateRange(firstDirty * n, emitted * n);
+        else {
+          a.addUpdateRange(firstDirty * n, (capacity - firstDirty) * n);
+          a.addUpdateRange(0, (firstDirty + emitted - capacity) * n);
+        }
+        a.needsUpdate = true;
+      }
       dirty = false;
     }
   }

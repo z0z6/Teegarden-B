@@ -73,11 +73,55 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
 
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
+  // OPTYMALIZACJA (krok 8): trzy poziomy detalu z shared/ships/models
+  // (-lod0/-lod1/-lod2). NPC oglądamy zwykle z setek/tysięcy jednostek -
+  // Kharath w LOD0 ma 372 tys. trójkątów, w LOD2 22 tys., a z daleka
+  // wyglądają tak samo. Brak pliku LOD1/2 = zostaje sam LOD0.
   const modelCache = new Map();
-  const loadModel = (file) => {
-    if (!modelCache.has(file)) modelCache.set(file, loader.loadAsync(file));
-    return modelCache.get(file).then((g) => g.scene.clone(true));
+  const loadLevel = (file) => {
+    if (!modelCache.has(file)) modelCache.set(file, loader.loadAsync(file).then((g) => g.scene).catch(() => null));
+    return modelCache.get(file);
   };
+  const LOD_SWITCH = [0, 2.5, 9]; // progi w przekątnych modelu (odległość kamery / rozmiar statku)
+  const loadModel = (file) => Promise.all([
+    loadLevel(file),
+    loadLevel(file.replace('-lod0', '-lod1')),
+    loadLevel(file.replace('-lod0', '-lod2')),
+  ]).then(([l0, l1, l2]) => {
+    if (!l0) throw new Error(`brak modelu ${file}`);
+    const levels = [l0, l1, l2].filter(Boolean).map((sc) => sc.clone(true));
+    if (levels.length === 1) return levels[0];
+    const lod = new THREE.LOD();
+    const diag = new THREE.Box3().setFromObject(levels[0]).getSize(new THREE.Vector3()).length();
+    levels.forEach((m, i) => lod.addLevel(m, LOD_SWITCH[i] * diag));
+    return lod;
+  });
+
+  // OPTYMALIZACJA: stała pula świateł doświetlających NPC zamiast światła
+  // w KAŻDYM statku. Zmiana liczby świateł w scenie zmusza three.js do
+  // rekompilacji shaderów wszystkich oświetlonych materiałów (przycięcie
+  // przy każdym pojawieniu się NPC), a każde światło kosztuje w każdym
+  // pikselu każdego oświetlonego obiektu. Pula 2 świateł zawsze jest w
+  // scenie; co klatkę dostają ją 2 najbliższe gotowe statki.
+  const FILL = [0, 1].map(() => {
+    const l = new THREE.PointLight(0xbfe4ff, 0, 1, 2);
+    scene.add(l);
+    return l;
+  });
+  function updateFillLights() {
+    const near = list.filter((n) => n.alive && n.ready && !n.hidden && n.group.visible)
+      .map((n) => ({ n, d: n.group.position.distanceToSquared(player.position) }))
+      .sort((a, b) => a.d - b.d);
+    FILL.forEach((l, i) => {
+      const e = near[i];
+      if (!e) { l.intensity = 0; return; }
+      const diag = e.n.diag;
+      l.position.copy(e.n.group.position).add(_fillOff.set(0, diag * 0.2, diag * 0.15));
+      l.intensity = 400 * (diag / 25) ** 2;
+      l.distance = diag * 6;
+    });
+  }
+  const _fillOff = new THREE.Vector3();
 
   let nextId = 1;
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -164,10 +208,7 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
       const diag = size.length();
       npc.radius = diag * 0.3;
       npc.offsetScale = THREE.MathUtils.clamp(npc.radius / 25, 1, 1.6);
-      const light = new THREE.PointLight(0xbfe4ff, 400 * (diag / 25) ** 2, diag * 6, 2);
-      light.position.set(0, diag * 0.2, diag * 0.15);
-      group.add(light);
-      npc.light = light;
+      npc.diag = diag; // światło doświetlające przydziela pula (updateFillLights)
       npc.ready = true;
       if (npc.warp) warp.bindModel(npc.warp, model, size);
     }).catch((err) => console.error('NPC: nie udało się wczytać modelu', def.file, err));
@@ -356,6 +397,7 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
   };
 
   function update(dt) {
+    updateFillLights();
     let landing = 0;
     for (const npc of [...list]) {
       if (!npc.alive) continue;
