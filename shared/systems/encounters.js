@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RACES, relation, pickRaceByRelation } from '../data/races.js';
+import { racePortrait, seedFrom } from '../data/race-portraits.js';
 
 /**
  * Reżyser scen fabularnych (demo): trzy spotkania i sekwencja, która je łączy.
@@ -57,9 +58,16 @@ export function createEncounters({
       `Reputacja u ${RACES[raceId].name}: ${v > 0 ? '+' : ''}${v} (${delta > 0 ? '+' : ''}${delta})`, 'info', 4000);
   }
 
+  // Wizerunek rozmówcy: ten sam NPC (id) = zawsze ten sam osobnik, a
+  // stronnictwo zmienia wizerunek (np. maska Świetlistych, korona Rezonantów).
+  function portraitOf(npc) {
+    return racePortrait(npc.raceId, { seed: seedFrom(npc.id), faction: npc.factionKey, color: RACES[npc.raceId].color, size: 56 });
+  }
+
   function say(npc, text, onDone, ttl = 3.4) {
     comms.say({
       sender: `${npc.callsign} · ${npc.factionName}`, sub: npc.raceName, color: RACES[npc.raceId].color, text, ttl, onDone,
+      portrait: portraitOf(npc),
     });
   }
 
@@ -83,6 +91,7 @@ export function createEncounters({
       alert('c-ally-id', CREW.navigator, `Identyfikacja: ${npc.raceName} — ${npc.factionName}. Nadaje wywołanie.`, 'info', 6000);
       comms.open({
         sender: `${npc.callsign} · ${npc.factionName}`, sub: npc.raceName, color: RACES[raceId].color,
+        portrait: portraitOf(npc),
         text: fill(voice.hail, npc),
         choices: [
           {
@@ -146,6 +155,7 @@ export function createEncounters({
 
       comms.open({
         sender: `${npc.callsign} · ${npc.factionName}`, sub: npc.raceName, color: RACES[raceId].color,
+        portrait: portraitOf(npc),
         text: voice.toll,
         choices: [
           {

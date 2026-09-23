@@ -20,6 +20,8 @@ Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu s
 
 Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tranzytującą planetą b tymi samymi shaderami co gra; wybrany układ zapamiętuje w przeglądarce i przekazuje do gry jako `?uklad=`. Czcionki (Big Shoulders Display, Manrope — OFL 1.1, licencje w `cover/fonts/`) są hostowane lokalnie. Bez WebGL okładka pokazuje statyczne tło.
 
+**Wizerunki ras** (`shared/data/race-portraits.js`): proceduralne, animowane portrety SVG przedstawicieli siedmiu ras. Komunikator pokazuje portret rozmówcy we wszystkich krokach od 5. Ten sam NPC ma zawsze ten sam wizerunek, osobniki różnią się szczegółami, a stronnictwo zmienia wizerunek tam, gdzie wynika to z jego nazwy (np. maska Świetlistych, blizna „Bez Numeru”). Karty ras nie opisują wyglądu, więc wizerunki są propozycją wyprowadzoną z lore — uzasadnienie przy każdej rasie jest na początku pliku. Podgląd wszystkich: `tools/race-gallery/`.
+
 ## Kroki
 
 | Krok | Co dodaje |
