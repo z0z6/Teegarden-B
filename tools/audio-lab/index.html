@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audio lab — Teegarden-B</title>
+  <style>
+    body { margin: 0; padding: 24px clamp(16px, 4vw, 48px); background: #05070c; color: #eaf4ff; font: 14px/1.5 'Segoe UI', system-ui, sans-serif; }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    h2 { margin: 26px 0 8px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #9fd8ff; }
+    p { margin: 0 0 12px; color: #9fb3c6; max-width: 60rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    button, select { font: inherit; color: #eaf4ff; background: rgba(159, 216, 255, 0.06); border: 1px solid rgba(159, 216, 255, 0.22); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+    button:hover { border-color: #9fd8ff; }
+    button[aria-pressed="true"] { background: rgba(159, 216, 255, 0.2); border-color: #9fd8ff; }
+    label { color: #9fb3c6; }
+    input[type=range] { width: 260px; accent-color: #ffd36b; }
+    output { font-variant-numeric: tabular-nums; min-width: 3em; display: inline-block; }
+    code { color: #ffd36b; }
+  </style>
+</head>
+<body>
+  <h1>Audio lab</h1>
+  <p>Odsłuch całej warstwy audio (<code>shared/audio/</code>): każdy dźwięk osobno, nastroje muzyki, intensywność walki i pełna sekwencja fałdy dla każdej rasy. Test techniczny bez słuchania: <code>node tools/audio-lab/check.mjs</code>.</p>
+
+  <h2>Muzyka</h2>
+  <div class="row" id="moods"></div>
+  <div class="row" style="margin-top:8px">
+    <label>Intensywność walki (tylko „flight”) <input type="range" id="intensity" min="0" max="100" value="0"></label><output id="iout">0.00</output>
+    <button data-stinger="success">przerywnik: zaliczona</button>
+    <button data-stinger="fail">przerywnik: nieudana</button>
+    <button data-stinger="death">przerywnik: śmierć</button>
+  </div>
+
+  <h2>Fałda</h2>
+  <div class="row">
+    <label>Rasa <select id="race"></select></label>
+    <button id="warp">Pełny skok (ładowanie → zanurzenie → tunel → wyjście)</button>
+    <label>Zatrzaśnięcie z odległości <input type="range" id="dist" min="0" max="12000" value="0" step="100"></label><output id="dout">0 j.</output>
+    <button id="slam">warp-slam</button>
+  </div>
+
+  <h2>Alarmy cykliczne</h2>
+  <div class="row">
+    <button id="hull" aria-pressed="false">kadłub &lt; 30%</button>
+    <label>Rakieta: czas do trafienia <input type="range" id="tca" min="0" max="300" value="200"></label><output id="tout">2.0 s</output>
+    <button id="missile" aria-pressed="false">rakieta w nas</button>
+  </div>
+
+  <div id="groups"></div>
+
+  <script type="module">
+    import { getAudio } from '../../shared/audio/audio.js';
+    import { mountAudioControls } from '../../shared/audio/audio-controls.js';
+    import { SFX, WARP_VOICE } from '../../shared/audio/sfx.js';
+    import { MOODS } from '../../shared/audio/music.js';
+
+    const audio = getAudio();
+    audio.setMood('cover');
+    mountAudioControls(audio, { corner: 'top-right' });
+    const $ = (id) => document.getElementById(id);
+
+    // nastroje
+    for (const m of [...Object.keys(MOODS), 'cisza']) {
+      const b = document.createElement('button');
+      b.textContent = m;
+      b.onclick = () => {
+        audio.unlock();
+        if (m === 'cisza') audio.setVolume('music', 0); else { if (audio.settings.music === 0) audio.setVolume('music', 0.55); audio.setMood(m); }
+        for (const x of $('moods').children) x.setAttribute('aria-pressed', String(x === b));
+      };
+      $('moods').appendChild(b);
+    }
+    $('intensity').oninput = (e) => { const v = e.target.value / 100; audio.setIntensity(v); $('iout').textContent = v.toFixed(2); };
+    setInterval(() => { $('iout').textContent = `${($('intensity').value / 100).toFixed(2)} (wygładzona: ${audio.intensity.toFixed(2)})`; }, 250);
+    for (const b of document.querySelectorAll('[data-stinger]')) b.onclick = () => { audio.unlock(); audio.stinger(b.dataset.stinger); };
+
+    // fałda: te same czasy faz co createPlayerWarp (charge 1,4 s, dive 0,5 s, transit 2,1 s, emerge 0,9 s)
+    for (const r of Object.keys(WARP_VOICE)) { const o = document.createElement('option'); o.value = o.textContent = r; $('race').appendChild(o); }
+    $('warp').onclick = () => {
+      audio.unlock();
+      const race = $('race').value;
+      const charge = audio.play('warp-charge', { race });
+      audio.duck(0.6, 1.2);
+      setTimeout(() => {
+        charge?.stop(0.08);
+        audio.play('warp-dive', { race });
+        const tunnel = audio.play('warp-transit', { race });
+        audio.duck(0.3, 0.4);
+        setTimeout(() => { tunnel?.stop(0.7); }, 2600);
+        setTimeout(() => { audio.play('warp-slam', { race, distance: 0 }); audio.duck(1, 1.5); }, 3000);
+      }, 1400);
+    };
+    $('dist').oninput = (e) => { $('dout').textContent = `${e.target.value} j.`; };
+    $('slam').onclick = () => { audio.unlock(); audio.play('warp-slam', { race: $('race').value, distance: Number($('dist').value), force: true }); };
+
+    // alarmy cykliczne - ta sama logika co w grze (game-audio.js)
+    let hull = false, missile = false;
+    $('hull').onclick = (e) => { audio.unlock(); hull = !hull; e.target.setAttribute('aria-pressed', String(hull)); };
+    $('missile').onclick = (e) => { audio.unlock(); missile = !missile; e.target.setAttribute('aria-pressed', String(missile)); };
+    $('tca').oninput = (e) => { $('tout').textContent = `${(e.target.value / 100).toFixed(1)} s`; };
+    setInterval(() => {
+      audio.alarm('alarm-hull', hull, 2.4);
+      const tca = $('tca').value / 100;
+      audio.alarm('alarm-missile', missile, Math.max(0.09, Math.min(0.6, 0.06 + tca * 0.18)));
+    }, 30);
+
+    // wszystkie dźwięki pogrupowane po szynie
+    const groups = { ui: 'Komunikaty (interfejs, powiadomienia, ostrzeżenia)', sfx: 'Efekty (walka, fałda)' };
+    for (const [bus, title] of Object.entries(groups)) {
+      const h = document.createElement('h2'); h.textContent = title; $('groups').appendChild(h);
+      const row = document.createElement('div'); row.className = 'row'; $('groups').appendChild(row);
+      for (const [name, r] of Object.entries(SFX)) {
+        if ((r.bus ?? 'sfx') !== bus || name === 'warp-charge' || name === 'warp-transit') continue;
+        const b = document.createElement('button');
+        b.textContent = name;
+        b.onclick = () => { audio.unlock(); audio.play(name, { race: $('race').value, force: true }); };
+        row.appendChild(b);
+      }
+    }
+  </script>
+</body>
+</html>

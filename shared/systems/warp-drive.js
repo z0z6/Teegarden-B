@@ -373,7 +373,13 @@ function createTunnel(count = 260) {
  *          + prymitywy efektów (openGate, shock, flash, scar) używane przez
  *          sterownik skoku gracza (createPlayerWarp).
  */
-export function createWarpDrive(scene) {
+/**
+ * @param {THREE.Scene} scene
+ * @param {object} [o]
+ * @param {(position: THREE.Vector3, sig: object) => void} [o.onSlam]  krok 9: zatrzaśnięcie
+ *   fałdy (dowolny statek) - warstwa audio gra wtedy "tąpnięcie" z odległości
+ */
+export function createWarpDrive(scene, { onSlam = null } = {}) {
   const handles = new Set();
   const effects = [];       // krótkie efekty (echo, błysk, szew, zamykanie fałdy)
   let time = 0;
@@ -611,6 +617,7 @@ export function createWarpDrive(scene) {
   /** Pełne "zatrzaśnięcie" fałdy: zapadnięcie + echo + błysk (+ opcjonalny szew). */
   function slam(gate, { scarFrom = null } = {}) {
     const p = gate.position.clone();
+    onSlam?.(p, gate.sig);
     shock(p, gate.dir, gate.radius, gate.sig);
     flash(p, gate.radius * 2.2, gate.sig.coreColor);
     if (scarFrom) scar(scarFrom, p, Math.max(0.6, gate.radius * 0.05), gate.sig);

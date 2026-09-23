@@ -285,7 +285,12 @@ void main() {
  * @param {ReturnType<import('./combat.js').createCombat>} o.combat
  * @param {THREE.Camera} o.camera   do rozmiaru cząstek i pierścieni zwróconych do kamery
  */
-export function createWeapons({ scene, combat, camera }) {
+/**
+ * Krok 9 (opcjonalne haki dla warstwy audio):
+ *   onFire(id, origin, side, npc)  - każdy wystrzał (gracz i NPC)
+ *   onBlast(kind, position, size)  - wybuch głowicy ('blast') albo implozja ('implosion')
+ */
+export function createWeapons({ scene, combat, camera, onFire = null, onBlast = null }) {
   const particles = createParticles(scene);
   const effects = [];
   let time = 0;
@@ -378,12 +383,14 @@ export function createWeapons({ scene, combat, camera }) {
   }
 
   function explosion(p, size, color) {
+    onBlast?.('blast', p, size);
     combat.flash(p, size, color, 0.5);
     combat.flash(p, size * 0.45, 0xffffff, 0.22);
     particles.burst(p, Math.round(18 + size * 0.3), size * 4, color, Math.max(4, size * 0.12), 0.7);
   }
 
   function implosion(p, radius, color) {
+    onBlast?.('implosion', p, radius);
     const c3 = new THREE.Color(color);
     const sMat = new THREE.ShaderMaterial({
       vertexShader: IMPLODE_VERT, fragmentShader: IMPLODE_FRAG,
@@ -441,6 +448,7 @@ export function createWeapons({ scene, combat, camera }) {
     const W = WEAPONS[id];
     const P = npc ? NPC_PROFILE[id] : null;
     const col = color ?? W.color;
+    onFire?.(id, origin, side, npc);
     if (id === 'pulse') {
       combat.fire({
         origin, direction: dir, side, speed: W.speed, damage: (P?.damage ?? W.damage) * damageMult,

@@ -23,14 +23,69 @@ import { racePortrait, seedFrom } from '../data/race-portraits.js';
  * komunikator, dashboard, blokadę napędu i znaczniki celów.
  */
 
+/**
+ * Opis misji. `desc` - jedna linijka (HUD, listy); pozostałe pola czyta
+ * tablica misji (missions.html): `brief` - odprawa w głosie załogi,
+ * `win` / `lose` - warunki, `tip` - wskazówka, `threat` 1..5, `tags`,
+ * `pack` - 'auto' (wataha startuje sama) albo 'optional'.
+ */
 export const MISSIONS = {
-  capture: { name: 'Przechwycenie statku', desc: 'Kurier z ładunkiem. Unieruchom go (nie niszcz) i dokonaj abordażu, zanim skoczy.' },
-  blockade: { name: 'Przedarcie się przez blokadę', desc: 'Dolecieć do punktu przejścia za linią wroga. Boost podbija sygnaturę — pikiety widzą dalej.' },
-  waves: { name: 'Odeprzyj atak', desc: 'Dziesięciu przeciwników w trzech falach z różnych stron. Zniszcz albo przegoń.' },
-  escort: { name: 'Eskorta handlowca', desc: 'Doprowadź statek handlowy do punktu skoku. Rabusie celują w niego, nie w ciebie.' },
-  ambush: { name: 'Zasadzka', desc: 'Sygnał SOS przy wraku. Coś tu nie gra — dobre czujniki mogą to wykryć wcześniej.' },
-  pursuit: { name: 'Ucieczka przed pościgiem', desc: 'Łowcy na ogonie, ich „Sieć” zagłusza fałdę. Zgub ich albo skocz, gdy napęd jest wolny.' },
-  wolfhunt: { name: 'Łowy watahy', desc: 'Z watahą rozbij konwój. Frachtowiec nie może dolecieć do punktu skoku.' },
+  capture: {
+    name: 'Przechwycenie statku', desc: 'Kurier z ładunkiem. Unieruchom go (nie niszcz) i dokonaj abordażu, zanim skoczy.',
+    brief: 'Kurier wiezie ładunek, który ma dotrzeć cały, więc zestrzelenie go niczego nie załatwia. Trzeba mu wyłączyć napęd i przejść na pokład. Leci z dwoma myśliwcami, które spróbują nas od niego odciągnąć.',
+    win: 'Zbij kadłub kuriera poniżej 35% (napęd pada), potem trzymaj się bliżej niż 320 j. i zrównaj prędkość na 5 s.',
+    lose: 'Kurier zniszczony albo ucieka w fałdę — ładuje ją, gdy jesteś dalej niż 1600 j.',
+    tip: 'Słabsza broń (działko) daje więcej kontroli nad kadłubem niż torpedy.',
+    threat: 2, tags: ['precyzja', 'pościg'], pack: 'optional',
+  },
+  blockade: {
+    name: 'Przedarcie się przez blokadę', desc: 'Dolecieć do punktu przejścia za linią wroga. Boost podbija sygnaturę — pikiety widzą dalej.',
+    brief: 'Linia siedmiu okrętów z interdyktorem pośrodku. W jego polu fałda się nie domknie, a napęd zwalnia. Pikiety widzą nas tym dalej, im głośniej lecimy.',
+    win: 'Dolecieć do bramy 15 500 j. przed dziobem.',
+    lose: 'Utrata statku.',
+    tip: 'Łuk po cichu, bez boostu, daje wyższą nagrodę. Jeśli nas wykryją, cała linia rusza naraz.',
+    threat: 4, tags: ['skradanie', 'zagłuszanie'], pack: 'optional',
+  },
+  waves: {
+    name: 'Odeprzyj atak', desc: 'Dziesięciu przeciwników w trzech falach z różnych stron. Zniszcz albo przegoń.',
+    brief: 'Dziesięć jednostek w trzech falach: 3, 3 i 4, za każdym razem z innego kierunku. Dowódcy wycofują ranne statki, więc nie wszystko trzeba zestrzelić.',
+    win: 'Każdy z dziesięciu wrogów zniszczony, wycofany albo odleciał.',
+    lose: 'Utrata statku.',
+    tip: 'Naraz atakuje tylko część eskadry, reszta krąży na flankach. Pilnuj flank, a nie tylko tego, kto strzela.',
+    threat: 4, tags: ['walka', 'wytrzymałość'], pack: 'optional',
+  },
+  escort: {
+    name: 'Eskorta handlowca', desc: 'Doprowadź statek handlowy do punktu skoku. Rabusie celują w niego, nie w ciebie.',
+    brief: 'Karawana na ciężkim kadłubie Kharath leci powoli do punktu skoku 12 500 j. stąd. Po drodze będą dwa napady. Rabusiom zależy na ładunku, więc strzelają do handlowca, a nie do nas.',
+    win: 'Karawana dolatuje do punktu skoku.',
+    lose: 'Karawana zniszczona albo porzucona (nasz skok fałdowy).',
+    tip: 'Rozkaz Osłona (V) dla watahy trzyma skrzydłowych przy tobie. Karawanę chronisz, stojąc między nią a rabusiami.',
+    threat: 3, tags: ['obrona', 'eskorta'], pack: 'optional',
+  },
+  ambush: {
+    name: 'Zasadzka', desc: 'Sygnał SOS przy wraku. Coś tu nie gra — dobre czujniki mogą to wykryć wcześniej.',
+    brief: 'Sygnał SOS przy wraku 6500 j. przed nami. Sensory łapią słabe echa, jakby ktoś czekał z wygaszonym napędem. Jeśli to pułapka, zagłuszacz nie pozwoli nam skoczyć.',
+    win: 'Rozbij zasadzkę albo się z niej wyrwij (> 8000 j.). Wygraną jest też ominięcie jej po wykryciu (> 12 000 j.).',
+    lose: 'Utrata statku.',
+    tip: 'Rasy z dobrymi czujnikami wykryją napastników, zanim ci wyjdą z ukrycia.',
+    threat: 5, tags: ['pułapka', 'czujniki'], pack: 'optional',
+  },
+  pursuit: {
+    name: 'Ucieczka przed pościgiem', desc: 'Łowcy na ogonie, ich „Sieć” zagłusza fałdę. Zgub ich albo skocz, gdy napęd jest wolny.',
+    brief: 'Trzech łowców na ogonie. Mają sprint szybszy od naszego boostu, ale ich napędy się przegrzewają. Co 45 s posiłki próbują odciąć nam drogę z przodu.',
+    win: 'Oderwij się na 7500 j. na 3 s, skocz poza zasięgiem „Sieci” albo zniszcz łowców.',
+    lose: 'Utrata statku.',
+    tip: 'Kiedy łowca przegrzeje sprint, masz kilka sekund okna na ucieczkę. Załoga je zgłosi.',
+    threat: 3, tags: ['ucieczka', 'zagłuszanie'], pack: 'optional',
+  },
+  wolfhunt: {
+    name: 'Łowy watahy', desc: 'Z watahą rozbij konwój. Frachtowiec nie może dolecieć do punktu skoku.',
+    brief: 'Frachtowiec z trzema eskortowcami leci do punktu skoku. Tym razem to my polujemy: wataha startuje z nami i słucha rozkazów. Po 45 s wraca patrol konwoju.',
+    win: 'Frachtowiec zniszczony, zanim skoczy.',
+    lose: 'Frachtowiec dolatuje do punktu skoku.',
+    tip: 'Kleszcze (H) rozciągają eskortę. Atak na mój cel (G) skupia ogień watahy na frachtowcu.',
+    threat: 3, tags: ['wataha', 'natarcie'], pack: 'auto',
+  },
 };
 export const MISSION_ORDER = ['capture', 'blockade', 'waves', 'escort', 'ambush', 'pursuit', 'wolfhunt'];
 
@@ -150,7 +205,7 @@ export function createMissions({
     comms.say({
       sender: success ? 'MISJA ZALICZONA' : 'MISJA NIEUDANA', sub: state.name,
       color: success ? '#4dd6a0' : '#ff5a4a', ttl: 7,
-      text: `${text}${cargo ? ` Nagroda: +${cargo} ładunku.` : ''} N — tablica misji.`,
+      text: `${text}${cargo ? ` Nagroda: +${cargo} ładunku.` : ''} Enter — jeszcze raz · N — tablica misji.`,
     });
     alert('mission-end', CREW.navigator, `${state.name}: ${success ? 'zaliczona' : 'nieudana'}.`, success ? 'info' : 'danger', 6000);
     // po sukcesie niedobitki się wycofują (nie ma sensu ginąć za przegraną sprawę)

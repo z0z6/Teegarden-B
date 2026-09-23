@@ -3,6 +3,8 @@ import { createSpaceBackground } from '../shared/systems/space-background.js';
 import { createStarVisual } from '../shared/systems/star-surface.js';
 import { createPlanetVisual } from '../shared/systems/planet-surface.js';
 import { SYSTEMS, SYSTEM_ORDER } from '../shared/systems/star-systems.js';
+import { getAudio } from '../shared/audio/audio.js';
+import { mountAudioControls } from '../shared/audio/audio-controls.js';
 
 /**
  * OKŁADKA GRY: żywa Gwiazda Teegardena (ten sam shader co w grze -
@@ -40,7 +42,7 @@ const chooseBtn = document.getElementById('choose');
 function applySelection(id, { preview = true } = {}) {
   selected = id;
   try { localStorage.setItem(STORE_KEY, id); } catch { /* bez zapisu */ }
-  play.href = `./step9-missions/?uklad=${id}`;
+  play.href = `./missions.html?uklad=${id}`; // krok 9: najpierw tablica misji
   playSystem.textContent = SYSTEMS[id].name;
   caption.textContent = id === 'teegarden' ? CAPTION_DEFAULT : SYSTEMS[id].desc;
   list.querySelectorAll('.system').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
@@ -53,7 +55,7 @@ for (const id of SYSTEM_ORDER) {
   b.dataset.id = id;
   b.style.setProperty('--c', PREVIEW[id].color);
   b.innerHTML = `<i></i><b>${SYSTEMS[id].name}</b><span>${SYSTEMS[id].desc}</span>`;
-  b.addEventListener('click', () => applySelection(id));
+  b.addEventListener('click', () => { applySelection(id); audio.play('ui-click'); });
   // podgląd na najechanie; po zjechaniu wraca wybrany
   b.addEventListener('pointerenter', () => showStar(id));
   b.addEventListener('pointerleave', () => showStar(selected));
@@ -63,6 +65,25 @@ chooseBtn.addEventListener('click', () => {
   const open = panel.classList.toggle('open');
   chooseBtn.setAttribute('aria-expanded', String(open));
 });
+
+// ------------------------------------------------------------
+// Audio (krok 9): spokojny nastrój okładki; rusza po pierwszym kliknięciu
+// (wymóg przeglądarek). "Graj" wycisza muzykę przed przejściem, żeby nie
+// urwała się w pół dźwięku.
+// ------------------------------------------------------------
+const audio = getAudio();
+audio.setMood('cover');
+mountAudioControls(audio, { corner: 'top-right', offset: [16, 16] });
+play.addEventListener('click', async (e) => {
+  if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return; // nowa karta - bez przejęcia
+  e.preventDefault();
+  audio.play('ui-confirm', { force: true });
+  await audio.fadeOut(0.45);
+  location.href = play.href;
+});
+play.addEventListener('pointerenter', () => audio.play('ui-hover'));
+chooseBtn.addEventListener('click', () => audio.play('ui-click'));
+window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); }); // powrót "wstecz": strona była wyciszona
 
 const dialog = document.getElementById('controls');
 document.getElementById('controls-open').addEventListener('click', () => dialog.showModal());

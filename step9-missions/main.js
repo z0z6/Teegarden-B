@@ -21,11 +21,16 @@ import { createWeapons, createPlayerArsenal, WEAPONS, WEAPON_ORDER, RACE_WEAPON 
 import { createTactics, DIFFICULTY } from '../shared/systems/tactical-ai.js';
 import { createWolfpack, PACK_ORDERS } from '../shared/systems/wolfpack.js';
 import { createMissions, MISSIONS, MISSION_ORDER } from '../shared/systems/missions.js';
+import { getAudio } from '../shared/audio/audio.js';
+import { createGameAudio } from '../shared/audio/game-audio.js';
+import { mountAudioControls } from '../shared/audio/audio-controls.js';
 
 // ============================================================
 // KROK 9: MISJE, TRYB WATAHY I TAKTYCZNE AI - patrz sekcja "KROK 9" niżej,
 // shared/systems/tactical-ai.js (mózg NPC), wolfpack.js (wataha) i
-// missions.js (scenariusze). Reszta pliku = krok 8.
+// missions.js (scenariusze). Tablica misji to osobna strona (missions.html):
+// gra dostaje ?misja=&statek=&trudnosc=&wataha=&uklad= i startuje od razu.
+// Warstwa audio: shared/audio/ (sekcja "AUDIO" niżej). Reszta pliku = krok 8.
 // ============================================================
 // ============================================================
 // KROK 8: UKŁADY GWIEZDNE - pięć układów (shared/systems/star-systems.js),
@@ -114,6 +119,11 @@ scene.add(new THREE.AmbientLight(0x223344, 0.25));
 // Początkowy układ: ?uklad=teegarden (itd.) w adresie, domyślnie potrójny.
 // ============================================================
 const urlSystem = new URLSearchParams(location.search).get('uklad');
+// krok 9: parametry z tablicy misji (missions.html)
+const URLQ = new URLSearchParams(location.search);
+const urlMission = MISSIONS[URLQ.get('misja')] ? URLQ.get('misja') : null;
+const urlShipIndex = Math.max(0, SHIPS.findIndex((s) => s.id === URLQ.get('statek')));
+const urlPack = URLQ.get('wataha') === '1';
 const initialSystem = SYSTEMS[urlSystem] ? urlSystem : 'potrojny';
 const QUALITY = matchMedia('(pointer: coarse)').matches ? 0.6 : 1; // telefony: mniej protuberancji i planetoid
 let starSystem = createStarSystem(scene, initialSystem, { quality: QUALITY });
@@ -188,7 +198,9 @@ shipGroup.add(shipLight);
 
 // KROK 6: napęd fałdowy. Jeden menedżer dla wszystkich statków (gracz + NPC);
 // uchwyt gracza dostaje model przy każdym zaokrętowaniu (loadShip).
-const warp = createWarpDrive(scene);
+// krok 9: gameAudio powstaje niżej (potrzebuje misji i komunikatora); haki wołają go leniwie
+let gameAudio = null;
+const warp = createWarpDrive(scene, { onSlam: (p, sig) => gameAudio?.slam(p, sig) });
 const playerWarpHandle = warp.createHandle(shipGroup, 'wybudzeni');
 
 let currentShipIndex = -1;
@@ -340,7 +352,12 @@ async function loadShip(index) {
   // KROK 9: zamiast dema - misje. Nowa rasa = nowi przeciwnicy i nowa wataha.
   if (missions.active) missions.start(missions.state.id);
   if (wolfpack.active) wolfpack.spawn();
-  if (!boardShownOnce) { boardShownOnce = true; renderBoard(); board.classList.add('visible'); }
+  if (!firstShipLoaded) {
+    firstShipLoaded = true;
+    // start z tablicy misji: wataha i misja od razu po zaokrętowaniu
+    if (urlPack && !wolfpack.active) wolfpack.spawn();
+    if (urlMission) startMission(urlMission);
+  }
 
   dashboard.show('ship-switch', {
     crew: CREW.navigator,
@@ -746,7 +763,11 @@ let playerStats = deriveStats('wybudzeni');
 
 const combat = createCombat(scene);
 // KROK 7: wspólny menedżer broni (gracz + NPC): pociski, promienie, cząstki
-const weapons = createWeapons({ scene, combat, camera });
+const weapons = createWeapons({
+  scene, combat, camera,
+  onFire: (id, origin, side) => gameAudio?.fire(id, origin, side),   // krok 9: dźwięk wystrzałów
+  onBlast: (kind, p, size) => gameAudio?.blast(kind, p, size),
+});
 const playerProxy = {
   position: shipGroup.position,     // wektor "na żywo" - NPC czytają go co klatkę
   quaternion: shipGroup.quaternion,
@@ -787,6 +808,8 @@ const encounters = createEncounters({
 });
 
 const deathEl = document.getElementById('death');
+const deathSubEl = document.querySelector('#death .death-sub');
+let lastMissionAtDeath = null;
 const damageEl = document.getElementById('damage');
 
 function damagePlayer(amount, shooter) {
@@ -798,6 +821,7 @@ function damagePlayer(amount, shooter) {
   playerState.hull = Math.max(0, playerState.hull - dealt);
   playerState.damageFlash = 1;
   playerState.sinceHit = 0;
+  gameAudio?.playerHit(dealt);
   dashboard.show('hit', {
     crew: CREW.tactical,
     urgency: playerState.hull < playerState.maxHull * 0.3 ? 'danger' : 'warning',
@@ -814,7 +838,11 @@ function killPlayer() {
   speedCap = 1;
   combat.flash(shipGroup.position, collisionRadius * 3 + 30, 0xffa640, 0.9);
   shipGroup.visible = false;
+  // krok 9: R = misja od nowa (jeśli była), N = tablica misji
+  lastMissionAtDeath = missions.active ? missions.state.id : null;
+  deathSubEl.textContent = lastMissionAtDeath ? 'R — misja od nowa · N — tablica misji' : 'R — odrodzenie · N — tablica misji';
   deathEl.classList.add('visible');
+  gameAudio?.death();
 }
 
 function respawn() {
@@ -828,13 +856,16 @@ function respawn() {
   deathEl.classList.remove('visible');
   combat.clear();
   weapons.clear();
-  // krok 9: misja kończy się porażką przy śmierci; po odrodzeniu - czysto, tablica misji
+  // krok 9: śmierć kończy misję; odrodzenie = ta sama misja od nowa (i wataha, jeśli była)
+  const again = lastMissionAtDeath;
+  const hadPack = wolfpack.active;
   missions.abort();
   encounters.reset();
   wolfpack.dismiss(true);
   npcs.clear();
-  renderBoard();
-  board.classList.add('visible');
+  gameAudio?.respawn();
+  if (again) startMission(again);
+  if (hadPack && !wolfpack.active) wolfpack.spawn();
 }
 
 // ============================================================
@@ -1272,53 +1303,54 @@ function packCommand(kind) {
   wolfpack.command(kind, kind === 'focus' ? playerFocusTarget() : null);
 }
 
-const board = document.getElementById('mission-board');
-let boardShownOnce = false;
-function renderBoard() {
-  board.innerHTML = `<div class="map-title">Tablica misji</div>
-    <div class="board-sub">Trudność AI: ${tactics.difficulty.name} (<code>?trudnosc=latwa|normalna|trudna</code>) · Esc/N — zamknij</div>`;
-  for (const id of MISSION_ORDER) {
-    const b = document.createElement('button');
-    b.className = 'map-item' + (missions.state.id === id && missions.active ? ' here' : '');
-    b.innerHTML = `<span class="map-name"></span><span class="map-desc"></span>`;
-    b.querySelector('.map-name').textContent = MISSIONS[id].name + (missions.state.id === id && missions.active ? ' — w toku (od nowa)' : '');
-    b.querySelector('.map-desc').textContent = MISSIONS[id].desc;
-    b.addEventListener('mousedown', (e) => e.stopPropagation());
-    b.addEventListener('click', () => startMission(id));
-    board.appendChild(b);
+// Tablica misji jest osobną stroną (missions.html). N w grze wraca na nią z
+// bieżącymi ustawieniami; w trakcie misji trzeba nacisnąć N dwa razy (żeby
+// przypadkowe N nie przerwało walki).
+let firstShipLoaded = false;
+let leaveArmedUntil = 0;
+function boardUrl() {
+  const p = new URLSearchParams({ uklad: starSystem.id, trudnosc: DIFFICULTY[urlDifficulty] ? urlDifficulty : 'normalna', statek: SHIPS[Math.max(0, currentShipIndex)].id });
+  const last = missions.state.id ?? urlMission;
+  if (last) p.set('misja', last);
+  if (wolfpack.active) p.set('wataha', '1');
+  return `../missions.html?${p}`;
+}
+async function goToBoard() {
+  if (missions.active && performance.now() > leaveArmedUntil) {
+    leaveArmedUntil = performance.now() + 3000;
+    dashboard.show('leave', { crew: CREW.navigator, urgency: 'warning', ttl: 3000, text: 'Misja trwa. N jeszcze raz — przerwij i wróć do tablicy misji.' });
+    return;
   }
-  const row = document.createElement('div');
-  row.className = 'board-row';
-  const pack = document.createElement('button');
-  pack.className = 'map-item half';
-  pack.textContent = wolfpack.active ? 'Odpraw watahę (L)' : 'Przyzwij watahę (L)';
-  pack.addEventListener('mousedown', (e) => e.stopPropagation());
-  pack.addEventListener('click', () => { wolfpack.toggle(); renderBoard(); });
-  const free = document.createElement('button');
-  free.className = 'map-item half';
-  free.textContent = missions.active ? 'Przerwij misję' : 'Wolny lot';
-  free.addEventListener('mousedown', (e) => e.stopPropagation());
-  free.addEventListener('click', () => { missions.abort(); board.classList.remove('visible'); });
-  row.append(pack, free);
-  board.appendChild(row);
+  getAudio().play('ui-back', { force: true });
+  await getAudio().fadeOut(0.4);
+  location.href = boardUrl();
+}
+/** Enter po zakończeniu misji: ta sama misja jeszcze raz */
+function replayMission() {
+  const st = missions.state;
+  if (!st.id || st.status === 'active' || !playerState.alive) return;
+  startMission(st.id);
 }
 function startMission(id) {
   if (!playerState.alive || !flightProfile || playerWarp.active) return;
   paradeQueue = [];
   encounters.reset();
   missions.start(id);
-  board.classList.remove('visible');
 }
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
-  if (e.code === 'KeyN') { renderBoard(); board.classList.toggle('visible'); }
-  if (e.code === 'Escape') board.classList.remove('visible');
-  if (e.code === 'KeyL' && playerState.alive) { wolfpack.toggle(); renderBoard(); }
+  if (e.code === 'KeyN') goToBoard();
+  if (e.code === 'Enter' || e.code === 'NumpadEnter') replayMission();
+  if (e.code === 'KeyO') getAudio().toggleMute();
+  if (e.code === 'KeyL' && playerState.alive) wolfpack.toggle();
   const ord = { KeyG: 'focus', KeyH: 'pincer', KeyV: 'cover', KeyB: 'regroup' }[e.code];
   if (ord) packCommand(ord);
 });
-document.getElementById('touch-missions')?.addEventListener('touchstart', (e) => { e.preventDefault(); renderBoard(); board.classList.toggle('visible'); }, { passive: false });
+document.getElementById('touch-missions')?.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  goToBoard(); // w trakcie misji - dwa dotknięcia (jak N)
+}, { passive: false });
 const ORDER_CYCLE = ['focus', 'pincer', 'cover', 'regroup'];
 document.getElementById('touch-order')?.addEventListener('touchstart', (e) => {
   e.preventDefault();
@@ -1344,7 +1376,7 @@ function updateMissionHud() {
     mEls.root.dataset.status = st.status;
     mEls.name.textContent = st.status === 'active' ? st.name : `${st.name} — ${st.status === 'success' ? 'ZALICZONA' : 'NIEUDANA'}`;
     mEls.obj.textContent = st.status === 'active' ? st.objective : st.result;
-    mEls.detail.textContent = st.status === 'active' ? st.detail : 'N — tablica misji';
+    mEls.detail.textContent = st.status === 'active' ? st.detail : 'Enter — jeszcze raz · N — tablica misji';
     mEls.bar.style.display = st.progress == null ? 'none' : '';
     mEls.fill.style.width = `${Math.round((st.progress ?? 0) * 100)}%`;
   }
@@ -1365,9 +1397,22 @@ function updateMissionHud() {
   }
 }
 
-// start: podpowiedź zamiast dema (demo nadal pod 0, sceny pod 7/8/9)
-comms.say({
-  sender: 'Krok 9', sub: 'misje i wataha', color: '#9fd8ff', ttl: 8,
+// ============================================================
+// KROK 9: AUDIO (shared/audio/) - muzyka, fałda, walka, ostrzeżenia
+// ============================================================
+// Jeden silnik na stronę (getAudio). createGameAudio podpina się pod
+// dashboard i komunikator (dźwięk przy nowej karcie/wiadomości), czyta fazy
+// fałdy i stan statku (alarmy), a muzyce podaje intensywność walki.
+// O - wyciszenie; przycisk głośnika w prawym górnym rogu - suwaki.
+gameAudio = createGameAudio({
+  audio: getAudio(), camera, ship: shipGroup, playerState, playerWarp, npcs, combat,
+  dashboard, comms, missions, getRadius: () => collisionRadius,
+});
+mountAudioControls(getAudio(), { corner: 'top-right', offset: [12, 12], note: 'O — wycisz / włącz' });
+
+// start bez misji (wolny lot): podpowiedź (demo nadal pod 0, sceny pod 7/8/9)
+if (!urlMission) comms.say({
+  sender: 'Wolny lot', sub: 'krok 9', color: '#9fd8ff', ttl: 8,
   text: 'N — tablica misji · L — wataha (G atak, H kleszcze, V osłona, B szyk). Wrogowie myślą teraz sami: flankują, robią uniki, oceniają ryzyko.',
 });
 
@@ -1403,6 +1448,7 @@ function tick(delta) {
   background.update(camera); // tło "w nieskończoności": gwiazdy podążają za kamerą (zero paralaksy)
   updateStory(delta);
   updateDashboard(delta);
+  gameAudio?.update(delta);
 }
 
 // Hak do testów automatycznych (?debug w adresie): przewijanie symulacji
@@ -1413,6 +1459,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     tactics, missions, wolfpack, get warpJam() { return warpJam; }, get speedCap() { return speedCap; },
     get starSystem() { return starSystem; }, jumpToSystem, swapSystem, camera, renderer, scene, warpParade,
     get speed() { return shipState.speed; },
+    audio: getAudio(), gameAudio, goToBoard, replayMission, boardUrl, respawn, killPlayer, damagePlayer, engageWarp,
   };
 }
 
@@ -1452,7 +1499,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-loadShip(0)
+loadShip(urlShipIndex)
   .then(() => {
     cameraRig.position.copy(shipGroup.position).add(cameraOffset); // start bez "najazdu" kamery
   })

@@ -16,7 +16,7 @@ npx serve .
 python3 -m http.server 8080
 ```
 
-Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie, przycisk „Graj” prowadzi do najnowszego kroku). Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
+Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie). Przycisk „Graj” prowadzi na **tablicę misji** (`missions.html`: odprawa, wybór statku, trudności i watahy), a stamtąd do najnowszego kroku. Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
 
 Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tranzytującą planetą b tymi samymi shaderami co gra; wybrany układ zapamiętuje w przeglądarce i przekazuje do gry jako `?uklad=`. Czcionki (Big Shoulders Display, Manrope — OFL 1.1, licencje w `cover/fonts/`) są hostowane lokalnie. Bez WebGL okładka pokazuje statyczne tło.
 
@@ -34,7 +34,7 @@ Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tran
 | [`step6-warp`](./step6-warp) | **Napęd fałdowy** dla wszystkich statków: wejście w fałdę, relatywistyczna aberracja gwiazd, sygnatura skoku zależna od rasy, NPC wchodzą/odlatują przez fałdę, eskorta skacze z graczem |
 | [`step7-weapons`](./step7-weapons) | **Uzbrojenie**: 5 broni o różnej mechanice (działko, rakiety z namierzaniem, torpedy Grot i Trójząb z głowicą, która gubi cel, torpeda z implozją), system **Ciepła** z kart ras, broń rasowa NPC |
 | [`step8-star-systems`](./step8-star-systems) | **Układy gwiezdne**: 5 układów (m.in. prawdziwa Gwiazda Teegardena, para z dyskiem akrecyjnym, nadolbrzym), dużo większe gwiazdy, proceduralne powierzchnie gwiazd (granulacja, plazma, protuberancje, rozbłyski) i planet, skok międzygwiezdny |
-| [`step9-missions`](./step9-missions) | **Misje i taktyczne AI**: 7 scenariuszy (przechwycenie, blokada, odparcie 10 wrogów, eskorta handlowca, zasadzka, pościg, łowy watahy), **wataha** skrzydłowych rasy gracza z rozkazami, nowy mózg NPC (ocena ryzyka/nagrody, role w eskadrze, uniki, odwrót zamiast samobójstwa), poziomy trudności |
+| [`step9-missions`](./step9-missions) | **Misje, taktyczne AI i audio**: 7 scenariuszy (przechwycenie, blokada, odparcie 10 wrogów, eskorta handlowca, zasadzka, pościg, łowy watahy) z osobną **tablicą misji** po okładce, **wataha** skrzydłowych rasy gracza z rozkazami, nowy mózg NPC (ocena ryzyka/nagrody, role w eskadrze, uniki, odwrót zamiast samobójstwa), poziomy trudności, **warstwa audio** (muzyka generatywna, fałda z głosem każdej rasy, ostrzeżenia, powiadomienia, walka) |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -50,6 +50,12 @@ shared/
 │   ├── source/    proceduralne generatory .js - "source of truth" dla modeli
 │   ├── fleet.js   lista statków, orientacja dziobu, kadrowanie kamery (kroki 3+4)
 │   └── lod_helper.js
+├── audio/                 warstwa audio (krok 9), cała syntezowana - bez plików dźwiękowych
+│   ├── audio.js           silnik: szyny, pogłos, odblokowanie po geście, odległość, limity
+│   ├── sfx.js             przepisy dźwięków + głos fałdy każdej rasy
+│   ├── music.js           muzyka generatywna: nastroje, intensywność walki
+│   ├── game-audio.js      stan gry -> dźwięk (dashboard, komunikator, fałda, alarmy, walka)
+│   └── audio-controls.js  przycisk głośnika + suwaki (okładka, tablica misji, gra)
 ├── physics/
 │   └── n-body.js          generyczny silnik grawitacji N-ciał (leapfrog)
 ├── data/
@@ -92,11 +98,20 @@ i do szybkiej diagnozy, gdy któryś model się nie ładuje.
 dostęp dla wybranej rasy i symulacja kampanii koalicji (odwrót, przeniesienie
 stolicy, odbudowa). Zasady w jej README, testy: `node tools/galaxy-map/check.mjs`.
 
+[`tools/audio-lab`](./tools/audio-lab) — odsłuch całej warstwy audio: każdy
+dźwięk, nastroje muzyki, suwak intensywności walki, pełny skok fałdy dla każdej
+rasy. Test bez słuchania (render offline + pomiary): `node tools/audio-lab/check.mjs`
+(pakiet `node-web-audio-api`).
+
+[`tools/browser-check`](./tools/browser-check) — dymny test w headless Chromium
+(Playwright): okładka → tablica misji → gra, audio, kroki 5–8.
+`node tools/browser-check/check.mjs`; zrzuty ekranu w `tools/browser-check/out/`.
+
 ## Sterowanie (od step3-ships)
 
 Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
 W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
-1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy. Krok 7 dodaje: Q/E lub kółko — zmiana broni. Krok 8 dodaje: U — skok międzygwiezdny, M — mapa. Krok 9 dodaje: N — misje, L — wataha, G/H/V/B — rozkazy watahy (cel, kleszcze, osłona, szyk).
+1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy. Krok 7 dodaje: Q/E lub kółko — zmiana broni. Krok 8 dodaje: U — skok międzygwiezdny, M — mapa. Krok 9 dodaje: N — powrót na tablicę misji, Enter — misja jeszcze raz, L — wataha, G/H/V/B — rozkazy watahy (cel, kleszcze, osłona, szyk), O — dźwięk.
 
 **Android (kroki 3-5):** pierwsze dotknięcie włącza pełny ekran i blokadę poziomu; w pionie pokazuje się podpowiedź „Obróć telefon w poziom” (`shared/input/android-landscape.js`).
 
