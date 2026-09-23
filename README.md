@@ -52,7 +52,8 @@ shared/
 ├── physics/
 │   └── n-body.js          generyczny silnik grawitacji N-ciał (leapfrog)
 ├── data/
-│   └── races.js            rasy, stronnictwa, relacje, statystyki (jedno miejsce do strojenia)
+│   ├── races.js            rasy, stronnictwa, relacje, statystyki (jedno miejsce do strojenia)
+│   └── galaxy.js           znany wszechświat: 12 000 układów, domeny ras, rdzenie, koalicje
 └── systems/
     ├── triple-star-system.js   konkretny układ potrójny (masy, orbity, wizualizacja)
     ├── space-background.js     gwiazdy + mgławice "w nieskończoności" (krok 4)
@@ -77,10 +78,15 @@ Szczegóły fizyki układu gwiezdnego: [`step4-stellar-physics/README.md`](./ste
 ## `tools/`
 
 Narzędzia deweloperskie/QA, nie kroki gry (nienumerowane, nie wchodzą
-w postęp fabularny). Na razie jedno: [`tools/ship-gallery`](./tools/ship-gallery) —
+w postęp fabularny). [`tools/ship-gallery`](./tools/ship-gallery) —
 wszystkie 4 statki naraz, ta sama perspektywa (za plecami, z góry,
 proporcjonalnie do rozmiaru każdego statku). Przydatne do porównania floty
 i do szybkiej diagnozy, gdy któryś model się nie ładuje.
+
+[`tools/galaxy-map`](./tools/galaxy-map) — mapa znanego wszechświata z
+`shared/data/galaxy.js`: domeny ras, układy core'owe, stolice, militaryzacja,
+dostęp dla wybranej rasy i symulacja kampanii koalicji (odwrót, przeniesienie
+stolicy, odbudowa). Zasady w jej README, testy: `node tools/galaxy-map/check.mjs`.
 
 ## Sterowanie (od step3-ships)
 
