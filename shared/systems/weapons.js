@@ -5,21 +5,30 @@ import * as THREE from 'three';
  * gracza i NPC. Każda broń różni się MECHANIKĄ, nie tylko kolorem pocisku:
  *
  *   pulse    Działko impulsowe  - szybkie bolty, uniwersalne (to, co było w kroku 5)
- *   flak     Śrutownica         - wachlarz śrutu, zabójcza z bliska, bezużyteczna z daleka
- *   beam     Lanca              - ciągły promień, trafienie natychmiastowe, szybko grzeje
  *   missile  Rój rakiet         - para rakiet samonaprowadzających; wymaga NAMIERZENIA
+ *   dart     Torpeda Grot       - jedna, bardzo szybka, mocna; głowica łatwo gubi cel
+ *   salvo    Salwa Trójząb      - trzy szybkie torpedy w wachlarzu; zwykle dochodzą 1-2
  *   torpedo  Torpeda fałdowa    - wolna, ciężka; imploduje fałdą i rani wszystko w promieniu
+ *
+ * Grot i Trójząb zastąpiły Śrutownicę i Lancę (krok 7). Ich głowice mogą
+ * ZGUBIĆ CEL (combat.js, pola homing.seekerConeDeg / lossPerSec /
+ * lossPerRad): cel poza polem widzenia głowicy = zgubiony, do tego losowa
+ * szansa rosnąca z tym, jak szybko obraca się linia celowania (cel, który
+ * ostro manewruje, gubi torpedę łatwiej). Zgubiona torpeda zbacza i leci
+ * prosto - czasem trafi przypadkiem zapalnikiem zbliżeniowym.
+ * Skuteczność (szczegóły w step7-weapons/README.md, "Skuteczność torped"):
+ * w cel, który nie robi ostrych uników, Grot trafia w ~2/3 strzałów, a
+ * Trójząb w ~95% salw dochodzi 1 albo 2 torpedami z 3.
  *
  * CIEPŁO (pierwszy podpięty system z kart ras, pole ship.thermal): każdy
  * strzał grzeje statek, ciepło uchodzi z czasem. 100% = PRZEGRZANIE: broń
  * milknie, aż temperatura spadnie do 30%. Rasy z dużym `thermal`
  * (Heliotropi 90) mogą strzelać dłużej, rasy z małym (Świetliści 40) -
- * krócej. To zamienia wybór broni w decyzję: Lanca jest najsilniejsza, ale
- * przegrzewa statek w kilka sekund.
+ * krócej. To zamienia wybór broni w decyzję: Trójząb grzeje najmocniej.
  *
  * SPECJALNOŚĆ RASY: każda rasa ma "swoją" broń (RACE_WEAPON) - gracz grzeje
  * nią 30% mniej, a NPC tej rasy właśnie nią strzelają. Walka z Pieśniarzami
- * (rakiety) wygląda i gra się inaczej niż z Rezonantami (lanca).
+ * (rakiety) wygląda i gra się inaczej niż z Rezonantami (Grot).
  */
 
 // ============================================================
@@ -31,41 +40,55 @@ export const WEAPONS = {
     desc: 'szybkie bolty, uniwersalne',
     cooldown: 0.22, heat: 3, damage: 14, speed: 1500, life: 2, assistDeg: 12,
   },
-  flak: {
-    name: 'Śrutownica', short: 'Śrut', color: 0xffc14d,
-    desc: 'wachlarz śrutu, zabójcza z bliska',
-    cooldown: 0.75, heat: 9, pellets: 10, damage: 7, spreadDeg: 4.5, speed: 1400, life: 0.55, assistDeg: 8,
-  },
-  beam: {
-    name: 'Lanca', short: 'Lanca', color: 0xb58cff,
-    desc: 'ciągły promień, szybko grzeje',
-    heatPerSec: 24, dps: 46, range: 1600, tick: 0.25, assistDeg: 4,
-  },
   missile: {
     name: 'Rój rakiet', short: 'Rakiety', color: 0xff7a45,
     desc: 'para rakiet, wymaga namierzenia',
     cooldown: 1.5, heat: 10, damage: 30, aoeRadius: 60, aoeDamage: 16,
     speed: 180, accel: 950, maxSpeed: 1150, turnRate: 3.0, life: 4.5,
-    lockTime: 0.7, lockRange: 3200, lockConeDeg: 18, keepConeDeg: 32,
+    lockTime: 0.7, lockRange: 3200, lockConeDeg: 18, keepConeDeg: 32, guided: true,
+  },
+  // Głowice Grota i Trójzęba (patrz combat.js -> seekerLoses): liczby
+  // dobrane symulacją, zob. step7-weapons/README.md, "Skuteczność torped".
+  dart: {
+    name: 'Torpeda Grot', short: 'Grot', color: 0xffe066,
+    desc: 'jedna, bardzo szybka; łatwo gubi cel',
+    cooldown: 1.6, heat: 12, damage: 60, aoeRadius: 60, aoeDamage: 40, proximity: 45,
+    speed: 400, accel: 1400, maxSpeed: 1500, turnRate: 1.6, life: 3.5, delay: 0.15,
+    seeker: { seekerConeDeg: 22, lossPerSec: 0.4, lossPerRad: 0.3, lostDeflectDeg: 16, commitRange: 180 },
+    guided: true,
+  },
+  salvo: {
+    name: 'Salwa Trójząb', short: 'Trójząb', color: 0xc08bff,
+    desc: 'trzy szybkie torpedy; dochodzą zwykle 1-2',
+    cooldown: 2.4, heat: 18, count: 3, fanDeg: 9, damage: 38, aoeRadius: 50, aoeDamage: 16, proximity: 40,
+    speed: 350, accel: 1200, maxSpeed: 1300, turnRate: 2.0, life: 3.2, delay: 0.2,
+    seeker: { seekerConeDeg: 26, lossPerSec: 0.7, lossPerRad: 0.3, lostDeflectDeg: 16, commitRange: 180 },
+    // ŁĄCZE SALWY: torpedy dzielą jedno łącze naprowadzania. Dopóki żadna nie
+    // zgubiła celu, każda gubi go łatwiej (x1,4); po pierwszej stracie reszta
+    // dostaje lepszy namiar (x0,5), po drugiej ostatnia prawie go nie traci
+    // (x0,1). Dzięki temu salwa zwykle kończy się 1-2 trafieniami, a rzadko
+    // "wszystko albo nic", jak przy trzech niezależnych rzutach.
+    link: [1.4, 0.5, 0.1],
+    guided: true,
   },
   torpedo: {
     name: 'Torpeda fałdowa', short: 'Torpeda', color: 0x5ff0e0,
     desc: 'wolna, implozja w promieniu 300 j.',
     cooldown: 3.5, heat: 24, aoeRadius: 300, aoeDamage: 115, proximity: 110,
-    speed: 140, accel: 260, maxSpeed: 650, turnRate: 0.9, life: 7,
+    speed: 140, accel: 260, maxSpeed: 650, turnRate: 0.9, life: 7, guided: true,
   },
 };
-export const WEAPON_ORDER = ['pulse', 'flak', 'beam', 'missile', 'torpedo'];
+export const WEAPON_ORDER = ['pulse', 'missile', 'dart', 'salvo', 'torpedo'];
 
 /** Broń-specjalność każdej rasy (NPC tej rasy nią strzelają, gracz grzeje nią mniej). */
 export const RACE_WEAPON = {
   wybudzeni: 'torpedo',   // ciężkie niszczyciele, "wpis do manifestu" jednym strzałem
-  rezonanci: 'beam',      // rezonans = ciągła fala
+  rezonanci: 'dart',      // jeden strzał w chwili otwarcia okna
   piesniarze: 'missile',  // "widzieliśmy twój tor trzy pieśni temu" - pociski, które znają kurs
-  szczepieni: 'flak',     // rój zarodników
+  szczepieni: 'salvo',    // rój zarodników: kilka wysłanych, któreś dotrze
   wykonawcy: 'pulse',     // precyzja klauzuli
-  heliotropi: 'flak',     // wyrzuty plazmy
-  swietlisci: 'beam',     // światło
+  heliotropi: 'salvo',    // frenzja: sypią salwami
+  swietlisci: 'dart',     // światło: szybkie i proste
 };
 
 /**
@@ -75,9 +98,9 @@ export const RACE_WEAPON = {
  */
 const NPC_PROFILE = {
   pulse:   { range: 1500, align: 0.985, cd: [0.6, 0.95], damage: 10 },
-  flak:    { range: 750,  align: 0.97,  cd: [1.2, 1.6],  damage: 6 },
-  beam:    { range: 1300, align: 0.99,  cd: [2.2, 2.8],  dps: 24, burst: 0.9 },
   missile: { range: 2600, align: 0.9,   cd: [2.4, 3.0],  damage: 16, aoeDamage: 8 },
+  dart:    { range: 2400, align: 0.93,  cd: [3.2, 4.0],  damage: 38, aoeDamage: 12 },
+  salvo:   { range: 2200, align: 0.9,   cd: [4.2, 5.2],  damage: 16, aoeDamage: 6 },
   torpedo: { range: 2200, align: 0.95,  cd: [5.0, 6.0],  aoeDamage: 40 },
 };
 
@@ -216,42 +239,10 @@ function createParticles(scene, capacity = 2400) {
   return { emit, burst, update };
 }
 
-// ------------------------------------------------------------
-// Promień (Lanca): dwie skrzyżowane wstęgi wzdłuż +Z, shader z migotaniem
-// ------------------------------------------------------------
-function beamGeometry() {
-  const g = new THREE.BufferGeometry();
-  const P = [
-    -0.5, 0, 0, 0.5, 0, 0, 0.5, 0, 1, -0.5, 0, 1,   // wstęga pozioma
-    0, -0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1,   // wstęga pionowa
-  ];
-  const UV = [0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1];
-  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
-  g.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
-  return g;
-}
-const BEAM_VERT = /* glsl */ `
+// Kwadrat zwrócony do kamery (pierścień implozji)
+const QUAD_VERT = /* glsl */ `
 varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }
-`;
-const BEAM_FRAG = /* glsl */ `
-uniform vec3 uColor;
-uniform float uTime, uLen, uPower;
-varying vec2 vUv;
-void main() {
-  float x = abs( vUv.x - 0.5 ) * 2.0;
-  float core = exp( -x * x * 60.0 );
-  float halo = exp( -x * x * 5.0 );
-  float along = vUv.y * uLen;
-  // "zwoje" płynące wzdłuż promienia - widać kierunek strzału
-  float coil = 0.65 + 0.35 * sin( along * 0.08 - uTime * 60.0 + x * 6.0 );
-  float flick = 0.85 + 0.15 * sin( uTime * 91.0 ) * sin( uTime * 37.0 );
-  float tip = smoothstep( 1.0, 0.97, vUv.y ) * smoothstep( 0.0, 0.02, vUv.y );
-  vec3 col = uColor * halo * coil * 0.9 + vec3( 1.0 ) * core * 1.4;
-  float a = ( core + halo * 0.6 * coil ) * flick * tip * uPower;
-  gl_FragColor = vec4( col * a, a );
-}
 `;
 
 // ------------------------------------------------------------
@@ -297,10 +288,8 @@ void main() {
 export function createWeapons({ scene, combat, camera }) {
   const particles = createParticles(scene);
   const effects = [];
-  const beams = new Map();   // klucz właściciela -> stan promienia
   let time = 0;
 
-  const beamGeo = beamGeometry();
   const sphereGeo = new THREE.SphereGeometry(1, 24, 16);
   const planeGeo = new THREE.PlaneGeometry(2, 2);
   const missileGeo = new THREE.CylinderGeometry(0.35, 0.55, 5, 8).rotateX(Math.PI / 2);
@@ -324,6 +313,37 @@ export function createWeapons({ scene, combat, camera }) {
     g.add(glowSprite(color, 0.07, 0.9));
     g.add(glowSprite(0xffffff, 0.025));
     return g;
+  }
+
+  // Grot: smukły, jasny grot z długim ostrym błyskiem
+  const dartGeo = new THREE.CylinderGeometry(0.15, 0.45, 9, 8).rotateX(Math.PI / 2);
+  function dartMesh(color, scale = 1) {
+    const m = new THREE.Mesh(dartGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+    m.scale.setScalar(scale);
+    const g1 = glowSprite(color, 0.045 * scale, 0.95);
+    const g2 = glowSprite(0xffffff, 0.016 * scale);
+    g1.position.z = g2.position.z = -3.5;
+    m.add(g1, g2);
+    return m;
+  }
+  // Smuga torped z głowicą: ciasna, prosta linia iskier (inna niż dym rakiet
+  // i spirala torpedy fałdowej). Po zgubieniu celu gaśnie do szarości.
+  function seekerTrail(color, density = 0.01) {
+    let acc = 0;
+    return (b, dt) => {
+      acc += dt;
+      const lost = b.homing?.lost;
+      while (acc > density) {
+        acc -= density;
+        _a.copy(b.vel).multiplyScalar(-0.03).add(_b.set(rand(-3, 3), rand(-3, 3), rand(-3, 3)));
+        particles.emit(b.mesh.position, _a, lost ? 0x6a6a74 : (b.age < 0.1 ? 0xffffff : color), lost ? 4 : 4.5, lost ? 0.35 : 0.5, 3);
+      }
+    };
+  }
+  // Chwila zgubienia celu: krótki rozprysk iskier "szarpnięcia" głowicy
+  function lostSpark(b, color) {
+    particles.burst(b.mesh.position, 10, 140, color, 4, 0.35);
+    particles.burst(b.mesh.position, 6, 90, 0xffffff, 3, 0.25);
   }
 
   function missileTrail(color) {
@@ -391,7 +411,7 @@ export function createWeapons({ scene, combat, camera }) {
         combat.flash(p, radius * 0.9, color, 0.6);
         particles.burst(p, 40, radius * 2.5, color, 10, 0.9);
         const rMat = new THREE.ShaderMaterial({
-          vertexShader: BEAM_VERT, fragmentShader: RING_FRAG,
+          vertexShader: QUAD_VERT, fragmentShader: RING_FRAG,
           uniforms: { uColor: { value: c3 }, uT: { value: 0 } },
           transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide,
         });
@@ -411,11 +431,13 @@ export function createWeapons({ scene, combat, camera }) {
 
   /**
    * Strzał bronią pociskową.
-   * @param {string} id  klucz z WEAPONS (pulse/flak/missile/torpedo)
+   * @param {string} id  klucz z WEAPONS (pulse/missile/dart/salvo/torpedo)
    * @param {object} o   origin, dir, side, shooter, target (dla rakiet/torped),
-   *                     damageMult, color (NPC: kolor strony), baseSpeed (prędkość strzelca), npc
+   *                     damageMult, color (NPC: kolor strony), baseSpeed (prędkość strzelca), npc,
+   *                     up (dla salwy: oś wachlarza), onResult(hit, lostWhy) - raz na KAŻDĄ torpedę
+   *                     Grota/Trójzęba (hit: czy doszła; lostWhy: null albo powód zgubienia)
    */
-  function fire(id, { origin, dir, side, shooter = null, target = null, damageMult = 1, color = null, baseSpeed = 0, npc = null, right = null }) {
+  function fire(id, { origin, dir, side, shooter = null, target = null, damageMult = 1, color = null, baseSpeed = 0, npc = null, right = null, up = null, onResult = null }) {
     const W = WEAPONS[id];
     const P = npc ? NPC_PROFILE[id] : null;
     const col = color ?? W.color;
@@ -424,20 +446,6 @@ export function createWeapons({ scene, combat, camera }) {
         origin, direction: dir, side, speed: W.speed, damage: (P?.damage ?? W.damage) * damageMult,
         color: col, life: npc ? 2.4 : W.life, hitScale: npc ? 2.2 : 2, shooter,
       });
-    } else if (id === 'flak') {
-      // wachlarz: losowe odchylenia w stożku; pierwszy śrut zawsze prosto
-      const spread = THREE.MathUtils.degToRad(W.spreadDeg);
-      _a.set(1, 0, 0); if (Math.abs(dir.x) > 0.9) _a.set(0, 1, 0);
-      const u = _a.cross(dir).normalize().clone(), v = u.clone().cross(dir);
-      for (let i = 0; i < W.pellets; i++) {
-        const r = i === 0 ? 0 : Math.sqrt(Math.random()) * spread, t = Math.random() * Math.PI * 2;
-        const d = dir.clone().addScaledVector(u, Math.cos(t) * r).addScaledVector(v, Math.sin(t) * r).normalize();
-        combat.fire({
-          origin, direction: d, side, speed: W.speed * rand(0.92, 1.08), damage: (P?.damage ?? W.damage) * damageMult,
-          color: col, life: W.life * rand(0.85, 1.1), hitScale: 1.6, shooter, size: 0.35,
-        });
-      }
-      particles.burst(origin, 8, 160, col, 4, 0.25); // błysk wylotu
     } else if (id === 'missile') {
       const d = dir.clone();
       if (right) d.addScaledVector(right, 0.35).normalize(); // wylot na boki, rakiety "zakręcają" do celu
@@ -450,6 +458,48 @@ export function createWeapons({ scene, combat, camera }) {
         onUpdate: missileTrail(col),
         onEnd: (b, reason, p) => { if (reason !== 'expire') explosion(p, 40, col); else particles.burst(p, 10, 80, 0x888888, 6, 0.6); },
       });
+    } else if (id === 'dart' || id === 'salvo') {
+      const n = W.count ?? 1;
+      // wachlarz salwy w płaszczyźnie prostopadłej do `up` (domyślnie: dowolnej)
+      let axis = up;
+      if (!axis) { axis = _c.set(0, 1, 0); if (Math.abs(dir.y) > 0.9) axis.set(1, 0, 0); }
+      axis = axis.clone().normalize();
+      const link = W.link ? { lost: 0, homings: [] } : null;
+      for (let i = 0; i < n; i++) {
+        const ang = n === 1 ? 0 : (i - (n - 1) / 2) * THREE.MathUtils.degToRad(W.fanDeg) + rand(-0.02, 0.02);
+        const d = dir.clone().applyAxisAngle(axis, ang).normalize();
+        const res = { lost: null };
+        const bolt = combat.fire({
+          origin: origin.clone().addScaledVector(d, i * 2), direction: d, side,
+          speed: baseSpeed + W.speed, accel: W.accel, maxSpeed: baseSpeed + W.maxSpeed,
+          damage: (P?.damage ?? W.damage) * damageMult,
+          aoe: { radius: W.aoeRadius, damage: (P?.aoeDamage ?? W.aoeDamage) * damageMult },
+          proximity: W.proximity,
+          homing: target ? {
+            target, turnRate: W.turnRate, delay: W.delay, ...W.seeker, lossMult: W.link?.[0] ?? 1,
+            onLost: (b, why) => {
+              res.lost = why;
+              lostSpark(b, col);
+              if (link) {
+                link.lost++;
+                const m = W.link[Math.min(link.lost, W.link.length - 1)];
+                for (const h of link.homings) h.lossMult = m;
+              }
+            },
+          } : null,
+          life: W.life, hitScale: 1.4, shooter, mesh: dartMesh(col, id === 'salvo' ? 0.75 : 1),
+          onUpdate: seekerTrail(col, id === 'salvo' ? 0.016 : 0.01),
+          onEnd: (b, reason, p) => {
+            const hi = link ? link.homings.indexOf(b.homing) : -1;
+            if (hi >= 0) link.homings.splice(hi, 1);
+            if (reason !== 'expire') explosion(p, id === 'salvo' ? 34 : 48, col);
+            else particles.burst(p, 8, 70, 0x888888, 5, 0.5);
+            onResult?.(reason !== 'expire', res.lost);
+          },
+        });
+        if (link && bolt.homing) link.homings.push(bolt.homing);
+      }
+      particles.burst(origin, 6, 120, col, 4, 0.2); // błysk wyrzutni
     } else if (id === 'torpedo') {
       combat.fire({
         origin, direction: dir, side, speed: baseSpeed + W.speed, accel: W.accel, maxSpeed: baseSpeed + W.maxSpeed,
@@ -464,86 +514,7 @@ export function createWeapons({ scene, combat, camera }) {
     }
   }
 
-  // ---------------- promienie ----------------
-  /**
-   * Utrzymuje promień właściciela `key` w tej klatce (wołać co klatkę, póki
-   * strzela). Promień, którego nikt nie odświeżył, gaśnie w ~0,1 s.
-   * @returns {object|null} ostatnie trafienie ({ actor, point, dist }) lub null
-   */
-  function beam(key, { origin, dir, side, shooter = null, dps, range, color, width = 3, damageMult = 1 }) {
-    let b = beams.get(key);
-    if (!b) {
-      const mat = new THREE.ShaderMaterial({
-        vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG,
-        uniforms: { uColor: { value: new THREE.Color(color) }, uTime: { value: 0 }, uLen: { value: 1 }, uPower: { value: 0 } },
-        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(beamGeo, mat);
-      mesh.frustumCulled = false;
-      mesh.renderOrder = 4;
-      const impact = glowSprite(color, 0.06);
-      const muzzle = glowSprite(color, 0.035);
-      scene.add(mesh, impact, muzzle);
-      b = { mesh, mat, impact, muzzle, power: 0, live: false, tickAcc: 0, hit: null, origin: new THREE.Vector3(), dir: new THREE.Vector3(), params: null };
-      beams.set(key, b);
-    }
-    b.live = true;
-    b.origin.copy(origin);
-    b.dir.copy(dir).normalize();
-    b.params = { side, shooter, dps, range, width, damageMult, color };
-    return b.hit;
-  }
-
-  function updateBeams(dt) {
-    for (const [key, b] of beams) {
-      b.power = THREE.MathUtils.clamp(b.power + (b.live ? 14 : -10) * dt, 0, 1);
-      if (b.power <= 0 && !b.live) {
-        scene.remove(b.mesh, b.impact, b.muzzle);
-        b.mat.dispose(); b.impact.material.dispose(); b.muzzle.material.dispose();
-        beams.delete(key);
-        continue;
-      }
-      const P = b.params;
-      const hit = combat.raycast(b.origin, b.dir, P.range, P.side, 1.3);
-      const len = hit ? hit.dist : P.range;
-      b.hit = hit;
-      b.mesh.position.copy(b.origin);
-      b.mesh.quaternion.setFromUnitVectors(Z, b.dir);
-      b.mesh.scale.set(P.width * (0.7 + 0.3 * b.power), P.width * (0.7 + 0.3 * b.power), len);
-      b.mat.uniforms.uTime.value = time;
-      b.mat.uniforms.uLen.value = len;
-      b.mat.uniforms.uPower.value = b.power;
-      b.muzzle.position.copy(b.origin);
-      b.muzzle.material.opacity = b.power;
-      b.impact.visible = !!hit;
-      if (hit) {
-        b.impact.position.copy(hit.point);
-        b.impact.material.opacity = b.power * (0.7 + 0.3 * Math.random());
-        if (b.live && Math.random() < 0.6) {
-          _a.copy(b.dir).multiplyScalar(-60).add(_b.set(rand(-80, 80), rand(-80, 80), rand(-80, 80)));
-          particles.emit(hit.point, _a, Math.random() < 0.5 ? 0xffffff : P.color, 4, 0.35, 3);
-        }
-      }
-      // obrażenia w "paczkach" co `tick` s, nie co klatkę: pancerz odejmuje
-      // stałą wartość od KAŻDEGO trafienia (patrz damagePlayer / npc damage),
-      // więc drobne porcje co klatkę zostałyby zjedzone przez pancerz w całości
-      if (b.live && hit) {
-        b.tickAcc += dt;
-        const tick = WEAPONS.beam.tick;
-        while (b.tickAcc >= tick) {
-          b.tickAcc -= tick;
-          const dmg = P.dps * tick * P.damageMult;
-          hit.actor.takeDamage(dmg, P.shooter);
-        }
-      } else {
-        b.tickAcc = Math.min(b.tickAcc, WEAPONS.beam.tick * 0.5);
-      }
-      b.live = false; // musi być odświeżony w następnej klatce
-    }
-  }
-
   // ---------------- NPC ----------------
-  const npcBursts = new Map();   // npc -> { until }
   /**
    * Strzał NPC jego bronią rasową. Zwraca czas do następnego strzału (s),
    * albo null, jeśli z tej odległości/kąta ta broń nie ma sensu (NPC czeka).
@@ -555,40 +526,23 @@ export function createWeapons({ scene, combat, camera }) {
     const fwd = _c.set(0, 0, -1).applyQuaternion(npc.group.quaternion).clone();
     const origin = pos.clone().addScaledVector(fwd, npc.radius * 1.1 + 6);
     const side = npc.side === 'ally' ? 'ally' : npc.side === 'neutral' ? 'ally' : 'hostile';
-    if (weaponId === 'beam') {
-      npcBursts.set(npc, { until: time + P.burst, color });
-    } else {
-      // wyprzedzenie celu dla broni balistycznych
-      const W = WEAPONS[weaponId];
-      const sp = weaponId === 'pulse' ? 900 : W.speed;
-      const aim = targetPos.clone().addScaledVector(targetVel, Math.min(dist / Math.max(sp, 1), 2)).sub(origin).normalize();
-      aim.x += rand(-0.02, 0.02); aim.y += rand(-0.02, 0.02); aim.z += rand(-0.02, 0.02);
-      aim.normalize();
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(npc.group.quaternion).multiplyScalar(Math.random() < 0.5 ? -1 : 1);
-      fire(weaponId, {
-        origin, dir: weaponId === 'pulse' || weaponId === 'flak' ? aim : fwd, side, shooter: npc, target: targetRef,
-        color, baseSpeed: npc.speed, npc: true, right,
-      });
-    }
+    // wyprzedzenie celu dla broni balistycznych
+    const W = WEAPONS[weaponId];
+    const sp = weaponId === 'pulse' ? 900 : W.speed;
+    const aim = targetPos.clone().addScaledVector(targetVel, Math.min(dist / Math.max(sp, 1), 2)).sub(origin).normalize();
+    aim.x += rand(-0.02, 0.02); aim.y += rand(-0.02, 0.02); aim.z += rand(-0.02, 0.02);
+    aim.normalize();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(npc.group.quaternion).multiplyScalar(Math.random() < 0.5 ? -1 : 1);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(npc.group.quaternion);
+    fire(weaponId, {
+      origin, dir: weaponId === 'pulse' ? aim : fwd, side, shooter: npc, target: targetRef,
+      color, baseSpeed: npc.speed, npc: true, right, up,
+    });
     return rand(P.cd[0], P.cd[1]);
-  }
-
-  function updateNpcBursts() {
-    for (const [npc, st] of npcBursts) {
-      if (!npc.alive || npc.hidden || npc.warping || time > st.until) { npcBursts.delete(npc); continue; }
-      const fwd = _c.set(0, 0, -1).applyQuaternion(npc.group.quaternion);
-      const origin = _b.copy(npc.group.position).addScaledVector(fwd, npc.radius * 1.1 + 4);
-      beam(`npc-${npc.id}`, {
-        origin, dir: fwd, side: npc.side === 'hostile' ? 'hostile' : 'ally', shooter: npc,
-        dps: NPC_PROFILE.beam.dps, range: NPC_PROFILE.beam.range, color: st.color, width: Math.max(5, npc.radius * 0.4),
-      });
-    }
   }
 
   function update(dt) {
     time += dt;
-    updateNpcBursts();
-    updateBeams(dt);
     particles.update(dt, camera);
     for (let i = effects.length - 1; i >= 0; i--) {
       const e = effects[i];
@@ -599,12 +553,9 @@ export function createWeapons({ scene, combat, camera }) {
     }
   }
 
-  function clear() {
-    for (const k of [...beams.keys()]) { const b = beams.get(k); b.live = false; b.power = 0; }
-    npcBursts.clear();
-  }
+  function clear() {}
 
-  return { fire, beam, npcFire, update, clear, particles, get time() { return time; } };
+  return { fire, npcFire, update, clear, particles, get time() { return time; } };
 }
 
 // ============================================================
@@ -631,7 +582,8 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
     firing: false,
   };
   let side = 1;
-  const listeners = { overheat: [], cooled: [], locked: [], switched: [] };
+  // lost: Grot gracza zgubił cel; salvo: wynik salwy Trójzęba { hits, total }
+  const listeners = { overheat: [], cooled: [], locked: [], switched: [], lost: [], salvo: [] };
   const emit = (t, p) => listeners[t].forEach((fn) => fn(p));
 
   const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -684,7 +636,7 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
   function updateLock(dt) {
     const W = WEAPONS.missile;
     const L = state.lock;
-    if (state.weapon !== 'missile' && state.weapon !== 'torpedo') { L.target = null; L.progress = 0; L.locked = false; return; }
+    if (!WEAPONS[state.weapon].guided) { L.target = null; L.progress = 0; L.locked = false; return; }
     const inCone = (n, deg) => {
       if (!n.alive || n.hidden) return -2;
       _d.copy(n.group.position).sub(ship.position);
@@ -718,9 +670,8 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
     _r.set(1, 0, 0).applyQuaternion(ship.quaternion);
     state.cooldown = Math.max(0, state.cooldown - dt);
 
-    // chłodzenie: szybsze, gdy nie strzelamy; rasy o dużym `thermal` oddają ciepło szybciej
-    const firingBeam = triggerHeld && canFire && state.weapon === 'beam' && !state.overheated;
-    const cool = (firingBeam ? 6 : 20) * (state.thermal / 60);
+    // chłodzenie: rasy o dużym `thermal` oddają ciepło szybciej
+    const cool = 20 * (state.thermal / 60);
     state.heat = Math.max(0, state.heat - cool * dt);
     if (state.overheated && state.heat <= 30) { state.overheated = false; emit('cooled'); }
 
@@ -733,15 +684,6 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
     const radius = getRadius();
     const origin = ship.position.clone().addScaledVector(_f, radius * 1.1 + 6);
 
-    if (id === 'beam') {
-      state.firing = true;
-      addHeat(W.heatPerSec * heatScale(id) * dt);
-      weapons.beam('player', {
-        origin, dir: assistedDir(origin, W.assistDeg, 0), side: 'player', shooter: { callsign: 'gracz' },
-        dps: W.dps, range: W.range, color: W.color, width: Math.max(6, radius * 0.45), damageMult: state.damageMult,
-      });
-      return;
-    }
     if (state.cooldown > 0) return;
     state.firing = true;
     const lockT = state.lock.locked ? state.lock.target : null;
@@ -756,6 +698,20 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
           damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()), right: _r.clone().multiplyScalar(s),
         });
       }
+    } else if (id === 'dart' || id === 'salvo') {
+      // wynik: Grot - komunikat, gdy zgubi cel; Trójząb - ile doszło z salwy
+      const n = W.count ?? 1;
+      let ended = 0, hits = 0;
+      const onResult = !targetRef ? null : (hit, lostWhy) => {
+        ended++; if (hit) hits++;
+        if (id === 'dart' && lostWhy && !hit) emit('lost', { weapon: id, why: lostWhy });
+        if (id === 'salvo' && ended === n) emit('salvo', { hits, total: n });
+      };
+      weapons.fire(id, {
+        origin, dir: _f.clone(), side: 'player', shooter: { callsign: 'gracz' }, target: targetRef,
+        damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()),
+        up: new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion), onResult,
+      });
     } else if (id === 'torpedo') {
       weapons.fire('torpedo', {
         origin, dir: _f.clone(), side: 'player', shooter: { callsign: 'gracz' }, target: targetRef,

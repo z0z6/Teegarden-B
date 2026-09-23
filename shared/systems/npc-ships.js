@@ -33,7 +33,7 @@ import { RACE_WEAPON, WEAPONS } from './weapons.js';
  *
  * UZBROJENIE (opcjonalnie, od kroku 7): z `{ weapons }` (shared/systems/weapons.js)
  * każdy NPC strzela bronią SWOJEJ RASY (RACE_WEAPON): Pieśniarze rakietami,
- * Rezonanci lancą, Szczepieni śrutem itd. - z zasięgiem i rytmem tej broni.
+ * Rezonanci Grotem, Szczepieni salwą Trójzęba itd. - z zasięgiem i rytmem tej broni.
  * Bez `weapons` - bolty jak w kroku 5.
  */
 
@@ -138,7 +138,10 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
 
   function spawn({ raceId, factionKey = 'hawk', side, position, shipId, mode = 'idle', offset, maxSpeed, callsign, arrival, facing }) {
     const race = RACES[raceId];
-    const def = SHIPS.find((s) => s.id === (shipId ?? shipForRace(raceId)));
+    // model losujemy RAZ (shipForRace dla ras bez własnego modelu losuje przy
+    // każdym wywołaniu - wołany wewnątrz find() dawał co ~3. raz brak statku)
+    const wantId = shipId ?? shipForRace(raceId);
+    const def = SHIPS.find((s) => s.id === wantId);
 
     const group = new THREE.Group();
     group.position.copy(position);

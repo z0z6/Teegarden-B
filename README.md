@@ -32,7 +32,7 @@ Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tran
 | [`step4-stellar-physics`](./step4-stellar-physics) | Układ potrójny (prawdziwa fizyka N-ciał, integracja leapfrog), sztuczne oświetlenie statku, tło gwiazd i mgławic, kolizje, gruz, dashboard gracza (telemetria + komunikaty załogi) |
 | [`step5-encounters`](./step5-encounters) | Rasy i statystyki (z kart ras), walka, NPC-e i **demo fabularne**: kontakt sojusznika, przechwycenie, atak wrogiego statku |
 | [`step6-warp`](./step6-warp) | **Napęd fałdowy** dla wszystkich statków: wejście w fałdę, relatywistyczna aberracja gwiazd, sygnatura skoku zależna od rasy, NPC wchodzą/odlatują przez fałdę, eskorta skacze z graczem |
-| [`step7-weapons`](./step7-weapons) | **Uzbrojenie**: 5 broni o różnej mechanice (działko, śrutownica, lanca, rakiety z namierzaniem, torpeda z implozją), system **Ciepła** z kart ras, broń rasowa NPC |
+| [`step7-weapons`](./step7-weapons) | **Uzbrojenie**: 5 broni o różnej mechanice (działko, rakiety z namierzaniem, torpedy Grot i Trójząb z głowicą, która gubi cel, torpeda z implozją), system **Ciepła** z kart ras, broń rasowa NPC |
 | [`step8-star-systems`](./step8-star-systems) | **Układy gwiezdne**: 5 układów (m.in. prawdziwa Gwiazda Teegardena, para z dyskiem akrecyjnym, nadolbrzym), dużo większe gwiazdy, proceduralne powierzchnie gwiazd (granulacja, plazma, protuberancje, rozbłyski) i planet, skok międzygwiezdny |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,

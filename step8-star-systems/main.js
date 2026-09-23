@@ -828,6 +828,13 @@ arsenal.on('cooled', () => dashboard.show('heat', {
 arsenal.on('locked', (t) => dashboard.show('lock', {
   crew: CREW.tactical, urgency: 'info', ttl: 1600, text: `Namierzono: ${t.callsign}.`,
 }));
+arsenal.on('lost', () => dashboard.show('lock', {
+  crew: CREW.tactical, urgency: 'warning', ttl: 1800, text: 'Grot zgubił cel.',
+}));
+arsenal.on('salvo', ({ hits, total }) => dashboard.show('lock', {
+  crew: CREW.tactical, urgency: hits ? 'info' : 'warning', ttl: 2000,
+  text: hits ? `Trójząb: ${hits} z ${total} w celu.` : 'Trójząb: salwa chybiona.',
+}));
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') fireInput.held = true;

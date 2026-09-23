@@ -16,8 +16,20 @@ import * as THREE from 'three';
  *   fire({ size, mesh, homing, accel, maxSpeed, aoe, proximity, onUpdate, onEnd })
  *     - naprowadzanie (rakiety, torpedy), przyspieszanie, wybuch obszarowy,
  *       zapalnik zbliżeniowy i własny wygląd pocisku
- *   raycast(origin, dir, maxDist, side)   - broń promieniowa (trafienie natychmiastowe)
+ *   raycast(origin, dir, maxDist, side)   - trafienie natychmiastowe na promieniu
  *   explode(pos, radius, damage, side)    - obrażenia obszarowe ze spadkiem z odległością
+ *
+ * GŁOWICA, KTÓRA GUBI CEL (torpedy Grot i Trójząb): opcjonalne pola `homing`:
+ *   seekerConeDeg  pole widzenia głowicy - cel poza nim = zgubiony na dobre
+ *   lossPerSec     bazowa szansa zgubienia na sekundę (szum, zakłócenia)
+ *   lossPerRad     dodatkowa szansa za każdy rad/s obrotu linii celowania -
+ *                  cel, który ostro manewruje blisko pocisku, łatwiej zgubić
+ *   lostDeflectDeg o ile stopni pocisk zbacza w chwili zgubienia celu
+ *   commitRange    bliżej celu głowica już nie gubi (pocisk i tak jest na kursie)
+ *   lossMult       mnożnik szansy zgubienia (zmienny w locie - np. łącze salwy)
+ *   onLost(b, why) wołane raz, gdy głowica zgubi cel ('cone' | 'noise')
+ * Zgubiony pocisk leci dalej prosto; zapalnik zbliżeniowy nadal działa, więc
+ * czasem trafi przypadkiem. Bez tych pól naprowadzanie działa jak w kroku 7.
  *
  * TRAFIENIA SĄ "OMIATANE" (segment poprzednia->nowa pozycja vs sfera), nie
  * punktowe: pocisk leci ~1500 j./s, więc w jednej klatce (50 ms) pokonuje
@@ -28,7 +40,6 @@ import * as THREE from 'three';
 const BOLT_GEO = new THREE.BoxGeometry(2.2, 2.2, 36);
 const FLASH_GEO = new THREE.SphereGeometry(1, 14, 10);
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
-const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
 
 // Sam pocisk (2 x 36 j.) jest na dystansie walki (setki-tysiące j.) mniejszy
 // niż piksel, więc walka wyglądałaby jak niewidzialna wymiana ognia. Każdy
@@ -116,21 +127,62 @@ export function createCombat(scene) {
     return bolt;
   }
 
-  const _dirNow = new THREE.Vector3(), _want = new THREE.Vector3();
+  const _dirNow = new THREE.Vector3(), _want = new THREE.Vector3(), _axis = new THREE.Vector3();
+  /**
+   * Czy głowica właśnie zgubiła cel (wołane z _want = kierunek na cel,
+   * _dirNow = kurs pocisku). Zgubienie jest trwałe.
+   */
+  function seekerLoses(b, dt) {
+    const h = b.homing;
+    if (h.seekerConeDeg == null && !h.lossPerSec && !h.lossPerRad) return false;
+    // "martwa strefa": z bliska pocisk jest już na kursie i nic nie steruje -
+    // tu zgubienia by nie zmieniły wyniku, więc ich nie liczymy
+    if (h.commitRange && h.target.position.distanceTo(b.mesh.position) < h.commitRange) return false;
+    let why = null;
+    if (h.seekerConeDeg != null && _dirNow.dot(_want) < Math.cos(h.seekerConeDeg * Math.PI / 180)) why = 'cone';
+    else {
+      // prędkość obrotu linii celowania (rad/s) z poprzedniej klatki
+      let los = 0;
+      if (h._prevWant && dt > 0) los = h._prevWant.angleTo(_want) / dt;
+      (h._prevWant ??= new THREE.Vector3()).copy(_want);
+      const rate = ((h.lossPerSec ?? 0) + (h.lossPerRad ?? 0) * los) * (h.lossMult ?? 1);
+      if (rate > 0 && (h.rng ?? Math.random)() < 1 - Math.exp(-rate * dt)) why = 'noise';
+    }
+    if (!why) return false;
+    h.lost = why;
+    // głowica bez celu "szarpie" pociskiem - zbacza o kilka stopni, więc
+    // pocisk, który był na kursie kolizyjnym, zwykle już nie trafi
+    if (h.lostDeflectDeg) {
+      const r = h.rng ?? Math.random;
+      _axis.set(r() - 0.5, r() - 0.5, r() - 0.5).cross(_dirNow).normalize();
+      _dirNow.applyAxisAngle(_axis, (h.lostDeflectDeg * (0.5 + r() * 0.5)) * Math.PI / 180);
+      b.mesh.quaternion.setFromUnitVectors(Z_AXIS, _dirNow);
+    }
+    h.onLost?.(b, why);
+    return true;
+  }
+
   /** Skręt prędkości pocisku w stronę celu z ograniczoną prędkością kątową. */
   function steerBolt(b, dt) {
     const tgt = b.homing?.target;
     if (b.accel) b.speed = Math.min(b.maxSpeed, b.speed + b.accel * dt);
     _dirNow.copy(b.vel).normalize();
-    if (tgt && tgt.isAlive() && b.age > (b.homing.delay ?? 0)) {
+    if (tgt && !b.homing.lost && tgt.isAlive() && b.age > (b.homing.delay ?? 0)) {
       // prosty "pure pursuit" z wyprzedzeniem, jeśli cel zna swoją prędkość
       _want.copy(tgt.position);
       if (tgt.velocity) _want.addScaledVector(tgt.velocity, Math.min(tgt.position.distanceTo(b.mesh.position) / Math.max(b.speed, 1), 1.5));
       _want.sub(b.mesh.position).normalize();
-      _qa.setFromUnitVectors(Z_AXIS, _dirNow);
-      _qb.setFromUnitVectors(Z_AXIS, _want);
-      _qa.rotateTowards(_qb, b.homing.turnRate * dt);
-      _dirNow.copy(Z_AXIS).applyQuaternion(_qa);
+      if (seekerLoses(b, dt)) { b.vel.copy(_dirNow).multiplyScalar(b.speed); return; }
+      // Obrót KIERUNKU po łuku wielkim (oś = kurs × cel), najwyżej o turnRate·dt.
+      // Wcześniej był tu rotateTowards między kwaternionami z setFromUnitVectors:
+      // dla kursu bliskiego −Z te kwaterniony mają przypadkowy "przechył", więc
+      // interpolacja szła okrężną drogą i pocisk skręcał źle albo wcale.
+      const ang = _dirNow.angleTo(_want);
+      if (ang > 1e-6) {
+        _axis.crossVectors(_dirNow, _want);
+        if (_axis.lengthSq() < 1e-12) _axis.set(1, 0, 0).cross(_dirNow); // cel dokładnie z tyłu
+        _dirNow.applyAxisAngle(_axis.normalize(), Math.min(ang, b.homing.turnRate * dt));
+      }
     }
     b.vel.copy(_dirNow).multiplyScalar(b.speed);
     b.mesh.quaternion.setFromUnitVectors(Z_AXIS, _dirNow);
@@ -217,7 +269,13 @@ export function createCombat(scene) {
         for (const actor of actors) {
           if (!actor.isAlive() || !isEnemy(b.side, actor.side)) continue;
           if (actor.position.distanceTo(b.mesh.position) < b.proximity + actor.radius) {
-            if (b.aoe) explode(b.mesh.position, b.aoe.radius, b.aoe.damage, b.side, b.shooter);
+            // zapalnik zbliżeniowy = trafienie: pełne obrażenia bezpośrednie dla
+            // celu, który go wyzwolił (Grot/Trójząb), wybuch dla reszty
+            if (b.damage > 0) {
+              actor.takeDamage(b.damage, b.shooter);
+              emit('hit', { target: actor, damage: b.damage, shooter: b.shooter });
+            }
+            if (b.aoe) explode(b.mesh.position, b.aoe.radius, b.aoe.damage, b.side, b.shooter, { exclude: b.damage > 0 ? actor : null });
             endBolt(i, 'proximity', b.mesh.position.clone());
             hitActor = 'done';
             break;
