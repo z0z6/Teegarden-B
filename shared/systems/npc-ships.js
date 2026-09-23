@@ -4,6 +4,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { SHIPS, visualYawFor } from '../ships/fleet.js';
 import { RACES, shipForRace } from '../data/races.js';
 import { RACE_WEAPON, WEAPONS } from './weapons.js';
+import { resolveCollisions } from './collision.js';
 
 /**
  * Statki NPC (sojusznicy i wrogowie) do dema fabularnego.
@@ -35,6 +36,18 @@ import { RACE_WEAPON, WEAPONS } from './weapons.js';
  * każdy NPC strzela bronią SWOJEJ RASY (RACE_WEAPON): Pieśniarze rakietami,
  * Rezonanci Grotem, Szczepieni salwą Trójzęba itd. - z zasięgiem i rytmem tej broni.
  * Bez `weapons` - bolty jak w kroku 5.
+ *
+ * TAKTYCZNE AI (opcjonalnie, od kroku 9): z `{ tactics }`
+ * (shared/systems/tactical-ai.js) NPC dostają "głowę". Nowy tryb:
+ *   tactical   decyzje podejmuje mózg (polowanie, posterunek, osłona,
+ *              zasadzka, ucieczka, trasa handlowca, wataha) - patrz tactical-ai.js.
+ * Tryby 'attack' i 'escort' z kroku 5 same przechodzą pod mózg, więc sceny
+ * z encounters.js też walczą mądrzej. Ciało (ten plik) wykonuje intencję:
+ * lot do punktu z OMIJANIEM przeszkód (`getObstacles`: gwiazdy, planety,
+ * gruz) i SEPARACJĄ od innych NPC, plus twarda bariera kolizji (collision.js,
+ * "żelazna zasada" - od teraz dotyczy też NPC). Wrogowie mogą też atakować
+ * sojuszników i eskortowane statki, nie tylko gracza.
+ * Bez `tactics` wszystko działa jak w krokach 5-8.
  */
 
 const CALLSIGNS = ['Iskra', 'Wrona', 'Kwant', 'Mgła', 'Kolec', 'Zegar', 'Bursztyn', 'Cień', 'Lis', 'Otchłań'];
@@ -66,9 +79,9 @@ function getBeaconTexture() {
  * @param {ReturnType<import('./combat.js').createCombat>} combat
  * @param {object} player - { position, quaternion, getVelocity(out), isAlive() }
  */
-export function createNpcManager(scene, combat, player, { warp = null, weapons = null } = {}) {
+export function createNpcManager(scene, combat, player, { warp = null, weapons = null, tactics = null, getObstacles = null } = {}) {
   const list = [];
-  const listeners = { killed: [], left: [], retreat: [] };
+  const listeners = { killed: [], left: [], retreat: [], disabled: [], hit: [] };
   const emit = (t, p) => listeners[t].forEach((fn) => fn(p));
 
   const loader = new GLTFLoader();
@@ -136,7 +149,12 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     return out.setFromRotationMatrix(_m);
   }
 
-  function spawn({ raceId, factionKey = 'hawk', side, position, shipId, mode = 'idle', offset, maxSpeed, callsign, arrival, facing }) {
+  function spawn({
+    raceId, factionKey = 'hawk', side, position, shipId, mode = 'idle', offset, maxSpeed, callsign, arrival, facing,
+    // krok 9 (wszystko opcjonalne):
+    hull = null, combatSpeed = null, turnRate = null, ai = null, stealth = false, role = null, label = null,
+    disableAt = 0, noFlee = false, value = 1, tag = null,
+  }) {
     const race = RACES[raceId];
     // model losujemy RAZ (shipForRace dla ras bez własnego modelu losuje przy
     // każdym wywołaniu - wołany wewnątrz find() dawał co ~3. raz brak statku)
@@ -156,18 +174,24 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     beacon.scale.set(0.05, 0.05, 1);
     group.add(beacon);
 
-    const maxHull = (side === 'ally' ? 160 : 140) * (race.ship.hull / 100);
+    const maxHull = hull ?? (side === 'ally' ? 160 : 140) * (race.ship.hull / 100);
+    // krok 9: pilotaż rasy (atrybut z karty) = szybkość i zwrotność
+    const pilotMul = tactics ? 1 + 0.04 * (race.attrs.pilot - 5) : 1;
     const npc = {
       id: `npc-${nextId++}`,
       raceId, raceName: race.name, factionKey, factionName: race.factions[factionKey],
       side, def, shipName: def.name,
       callsign: `${callsign ?? CALLSIGNS[Math.floor(Math.random() * CALLSIGNS.length)]}-${1 + Math.floor(Math.random() * 9)}`,
       group, velocity: new THREE.Vector3(), speed: 0,
-      maxSpeed: maxSpeed ?? (side === 'ally' ? 700 : 220), accel: 260, turnRate: 1.7,
+      maxSpeed: (maxSpeed ?? (side === 'ally' ? 700 : 220)) * pilotMul, accel: 260, turnRate: (turnRate ?? 1.7) * pilotMul,
+      combatSpeed: (combatSpeed ?? (side === 'ally' ? 280 : 220)) * pilotMul,
       hull: maxHull, maxHull, armor: race.ship.armor, radius: 14,
       alive: true, mode, offset: (offset ?? new THREE.Vector3(200, 20, -250)).clone(), offsetScale: 1,
       ai: { phase: 'run', timer: 0, breakPoint: new THREE.Vector3() },
-      fireCooldown: rand(0.8, 1.6), canFlee: side === 'hostile', fleeT: 0, ready: false,
+      fireCooldown: rand(0.8, 1.6), canFlee: side === 'hostile' && !noFlee, fleeT: 0, ready: false,
+      // krok 9: rola w misji (np. 'trader'), ukrycie (zasadzka), unieruchomienie (abordaż)
+      role, label, stealth, disableAt, disabled: false, tag, brain: null,
+      regen: race.hullRegenPct ?? 0, sinceHit: 99,
       beacon, light: null,
       // napęd fałdowy: warping = sekwencja w toku (AI stoi), hidden = "w fałdzie" (niewidoczny, nietrafialny)
       warp: null, warping: false, arriving: false, hidden: false, jumpState: null,
@@ -190,9 +214,24 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
       get position() { return group.position; },
       get radius() { return npc.radius; },
       isAlive: () => npc.alive && !npc.hidden,
-      takeDamage: (amount) => damage(npc, amount),
+      takeDamage: (amount, shooter) => damage(npc, amount, shooter),
     };
     combat.register(npc.actor);
+
+    // KONTAKT (krok 9): to, jak ten statek widzą inni - wspólny format dla
+    // gracza i NPC. Pola "na żywo" (te same wektory), więc może też służyć
+    // za cel naprowadzania rakiet (position / velocity / isAlive).
+    npc.forward = new THREE.Vector3(0, 0, -1).applyQuaternion(group.quaternion);
+    npc.contact = {
+      id: npc.id, kind: 'npc', npc, value,
+      get side() { return npc.side === 'neutral' ? 'neutral' : npc.actor.side; },
+      position: group.position, velocity: npc.velocity, forward: npc.forward,
+      get hullFrac() { return npc.hull / npc.maxHull; },
+      get radius() { return npc.radius; },
+      recentAttackers: new Map(),
+      isAlive: () => npc.alive && !npc.hidden,
+    };
+    if (tactics && ai) tactics.attach(npc, ai);
     list.push(npc);
 
     // model wczytywany asynchronicznie - NPC działa (i jest widoczny jako
@@ -219,14 +258,42 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     return npc;
   }
 
-  function damage(npc, amount) {
+  /** Kontakt strzelca (NPC albo gracz) - kto nas trafił. */
+  function shooterContact(shooter) {
+    if (!shooter) return null;
+    if (shooter.contact) return shooter.contact;
+    if (shooter.isPlayer) return playerContact;
+    return null;
+  }
+
+  function damage(npc, amount, shooter = null) {
     if (!npc.alive) return;
-    npc.hull -= Math.max(1, amount - npc.armor * 0.5);
+    const dealt = Math.max(1, amount - npc.armor * 0.5);
+    npc.hull -= dealt;
+    npc.sinceHit = 0;
+    const sc = shooterContact(shooter);
+    if (sc) npc.contact.recentAttackers.set(sc, tactics?.time ?? 0);
+    if (tactics && npc.brain) tactics.reportHit(npc, sc, dealt);
+    emit('hit', { npc, amount: dealt, shooter: sc });
     if (npc.hull <= 0) { kill(npc); return; }
-    if (npc.canFlee && npc.mode !== 'flee' && npc.hull < npc.maxHull * 0.25) {
+    // krok 9: unieruchomienie (misja przechwycenia) - napęd pada, statek dryfuje
+    if (npc.disableAt > 0 && !npc.disabled && npc.hull < npc.maxHull * npc.disableAt) {
+      npc.disabled = true;
+      emit('disabled', npc);
+    }
+    // z mózgiem o odwrocie decyduje ocena ryzyka (tactical-ai.js), nie sztywny próg
+    if (!npc.brain && npc.canFlee && npc.mode !== 'flee' && npc.hull < npc.maxHull * 0.25) {
       npc.mode = 'flee';
       emit('retreat', npc);
     }
+  }
+
+  /** Odwrót (decyzja mózgu albo misji): flee + zdarzenie 'retreat'. */
+  function retreat(npc) {
+    if (!npc.alive || npc.mode === 'flee') return;
+    npc.mode = 'flee';
+    npc.fleeT = 0;
+    emit('retreat', npc);
   }
 
   function kill(npc) {
@@ -292,6 +359,7 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
   }
 
   function remove(npc) {
+    if (tactics && npc.brain) tactics.detach(npc);
     if (npc.warp) warp.release(npc.warp);
     scene.remove(npc.group);
     combat.unregister(npc.actor);
@@ -299,9 +367,62 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     if (i >= 0) list.splice(i, 1);
   }
 
+  // ------------------------------------------------------------
+  // OMIJANIE PRZESZKÓD I SEPARACJA (krok 9)
+  // ------------------------------------------------------------
+  // Przeszkody (gwiazdy, planety, gruz) czytane RAZ na klatkę. Każdy NPC
+  // "patrzy" wzdłuż kursu na ~2,5 s do przodu: jeśli tor przechodzi przez
+  // ciało (z marginesem), kierunek jest odpychany w bok od niego. Do tego
+  // miękkie odpychanie od innych NPC - eskadra nie zlewa się w jeden punkt.
+  let obstacles = [];
+  const _av = new THREE.Vector3(), _ao = new THREE.Vector3(), _ap = new THREE.Vector3(), _want = new THREE.Vector3();
+  function avoid(npc, targetPoint, out) {
+    const pos = npc.group.position;
+    _want.copy(targetPoint).sub(pos);
+    const wd = _want.length();
+    if (wd < 1e-3) return out.copy(targetPoint);
+    _want.divideScalar(wd);
+    _fwd.copy(FWD).applyQuaternion(npc.group.quaternion);
+    const look = Math.max(npc.speed, 120) * 2.5 + npc.radius * 4;
+    let pushed = false;
+    for (const o of obstacles) {
+      _ao.copy(o.position).sub(pos);
+      const clearance = o.radius + npc.radius + Math.max(60, o.radius * 0.15);
+      const dist = _ao.length();
+      if (dist - o.radius > look + 200) continue;
+      if (dist < clearance * 1.05) { // już przy powierzchni: prosto od środka
+        _want.addScaledVector(_ao, -2.5 / Math.max(dist, 1e-3));
+        pushed = true;
+        continue;
+      }
+      const t = _ao.dot(_fwd);
+      if (t <= 0 || t > look + o.radius) continue;
+      _ap.copy(_fwd).multiplyScalar(t).sub(_ao); // od środka przeszkody do punktu na kursie
+      const miss = _ap.length();
+      if (miss >= clearance) continue;
+      if (miss < 1e-3) _ap.set(0, 1, 0).cross(_fwd); // dokładnie w środek: w bok
+      const w = (1 - miss / clearance) * (1 - Math.min(t / (look + o.radius), 1)) * 4;
+      _want.addScaledVector(_ap.normalize(), w);
+      pushed = true;
+    }
+    for (const other of list) {
+      if (other === npc || !other.alive || other.hidden) continue;
+      _ao.copy(pos).sub(other.group.position);
+      const minD = (npc.radius + other.radius) * 2.5 + 40;
+      const d2 = _ao.lengthSq();
+      if (d2 > minD * minD || d2 < 1e-6) continue;
+      const d = Math.sqrt(d2);
+      _want.addScaledVector(_ao, (1 - d / minD) * 1.5 / d);
+      pushed = true;
+    }
+    if (!pushed) return out.copy(targetPoint);
+    return out.copy(pos).addScaledVector(_want.normalize(), Math.max(wd, 400));
+  }
+
   function steer(npc, targetPoint, desiredSpeed, dt) {
     const pos = npc.group.position;
     const dist = pos.distanceTo(targetPoint);
+    if (getObstacles) targetPoint = avoid(npc, targetPoint, _av);
     if (dist > 1e-3) {
       lookQuat(pos, targetPoint, _q);
       npc.group.quaternion.rotateTowards(_q, npc.turnRate * dt);
@@ -310,6 +431,8 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     _fwd.copy(FWD).applyQuaternion(npc.group.quaternion);
     npc.velocity.copy(_fwd).multiplyScalar(npc.speed);
     pos.addScaledVector(npc.velocity, dt);
+    // żelazna zasada (collision.js): NPC też nigdy nie wchodzi w ciało stałe
+    if (getObstacles && resolveCollisions(pos, npc.radius, obstacles).collided) npc.speed *= Math.max(0, 1 - 6 * dt);
     return dist;
   }
 
@@ -399,13 +522,107 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     isAlive: () => player.isAlive(),
   };
 
+  // ------------------------------------------------------------
+  // KROK 9: kontakty i wykonanie intencji mózgu
+  // ------------------------------------------------------------
+  const playerContact = {
+    id: 'player', kind: 'player', side: 'player', value: 1,
+    position: player.position, velocity: new THREE.Vector3(), forward: new THREE.Vector3(0, 0, -1),
+    get hullFrac() { return player.getHullFrac?.() ?? 1; },
+    get radius() { return player.getRadius?.() ?? 10; },
+    recentAttackers: new Map(),
+    isAlive: () => player.isAlive(),
+  };
+  const world = { contacts: [], player: playerContact, time: 0 };
+
+  function buildWorld() {
+    player.getVelocity(playerContact.velocity);
+    playerContact.forward.set(0, 0, -1).applyQuaternion(player.quaternion);
+    world.contacts.length = 0;
+    world.contacts.push(playerContact);
+    for (const n of list) {
+      n.forward.set(0, 0, -1).applyQuaternion(n.group.quaternion);
+      if (n.alive && !n.hidden && !n.stealth && !n.arriving) world.contacts.push(n.contact);
+    }
+    world.time = tactics?.time ?? 0;
+  }
+
+  /** Gracz oberwał od NPC - dla osłony watahy ("kto bije lidera"). */
+  function reportPlayerHit(shooter) {
+    const sc = shooterContact(shooter);
+    if (sc) playerContact.recentAttackers.set(sc, tactics?.time ?? 0);
+  }
+
+  function tryFire(npc, t) {
+    const pos = npc.group.position;
+    const dist = pos.distanceTo(t.position);
+    _fwd.copy(FWD).applyQuaternion(npc.group.quaternion);
+    _dir.copy(t.position).sub(pos).normalize();
+    if (weapons) {
+      if (npc.fireCooldown > 0) return;
+      const cd = weapons.npcFire(npc, {
+        weaponId: npc.weaponId, targetPos: t.position, targetVel: t.velocity, targetRef: t,
+        dist, alignCos: _fwd.dot(_dir), color: BOLT_COLOR[npc.side],
+      });
+      if (cd != null) npc.fireCooldown = cd;
+    } else if (dist < 1500 && _fwd.dot(_dir) > 0.985 && npc.fireCooldown <= 0) {
+      fireAt(npc, t.position, t.velocity);
+      npc.fireCooldown = rand(0.6, 0.95);
+    }
+  }
+
+  function runBrain(npc, dt) {
+    npc.fireCooldown -= dt;
+    const I = tactics.decide(npc, dt, world);
+    if (I.retreat) { retreat(npc); return; }
+    if (I.warpOut) { depart(npc); return; }
+    if (I.formation) { updateFormation(npc, I.formation, dt); if (I.fire) tryFire(npc, I.fire); return; }
+    if (I.drift) {
+      npc.speed = Math.max(0, npc.speed - npc.accel * 0.4 * dt);
+      _fwd.copy(FWD).applyQuaternion(npc.group.quaternion);
+      npc.velocity.copy(_fwd).multiplyScalar(npc.speed);
+      npc.group.position.addScaledVector(npc.velocity, dt);
+      return;
+    }
+    if (I.hold) {
+      npc.speed = Math.max(0, npc.speed - npc.accel * dt);
+      lookQuat(npc.group.position, I.point, _q);
+      npc.group.quaternion.rotateTowards(_q, npc.turnRate * 0.3 * dt);
+      npc.velocity.set(0, 0, 0);
+      return;
+    }
+    steer(npc, I.point, Math.min(I.speed, npc.maxSpeed), dt);
+    if (I.fire && !npc.disabled) tryFire(npc, I.fire);
+  }
+
   function update(dt) {
     updateFillLights();
+    if (getObstacles) obstacles = getObstacles() ?? [];
+    if (tactics) {
+      buildWorld();
+      tactics.update(dt, world);
+    }
     let landing = 0;
     for (const npc of [...list]) {
       if (!npc.alive) continue;
       if (npc.jumpState === 'arrive-now') { landAfterJump(npc, landing++); continue; }
       if (npc.warping) continue; // w trakcie sekwencji fałdy pozycję prowadzi napęd, nie AI
+      // regeneracja kadłuba ras, które ją mają (Szczepieni) - 5 s po trafieniu
+      npc.sinceHit += dt;
+      if (npc.regen > 0 && npc.sinceHit > 5 && npc.hull < npc.maxHull) {
+        npc.hull = Math.min(npc.maxHull, npc.hull + npc.maxHull * (npc.regen / 100) * 4 * dt);
+      }
+      // stare tryby walki przechodzą pod mózg, jeśli jest taktyka
+      if (tactics && !npc.brain && (npc.mode === 'attack' || npc.mode === 'escort')) {
+        tactics.attach(npc, npc.mode === 'attack'
+          ? { base: 'hunt' }
+          : { base: 'guard', protect: playerContact, guardR: 3500 });
+      }
+      if (tactics && npc.brain && (npc.mode === 'tactical' || npc.mode === 'attack' || npc.mode === 'escort')) {
+        if (npc.mode === 'attack' && !player.isAlive() && npc.brain.base === 'hunt') { npc.mode = 'idle'; continue; }
+        runBrain(npc, dt);
+        continue;
+      }
       switch (npc.mode) {
         case 'formation':
           updateFormation(npc, npc.offset, dt);
@@ -429,7 +646,9 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
           break;
         case 'flee': {
           npc.fleeT += dt;
-          _tp.copy(npc.group.position).sub(player.position);
+          // sojusznik ucieka od najbliższego wroga, wróg - od gracza
+          const from = npc.side === 'hostile' ? player.position : (nearestHostile(npc.group.position, 6000)?.group.position ?? player.position);
+          _tp.copy(npc.group.position).sub(from);
           if (_tp.lengthSq() < 1) _tp.set(0, 0, 1);
           _tp.normalize().multiplyScalar(4000).add(npc.group.position);
           steer(npc, _tp, npc.maxSpeed, dt);
@@ -448,14 +667,20 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     }
   }
 
-  function clear() {
-    for (const n of [...list]) { n.alive = false; remove(n); }
+  /** Usuwa NPC; `keep(npc)` = true oszczędza (krok 9: wataha przeżywa reset scen). */
+  function clear(keep = null) {
+    for (const n of [...list]) { if (keep?.(n)) continue; n.alive = false; remove(n); }
+    playerContact.recentAttackers.clear();
   }
 
   return {
-    spawn, update, remove, clear, depart, followJump, arriveJump,
+    spawn, update, remove, clear, depart, followJump, arriveJump, retreat, reportPlayerHit,
     setMode(npc, mode) { npc.mode = mode; if (mode === 'flee') npc.fleeT = 0; },
-    hostiles: () => list.filter((n) => n.side === 'hostile' && n.alive),
+    // ukryci (zasadzka) nie są "widoczni" dla namierzania gracza
+    hostiles: () => list.filter((n) => n.side === 'hostile' && n.alive && !n.stealth),
+    allies: () => list.filter((n) => n.side === 'ally' && n.alive),
+    byTag: (tag) => list.filter((n) => n.tag === tag && n.alive),
+    playerContact, world,
     list,
     on(type, fn) { listeners[type].push(fn); },
   };

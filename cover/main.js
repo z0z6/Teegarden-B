@@ -40,7 +40,7 @@ const chooseBtn = document.getElementById('choose');
 function applySelection(id, { preview = true } = {}) {
   selected = id;
   try { localStorage.setItem(STORE_KEY, id); } catch { /* bez zapisu */ }
-  play.href = `./step8-star-systems/?uklad=${id}`;
+  play.href = `./step9-missions/?uklad=${id}`;
   playSystem.textContent = SYSTEMS[id].name;
   caption.textContent = id === 'teegarden' ? CAPTION_DEFAULT : SYSTEMS[id].desc;
   list.querySelectorAll('.system').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === id)));

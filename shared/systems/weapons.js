@@ -96,7 +96,7 @@ export const RACE_WEAPON = {
  * przerwa między strzałami i obrażenia. NPC zadają mniej niż gracz - ten sam
  * "budżet" DPS co bolty z kroku 5 (~12/s), inaczej rozłożony w czasie.
  */
-const NPC_PROFILE = {
+export const NPC_PROFILE = {
   pulse:   { range: 1500, align: 0.985, cd: [0.6, 0.95], damage: 10 },
   missile: { range: 2600, align: 0.9,   cd: [2.4, 3.0],  damage: 16, aoeDamage: 8 },
   dart:    { range: 2400, align: 0.93,  cd: [3.2, 4.0],  damage: 38, aoeDamage: 12 },
@@ -569,6 +569,13 @@ export function createWeapons({ scene, combat, camera }) {
  * @param {() => number} o.getSpeed      prędkość statku (rakiety startują z nią)
  * @param {() => Array} o.getTargets     wrodzy NPC: [{ group, velocity, actor, alive, hidden, callsign }]
  */
+/**
+ * Strzelec "gracz" - jeden obiekt dla wszystkich pocisków gracza (krok 9:
+ * taktyczne AI rozpoznaje po nim, KTO go trafił, i może odpowiedzieć ogniem
+ * albo wezwać pomoc). Wcześniej każdy strzał tworzył nowy { callsign }.
+ */
+export const PLAYER_SHOOTER = { callsign: 'gracz', isPlayer: true };
+
 export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTargets }) {
   const state = {
     weapon: 'pulse',
@@ -694,7 +701,7 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
       for (const s of [-1, 1]) {
         const o = origin.clone().addScaledVector(_r, s * Math.max(3, radius * 0.25));
         weapons.fire('missile', {
-          origin: o, dir: _f.clone(), side: 'player', shooter: { callsign: 'gracz' }, target: targetRef,
+          origin: o, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, target: targetRef,
           damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()), right: _r.clone().multiplyScalar(s),
         });
       }
@@ -708,19 +715,19 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
         if (id === 'salvo' && ended === n) emit('salvo', { hits, total: n });
       };
       weapons.fire(id, {
-        origin, dir: _f.clone(), side: 'player', shooter: { callsign: 'gracz' }, target: targetRef,
+        origin, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, target: targetRef,
         damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()),
         up: new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion), onResult,
       });
     } else if (id === 'torpedo') {
       weapons.fire('torpedo', {
-        origin, dir: _f.clone(), side: 'player', shooter: { callsign: 'gracz' }, target: targetRef,
+        origin, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, target: targetRef,
         damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()),
       });
     } else {
       const o = origin.clone().addScaledVector(_r, (side *= -1) * Math.max(3, radius * 0.15));
       weapons.fire(id, {
-        origin: o, dir: assistedDir(o, W.assistDeg, W.speed), side: 'player', shooter: { callsign: 'gracz' },
+        origin: o, dir: assistedDir(o, W.assistDeg, W.speed), side: 'player', shooter: PLAYER_SHOOTER,
         damageMult: state.damageMult,
       });
     }

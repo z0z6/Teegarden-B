@@ -308,6 +308,38 @@ export function createCombat(scene) {
     }
   }
 
+  /**
+   * KROK 9 (taktyczne AI): najgroźniejszy pocisk lecący w aktora stojącego w
+   * `position` (strona `side`) w ciągu `horizon` s. Pocisk naprowadzany liczy
+   * się, gdy jego głowica trzyma TEN cel (porównanie referencji wektora
+   * pozycji - tak samo przekazują go gracz i NPC); balistyczny - gdy minie
+   * aktora bliżej niż 3 promienie (+ promień wybuchu). Zwraca null albo
+   * { tca, guided, aoe, dir, from }. Tylko odczyt - nic w walce nie zmienia.
+   */
+  function incoming(position, radius, side, horizon = 3) {
+    let best = null;
+    for (const b of bolts) {
+      if (!isEnemy(b.side, side)) continue;
+      const guided = !!(b.homing && !b.homing.lost && b.homing.target?.position === position);
+      _toActor.copy(position).sub(b.mesh.position);
+      const dist = _toActor.length();
+      const closing = b.vel.dot(_toActor) / Math.max(dist, 1e-6);
+      if (closing <= 1) continue;
+      const tca = dist / closing;
+      if (tca > horizon) continue;
+      if (!guided) {
+        const vv = b.vel.lengthSq();
+        const t = _toActor.dot(b.vel) / vv;
+        const miss = _closest.copy(b.vel).multiplyScalar(t).sub(_toActor).length();
+        if (miss > radius * 3 + (b.aoe?.radius ?? 0)) continue;
+      }
+      if (!best || tca < best.tca) {
+        best = { tca, guided, aoe: b.aoe?.radius ?? 0, dir: b.vel.clone().normalize(), from: b.mesh.position.clone() };
+      }
+    }
+    return best;
+  }
+
   function clear() {
     for (const b of bolts) scene.remove(b.mesh);
     bolts.length = 0;
@@ -316,7 +348,7 @@ export function createCombat(scene) {
   }
 
   return {
-    register, unregister, fire, flash, update, clear, raycast, explode,
+    register, unregister, fire, flash, update, clear, raycast, explode, incoming,
     on(type, fn) { listeners[type].push(fn); },
     get boltCount() { return bolts.length; },
   };

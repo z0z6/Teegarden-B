@@ -34,6 +34,7 @@ Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tran
 | [`step6-warp`](./step6-warp) | **Napęd fałdowy** dla wszystkich statków: wejście w fałdę, relatywistyczna aberracja gwiazd, sygnatura skoku zależna od rasy, NPC wchodzą/odlatują przez fałdę, eskorta skacze z graczem |
 | [`step7-weapons`](./step7-weapons) | **Uzbrojenie**: 5 broni o różnej mechanice (działko, rakiety z namierzaniem, torpedy Grot i Trójząb z głowicą, która gubi cel, torpeda z implozją), system **Ciepła** z kart ras, broń rasowa NPC |
 | [`step8-star-systems`](./step8-star-systems) | **Układy gwiezdne**: 5 układów (m.in. prawdziwa Gwiazda Teegardena, para z dyskiem akrecyjnym, nadolbrzym), dużo większe gwiazdy, proceduralne powierzchnie gwiazd (granulacja, plazma, protuberancje, rozbłyski) i planet, skok międzygwiezdny |
+| [`step9-missions`](./step9-missions) | **Misje i taktyczne AI**: 7 scenariuszy (przechwycenie, blokada, odparcie 10 wrogów, eskorta handlowca, zasadzka, pościg, łowy watahy), **wataha** skrzydłowych rasy gracza z rozkazami, nowy mózg NPC (ocena ryzyka/nagrody, role w eskadrze, uniki, odwrót zamiast samobójstwa), poziomy trudności |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -61,7 +62,7 @@ shared/
     ├── collision.js            twarda bariera: statek nie wchodzi w ciała stałe
     ├── dashboard.js            komunikaty załogi (dashboard gracza)
     ├── combat.js               pociski, trafienia, efekty (krok 5; naprowadzanie, wybuchy, promienie - krok 7)
-    ├── npc-ships.js            statki NPC: sojusznicy i wrogowie z prostym AI (krok 5)
+    ├── npc-ships.js            statki NPC: sojusznicy i wrogowie z prostym AI (krok 5; mózg taktyczny, omijanie przeszkód - krok 9)
     ├── comms.js                komunikator: rozmowy z wyborami (krok 5)
     ├── target-labels.js        etykiety celów na ekranie (krok 5)
     ├── encounters.js           reżyser scen fabularnych (krok 5)
@@ -69,7 +70,10 @@ shared/
     ├── weapons.js              uzbrojenie: 5 broni, ciepło, namierzanie, broń rasowa NPC (krok 7)
     ├── star-systems.js         5 układów ciał niebieskich, ogólny interfejs układu (krok 8)
     ├── star-surface.js         proceduralne gwiazdy: granulacja, plazma, korona, protuberancje (krok 8)
-    └── planet-surface.js       proceduralne planety i pierścienie (krok 8)
+    ├── planet-surface.js       proceduralne planety i pierścienie (krok 8)
+    ├── tactical-ai.js          mózg NPC: wybór celu, role eskadry, uniki, odwrót, temperament ras (krok 9)
+    ├── wolfpack.js             wataha: skrzydłowi rasy gracza i rozkazy (krok 9)
+    └── missions.js             7 misji, zagłuszacze fałdy, cele i znaczniki (krok 9)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
@@ -92,7 +96,7 @@ stolicy, odbudowa). Zasady w jej README, testy: `node tools/galaxy-map/check.mjs
 
 Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
 W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
-1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy. Krok 7 dodaje: Q/E lub kółko — zmiana broni.
+1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy. Krok 7 dodaje: Q/E lub kółko — zmiana broni. Krok 8 dodaje: U — skok międzygwiezdny, M — mapa. Krok 9 dodaje: N — misje, L — wataha, G/H/V/B — rozkazy watahy (cel, kleszcze, osłona, szyk).
 
 **Android (kroki 3-5):** pierwsze dotknięcie włącza pełny ekran i blokadę poziomu; w pionie pokazuje się podpowiedź „Obróć telefon w poziom” (`shared/input/android-landscape.js`).
 
