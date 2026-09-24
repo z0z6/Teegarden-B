@@ -79,5 +79,37 @@ export default {
     // Istniejące generatory też działają (bez opts):
     // { id: 'raptor-interceptor', name: 'Raptor-class Interceptor', module: './raptor_interceptor.js',
     //   builder: 'buildRaptorInterceptor', race: 'rezonanci', bowAxis: '+Z', opts: { ground: false } },
+    {
+      id: 'kryza-heliotropi-hawk-3',
+      name: 'Kryza — Żar',
+      module: './kryza_heliotropi.js',
+      builder: 'buildKryzaHeliotropi',
+      race: 'heliotropi',
+      opts: { seed: 3, faction: 'hawk' },
+    },
+    {
+      id: 'kryza-heliotropi-trade-17',
+      name: 'Kryza — Chłodni',
+      module: './kryza_heliotropi.js',
+      builder: 'buildKryzaHeliotropi',
+      race: 'heliotropi',
+      opts: { seed: 17, faction: 'trade' },
+    },
+    {
+      id: 'kryza-heliotropi-coalition-29',
+      name: 'Kryza — Hibernatorzy Szlaku',
+      module: './kryza_heliotropi.js',
+      builder: 'buildKryzaHeliotropi',
+      race: 'heliotropi',
+      opts: { seed: 29, faction: 'coalition', wear: 0.5 },
+    },
+    {
+      id: 'kryza-heliotropi-hawk-44',
+      name: 'Kryza — Płomień Żaru',
+      module: './kryza_heliotropi.js',
+      builder: 'buildKryzaHeliotropi',
+      race: 'heliotropi',
+      opts: { seed: 44, faction: 'hawk', lengthScale: 1.1, greebleDensity: 0.8, emissiveBoost: 2 },
+    },
   ],
 };
