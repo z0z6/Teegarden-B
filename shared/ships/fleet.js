@@ -47,6 +47,48 @@ export const SHIPS = [
     file: '../shared/ships/models/kharath-destroyer-lod0.glb',
     bowAxis: '-Z',
   },
+  {
+    id: 'goniec-wybudzeni-hawk-7',
+    name: 'Goniec — Kwartał Spisowy',
+    file: '../shared/ships/models/goniec-wybudzeni-hawk-7-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'goniec-wybudzeni-trade-11',
+    name: 'Goniec — Cech Rzeczników',
+    file: '../shared/ships/models/goniec-wybudzeni-trade-11-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'goniec-wybudzeni-coalition-13',
+    name: 'Goniec — Bez Numeru',
+    file: '../shared/ships/models/goniec-wybudzeni-coalition-13-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'goniec-wybudzeni-hawk-21',
+    name: 'Goniec — Weteran Kwartału',
+    file: '../shared/ships/models/goniec-wybudzeni-hawk-21-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'goniec-wybudzeni-trade-34',
+    name: 'Goniec — Rzecznik Dalekiego Szlaku',
+    file: '../shared/ships/models/goniec-wybudzeni-trade-34-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'goniec-wybudzeni-coalition-58',
+    name: 'Goniec — Odrzut Spisu',
+    file: '../shared/ships/models/goniec-wybudzeni-coalition-58-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'goniec-wybudzeni-hawk-90',
+    name: 'Goniec — Paradny Kwartału',
+    file: '../shared/ships/models/goniec-wybudzeni-hawk-90-lod0.glb',
+    bowAxis: '+Z',
+  },
 ];
 
 /** Obrót wokół Y (radiany), który ustawia dziób modelu w lokalne -Z silnika. */

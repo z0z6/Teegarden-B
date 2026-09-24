@@ -29,6 +29,13 @@ export const SHIP_RACE = {
   'raptor-interceptor': 'rezonanci',
   'warbird-heavy': 'szczepieni',
   'kharath-destroyer': 'wybudzeni',
+  'goniec-wybudzeni-hawk-7': 'wybudzeni',
+  'goniec-wybudzeni-trade-11': 'wybudzeni',
+  'goniec-wybudzeni-coalition-13': 'wybudzeni',
+  'goniec-wybudzeni-hawk-21': 'wybudzeni',
+  'goniec-wybudzeni-trade-34': 'wybudzeni',
+  'goniec-wybudzeni-coalition-58': 'wybudzeni',
+  'goniec-wybudzeni-hawk-90': 'wybudzeni',
 };
 
 export const RACES = {
