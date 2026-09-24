@@ -36,6 +36,10 @@ export const SHIP_RACE = {
   'goniec-wybudzeni-trade-34': 'wybudzeni',
   'goniec-wybudzeni-coalition-58': 'wybudzeni',
   'goniec-wybudzeni-hawk-90': 'wybudzeni',
+  'kryza-heliotropi-hawk-3': 'heliotropi',
+  'kryza-heliotropi-trade-17': 'heliotropi',
+  'kryza-heliotropi-coalition-29': 'heliotropi',
+  'kryza-heliotropi-hawk-44': 'heliotropi',
 };
 
 export const RACES = {

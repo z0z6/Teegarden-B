@@ -89,6 +89,30 @@ export const SHIPS = [
     file: '../shared/ships/models/goniec-wybudzeni-hawk-90-lod0.glb',
     bowAxis: '+Z',
   },
+  {
+    id: 'kryza-heliotropi-hawk-3',
+    name: 'Kryza — Żar',
+    file: '../shared/ships/models/kryza-heliotropi-hawk-3-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'kryza-heliotropi-trade-17',
+    name: 'Kryza — Chłodni',
+    file: '../shared/ships/models/kryza-heliotropi-trade-17-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'kryza-heliotropi-coalition-29',
+    name: 'Kryza — Hibernatorzy Szlaku',
+    file: '../shared/ships/models/kryza-heliotropi-coalition-29-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'kryza-heliotropi-hawk-44',
+    name: 'Kryza — Płomień Żaru',
+    file: '../shared/ships/models/kryza-heliotropi-hawk-44-lod0.glb',
+    bowAxis: '+Z',
+  },
 ];
 
 /** Obrót wokół Y (radiany), który ustawia dziób modelu w lokalne -Z silnika. */
