@@ -43,6 +43,38 @@ export default {
       race: 'wybudzeni',
       opts: { seed: 13, faction: 'coalition', wear: 0.55 },
     },
+    {
+      id: 'goniec-wybudzeni-hawk-21',
+      name: 'Goniec — Weteran Kwartału',
+      module: './goniec_wybudzeni.js',
+      builder: 'buildGoniecWybudzeni',
+      race: 'wybudzeni',
+      opts: { seed: 21, faction: 'hawk', wear: 0.7, greebleDensity: 0.7 },
+    },
+    {
+      id: 'goniec-wybudzeni-trade-34',
+      name: 'Goniec — Rzecznik Dalekiego Szlaku',
+      module: './goniec_wybudzeni.js',
+      builder: 'buildGoniecWybudzeni',
+      race: 'wybudzeni',
+      opts: { seed: 34, faction: 'trade', lengthScale: 1.15, greebleDensity: 0.9, wear: 0.1 },
+    },
+    {
+      id: 'goniec-wybudzeni-coalition-58',
+      name: 'Goniec — Odrzut Spisu',
+      module: './goniec_wybudzeni.js',
+      builder: 'buildGoniecWybudzeni',
+      race: 'wybudzeni',
+      opts: { seed: 58, faction: 'coalition', wear: 0.85, asymmetry: 0.6, emissiveBoost: 0.5 },
+    },
+    {
+      id: 'goniec-wybudzeni-hawk-90',
+      name: 'Goniec — Paradny Kwartału',
+      module: './goniec_wybudzeni.js',
+      builder: 'buildGoniecWybudzeni',
+      race: 'wybudzeni',
+      opts: { seed: 90, faction: 'hawk', wear: 0, lengthScale: 0.9, emissiveBoost: 2 },
+    },
 
     // Istniejące generatory też działają (bez opts):
     // { id: 'raptor-interceptor', name: 'Raptor-class Interceptor', module: './raptor_interceptor.js',
