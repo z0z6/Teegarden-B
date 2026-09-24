@@ -24,30 +24,6 @@ import * as THREE from 'three';
 // gdzie model ma dziób w swoim WŁASNYM układzie współrzędnych.
 export const SHIPS = [
   {
-    id: 'warbird-light',
-    name: 'Warbird — Light Skirmisher',
-    file: '../shared/ships/models/warbird-light-lod0.glb',
-    bowAxis: '+Z',
-  },
-  {
-    id: 'raptor-interceptor',
-    name: 'Raptor-class Interceptor',
-    file: '../shared/ships/models/raptor-interceptor-lod0.glb',
-    bowAxis: '+Z',
-  },
-  {
-    id: 'warbird-heavy',
-    name: 'Warbird — Heavy Siege Interceptor',
-    file: '../shared/ships/models/warbird-heavy-lod0.glb',
-    bowAxis: '+Z',
-  },
-  {
-    id: 'kharath-destroyer',
-    name: 'Kharath — Heavy Destroyer',
-    file: '../shared/ships/models/kharath-destroyer-lod0.glb',
-    bowAxis: '-Z',
-  },
-  {
     id: 'goniec-wybudzeni-hawk-7',
     name: 'Goniec — Kwartał Spisowy',
     file: '../shared/ships/models/goniec-wybudzeni-hawk-7-lod0.glb',

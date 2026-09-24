@@ -25,10 +25,6 @@
 // Losowy przydział modeli statków do rasy (wylosowany raz i zapisany, żeby
 // był powtarzalny). Kiedy powstaną własne modele ras - podmień tutaj.
 export const SHIP_RACE = {
-  'warbird-light': 'piesniarze',
-  'raptor-interceptor': 'rezonanci',
-  'warbird-heavy': 'szczepieni',
-  'kharath-destroyer': 'wybudzeni',
   'goniec-wybudzeni-hawk-7': 'wybudzeni',
   'goniec-wybudzeni-trade-11': 'wybudzeni',
   'goniec-wybudzeni-coalition-13': 'wybudzeni',

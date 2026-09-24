@@ -76,9 +76,6 @@ export default {
       opts: { seed: 90, faction: 'hawk', wear: 0, lengthScale: 0.9, emissiveBoost: 2 },
     },
 
-    // Istniejące generatory też działają (bez opts):
-    // { id: 'raptor-interceptor', name: 'Raptor-class Interceptor', module: './raptor_interceptor.js',
-    //   builder: 'buildRaptorInterceptor', race: 'rezonanci', bowAxis: '+Z', opts: { ground: false } },
     {
       id: 'kryza-heliotropi-hawk-3',
       name: 'Kryza — Żar',
