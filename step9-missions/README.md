@@ -15,7 +15,7 @@ wybiera się statek (czyli rasę załogi), trudność przeciwników, watahę i
 układ. Gra dostaje wszystko w adresie:
 
 ```
-step9-missions/?misja=waves&statek=raptor-interceptor&trudnosc=trudna&wataha=1&uklad=teegarden
+step9-missions/?misja=waves&statek=goniec-wybudzeni-hawk-7&trudnosc=trudna&wataha=1&uklad=teegarden
 ```
 
 **Dlaczego tablica wyszła z gry.** Jako nakładka w locie była jedną linijką

@@ -92,12 +92,12 @@ console.log('\n2. Tablica misji');
   await page.click('.m[data-id="wolfhunt"]');
   ok(await page.isDisabled('#pack .opt'), 'Łowy watahy: wataha obowiązkowa (przełącznik zablokowany)');
   await page.click('.m[data-id="waves"]');
-  await page.click('#ships .opt[data-id="warbird-heavy"]');
+  await page.click('#ships .opt[data-id="goniec-wybudzeni-trade-11"]');
   await page.keyboard.press('3'); // cyfry już nie zmieniają statku
   await page.keyboard.press('t');
   await page.keyboard.press('w');
   const url = await page.evaluate(() => window.__missions.gameUrl());
-  ok(/misja=waves/.test(url) && /statek=warbird-heavy/.test(url) && /trudnosc=trudna/.test(url) && /wataha=1/.test(url) && /uklad=blizniaki/.test(url),
+  ok(/misja=waves/.test(url) && /statek=goniec-wybudzeni-trade-11/.test(url) && /trudnosc=trudna/.test(url) && /wataha=1/.test(url) && /uklad=blizniaki/.test(url),
     `klik statku / T / W ustawiają statek, trudność, watahę (cyfra 3 ignorowana): ${url}`);
   await page.screenshot({ path: join(OUT, '2-board-waves.png') });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -115,7 +115,7 @@ console.log('\n2. Tablica misji');
 // ------------------------------------------------------------
 console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
 {
-  const { page, errors } = await open('/step9-missions/?misja=waves&statek=raptor-interceptor&trudnosc=trudna&wataha=1&uklad=teegarden&debug');
+  const { page, errors } = await open('/step9-missions/?misja=waves&statek=goniec-wybudzeni-hawk-7&trudnosc=trudna&wataha=1&uklad=teegarden&debug');
   await page.waitForFunction(() => window.__game?.missions?.active, null, { timeout: 60000 }).catch(() => {});
   const st = await page.evaluate(() => ({
     mission: __game.missions.state.id, active: __game.missions.active, pack: __game.wolfpack.active,
@@ -177,7 +177,7 @@ console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
   ok(/step9-missions/.test(page.url()), 'pierwsze N w trakcie misji nie wychodzi (ostrzeżenie)');
   await Promise.all([page.waitForURL(/missions\.html/, { timeout: 8000, waitUntil: 'domcontentloaded' }), page.keyboard.press('KeyN')]);
   const back = new URL(page.url());
-  ok(back.searchParams.get('misja') === 'capture' && back.searchParams.get('statek') === 'raptor-interceptor',
+  ok(back.searchParams.get('misja') === 'capture' && back.searchParams.get('statek') === 'goniec-wybudzeni-hawk-7',
     `drugie N: tablica misji z tymi samymi ustawieniami (${back.search})`);
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.close();

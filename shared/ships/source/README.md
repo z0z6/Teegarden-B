@@ -1,8 +1,13 @@
 # Statki — kod źródłowy (proceduralne generatory)
 
+> Dziś modele buduje workflow **Build ships** z `ships.manifest.js`
+> (patrz `build-ships.mjs`). Pierwsze cztery statki (Warbird lekki, Raptor,
+> Warbird ciężki, Kharath) zostały usunięte; przykłady niżej opisują
+> ręczną metodę eksportu, której używały.
+
 Te pliki `.js` to **źródło prawdy** dla modeli statków w
 `shared/ships/models/*.glb`. Każdy eksportuje jedną funkcję budującą
-(`buildWarbirdLight()`, `buildKharathDestroyer()` itd.) zwracającą gotowy
+(np. `buildGoniecWybudzeni()`, `buildKryzaHeliotropi()`) zwracającą gotowy
 `THREE.Group` — czysta geometria three.js (`LatheGeometry`,
 `ExtrudeGeometry`, `TorusGeometry`...), bez żadnych zewnętrznych plików
 assetów. Nie są importowane przez samą grę (`step3-ships/` i dalej wczytują

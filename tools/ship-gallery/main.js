@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { SHIPS as FLEET } from '../../shared/ships/fleet.js';
 
 // ============================================================
 // Galeria statków: narzędzie deweloperskie, nie krok gry.
-// Cel: pokazać wszystkie 4 statki z floty z tej samej, spójnej
+// Cel: pokazać wszystkie statki z floty z tej samej, spójnej
 // perspektywy, każdy zajmujący DOKŁADNIE tę samą proporcję kadru
 // (dopasowanie kuli otaczającej do FOV kamery).
 //
@@ -18,12 +19,26 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 // budowany w try/catch, niezależnie od pozostałych.
 // ============================================================
 
-const SHIPS = [
-  { id: 'warbird-light', name: 'Warbird — Light Skirmisher', file: '../../shared/ships/models/warbird-light-lod0.glb' },
-  { id: 'raptor-interceptor', name: 'Raptor-class Interceptor', file: '../../shared/ships/models/raptor-interceptor-lod0.glb' },
-  { id: 'warbird-heavy', name: 'Warbird — Heavy Siege Interceptor', file: '../../shared/ships/models/warbird-heavy-lod0.glb' },
-  { id: 'kharath-destroyer', name: 'Kharath — Heavy Destroyer', file: '../../shared/ships/models/kharath-destroyer-lod0.glb' },
-];
+// Lista statków z tego samego pliku co gra (shared/ships/fleet.js), więc
+// każdy nowy statek z build-ships od razu jest w galerii. Ścieżki we
+// fleet.js są względne do stron o jeden katalog głębiej (np. step9-missions/),
+// galeria siedzi dwa poziomy niżej - stąd dodatkowe '../'.
+// Jeden panel = jeden kontekst WebGL, a przeglądarki pozwalają na ~8-16
+// naraz, więc galeria pokazuje po PER_PAGE statków (?strona=2 itd.).
+const PER_PAGE = 8;
+const ALL = FLEET.map((s) => ({ id: s.id, name: s.name, file: s.file.replace(/^\.\.\//, '../../') }));
+const pages = Math.max(1, Math.ceil(ALL.length / PER_PAGE));
+const page = Math.min(pages, Math.max(1, parseInt(new URLSearchParams(location.search).get('strona'), 10) || 1));
+const SHIPS = ALL.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+if (pages > 1) {
+  const nav = document.createElement('nav');
+  nav.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;padding:.5rem 0;font:14px sans-serif';
+  nav.innerHTML = `<span style="opacity:.7">Statków: ${ALL.length} · strona:</span>` +
+    Array.from({ length: pages }, (_, i) => i + 1 === page
+      ? `<b>${i + 1}</b>`
+      : `<a href="?strona=${i + 1}" style="color:#9fd8ff">${i + 1}</a>`).join('');
+  document.getElementById('grid').before(nav);
+}
 
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
@@ -184,7 +199,7 @@ function buildPanel(def) {
 }
 
 // Każdy panel budowany NIEZALEŻNIE - błąd przy jednym (np. wyczerpany
-// limit kontekstów WebGL) nie może ubić budowy pozostałych trzech.
+// limit kontekstów WebGL) nie może ubić budowy pozostałych.
 for (const def of SHIPS) {
   try {
     buildPanel(def);

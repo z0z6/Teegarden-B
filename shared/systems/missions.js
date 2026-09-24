@@ -310,7 +310,7 @@ export function createMissions({
       const heading = ctx.fr.f.clone().addScaledVector(ctx.fr.r, 0.25).normalize();
       const courier = ctx.spawn({
         raceId: race, factionKey: 'trade', side: 'hostile', mode: 'tactical', position: start,
-        facing: ctx.facingFrom(start, heading), shipId: 'warbird-heavy', callsign: 'Kurier',
+        facing: ctx.facingFrom(start, heading), shipId: 'goniec-wybudzeni-trade-34', callsign: 'Kurier',
         hull: 320, maxSpeed: 250, combatSpeed: 210, disableAt: 0.35, noFlee: true, label: 'kurier · ładunek',
         value: 0.3, // wataha woli eskortę: kuriera chcemy CAŁEGO
         ai: { base: 'runner', squad: ctx.S('courier'), heading },
@@ -371,7 +371,7 @@ export function createMissions({
       const posts = [];
       const inter = ctx.spawn({
         raceId: race, factionKey: 'hawk', side: 'hostile', mode: 'tactical', position: center,
-        facing: ctx.facingFrom(center, ctx.fr.f.clone().negate()), shipId: 'kharath-destroyer', callsign: 'Zapora',
+        facing: ctx.facingFrom(center, ctx.fr.f.clone().negate()), shipId: 'kryza-heliotropi-hawk-44', callsign: 'Zapora',
         hull: 520, maxSpeed: 150, combatSpeed: 110, arrival: 'none', label: 'interdyktor',
         ai: { base: 'hold', squad: S, anchor: center, leash: 3400, alert: false, noRetreat: true },
       });
@@ -445,7 +445,7 @@ export function createMissions({
           const p = center.clone().addScaledVector(fr.r, (k - (sizes[i] - 1) / 2) * 260).addScaledVector(fr.u, (k % 2) * 120);
           const n = ctx.spawn({
             raceId: race, factionKey: 'hawk', side: 'hostile', mode: 'tactical', position: p,
-            ...(heavy ? { shipId: 'kharath-destroyer', hull: 380, combatSpeed: 150, maxSpeed: 200, label: 'ciężki' } : {}),
+            ...(heavy ? { shipId: 'kryza-heliotropi-hawk-3', hull: 380, combatSpeed: 150, maxSpeed: 200, label: 'ciężki' } : {}),
             ai: { base: 'hunt', squad: ctx.S(`w${i}`) },
           });
           mine.add(n); waveNpcs.push(n);
@@ -477,7 +477,7 @@ export function createMissions({
       const start = ctx.pt(260, 380, 40);
       const trader = ctx.spawn({
         raceId: ctx.allyRace, factionKey: 'trade', side: 'ally', mode: 'tactical', position: start,
-        facing: ctx.fr.q, shipId: 'kharath-destroyer', callsign: 'Karawana',
+        facing: ctx.fr.q, shipId: 'kryza-heliotropi-hawk-44', callsign: 'Karawana',
         hull: 650, maxSpeed: 130, combatSpeed: 80, role: 'trader', label: 'handlowiec (chroń)', value: 2.6,
         ai: { base: 'trader', squad: ctx.S('trader'), route },
       });
@@ -497,7 +497,7 @@ export function createMissions({
           ctx.spawn({
             raceId: ctx.enemyRace, factionKey: 'hawk', side: 'hostile', mode: 'tactical',
             position: center.clone().addScaledVector(side, k * 230).add(new THREE.Vector3(0, (k % 2) * 140, 0)),
-            ...(heavy ? { shipId: 'kharath-destroyer', hull: 360, combatSpeed: 150, maxSpeed: 200, label: 'ciężki' } : {}),
+            ...(heavy ? { shipId: 'kryza-heliotropi-hawk-3', hull: 360, combatSpeed: 150, maxSpeed: 200, label: 'ciężki' } : {}),
             // rabusie: handlowiec wart więcej (value 2,6), ale na ogon gracza też odpowiedzą
             ai: { base: 'hunt', squad: ctx.S(`raid${i}`) },
           });
@@ -540,7 +540,7 @@ export function createMissions({
         lurkers.push(ctx.spawn({
           raceId: race, factionKey: 'hawk', side: 'hostile', mode: 'tactical', position: p, arrival: 'none', stealth: true,
           facing: ctx.facingFrom(p, wreck.clone().sub(p).normalize()),
-          ...(i === 0 ? { shipId: 'warbird-heavy', label: 'zagłuszacz', callsign: 'Sidło' } : {}),
+          ...(i === 0 ? { shipId: 'goniec-wybudzeni-hawk-21', label: 'zagłuszacz', callsign: 'Sidło' } : {}),
           ai: { base: 'lurk', squad: S, anchor: wreck },
         }));
       }
@@ -621,7 +621,7 @@ export function createMissions({
         return n;
       }
       for (const x of [-500, 0, 500]) hunter(ctx.pt(-3300, x, 100 + Math.abs(x) * 0.2));
-      const net = hunter(ctx.pt(-4300, 0, 350), { shipId: 'warbird-heavy', callsign: 'Sieć', label: 'zagłuszacz', maxSpeed: 360, combatSpeed: 270, hull: 300, ai: { base: 'hunt', squad: S } });
+      const net = hunter(ctx.pt(-4300, 0, 350), { shipId: 'goniec-wybudzeni-hawk-21', callsign: 'Sieć', label: 'zagłuszacz', maxSpeed: 360, combatSpeed: 270, hull: 300, ai: { base: 'hunt', squad: S } });
       ctx.jam({ npc: net, jamR: 4500, slowR: 2000, cap: 0.6 });
       tactics.squadOf(S).pursuit = true;
       let reinf = 0, reinfT = 0, escapeT = 0;
@@ -661,7 +661,7 @@ export function createMissions({
       const route = [ctx.pt(8000, 2700, 200), ctx.pt(11500, 1500, 0), ctx.pt(15500, 0, 0)];
       const freighter = ctx.spawn({
         raceId: race, factionKey: 'trade', side: 'hostile', mode: 'tactical', position: start, arrival: 'none',
-        facing: ctx.facingFrom(start, route[0].clone().sub(start).normalize()), shipId: 'kharath-destroyer', callsign: 'Brzemię',
+        facing: ctx.facingFrom(start, route[0].clone().sub(start).normalize()), shipId: 'kryza-heliotropi-hawk-44', callsign: 'Brzemię',
         hull: 720, maxSpeed: 120, combatSpeed: 72, role: 'trader', label: 'frachtowiec (cel)', noFlee: true, value: 2.2,
         ai: { base: 'trader', squad: ctx.S('conv'), route },
       });

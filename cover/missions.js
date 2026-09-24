@@ -87,7 +87,7 @@ ORDER.forEach((id, i) => {
 // ------------------------------------------------------------
 const shipsEl = document.getElementById('ships');
 // krótkie nazwy (pełna w podpowiedzi) - dwa Warbirdy muszą się różnić
-const SHORT = { 'warbird-light': 'Warbird lekki', 'raptor-interceptor': 'Raptor', 'warbird-heavy': 'Warbird ciężki', 'kharath-destroyer': 'Kharath' };
+const SHORT = {}; // opcjonalnie: { 'id-statku': 'krótka nazwa' }, gdy pełna jest za długa na kafelek
 SHIPS.forEach((s) => {
   const race = RACES[SHIP_RACE[s.id]];
   const st = deriveStats(SHIP_RACE[s.id]);

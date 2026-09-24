@@ -1,14 +1,12 @@
 # Flota — zasoby współdzielone między krokami
 
-Cztery statki, każdy w 3 poziomach detalu (LOD0 = pełny, LOD2 = daleki
-dystans / słaby sprzęt). Nazewnictwo plików: `{statek}-lod{0,1,2}.glb`.
+Każdy statek w 3 poziomach detalu (LOD0 = pełny, LOD2 = daleki dystans /
+słaby sprzęt). Nazewnictwo plików: `{id}-lod{0,1,2}.glb`.
 
-| Statek | Klasa | Długość | LOD0 | LOD1 | LOD2 |
-|---|---|---|---|---|---|
-| `warbird-light` | Lekki myśliwiec | ~17 j. | 553 KB | 122 KB | 24 KB |
-| `raptor-interceptor` | Przechwytywacz | ~15 j. | 566 KB | 132 KB | 26 KB |
-| `warbird-heavy` | Ciężki niszczyciel eskorty | ~18 j. | 820 KB | 162 KB | 38 KB |
-| `kharath-destroyer` | Ciężki niszczyciel (kapitalny) | ~180 j. | 1,6 MB | 598 KB | 119 KB |
+Modele generuje workflow **Build ships** (`.github/workflows/build-ships.yml`)
+z listy w `source/ships.manifest.js`; w trybie `patch` dopisuje też wpisy do
+`fleet.js` (SHIPS) i `shared/data/races.js` (SHIP_RACE). Aktualną flotę
+najłatwiej obejrzeć w `tools/ship-gallery/`.
 
 ```
 shared/ships/
@@ -16,10 +14,6 @@ shared/ships/
 ├── fleet.js                lista statków, orientacja dziobu, kadrowanie kamery
 ├── lod_helper.js           loadShipLOD() - THREE.LOD z 3 plików .glb naraz
 ├── models/                 gotowe .glb - TYLKO to wczytuje gra (GLTFLoader)
-│   ├── warbird-light-lod{0,1,2}.glb
-│   ├── raptor-interceptor-lod{0,1,2}.glb
-│   ├── warbird-heavy-lod{0,1,2}.glb
-│   └── kharath-destroyer-lod{0,1,2}.glb
 └── source/                 generatory proceduralne (narzędzie deweloperskie,
                              NIE jest importowane przez grę) - patrz
                              source/README.md po instrukcję regeneracji .glb
