@@ -181,12 +181,16 @@ export function raceForShip(shipId) {
   return SHIP_RACE[shipId] ?? 'wybudzeni';
 }
 
-/** Statek (id modelu) używany przez daną rasę; dla ras bez własnego - losowy. */
+/**
+ * Statek (id modelu) dla danej rasy: losowy spośród WSZYSTKICH jej modeli
+ * (rasa z kilkoma statkami pokazuje je na zmianę); dla ras bez własnego
+ * modelu - losowy z całej floty.
+ */
 export function shipForRace(raceId, rng = Math.random) {
-  const own = Object.keys(SHIP_RACE).find((s) => SHIP_RACE[s] === raceId);
-  if (own) return own;
   const all = Object.keys(SHIP_RACE);
-  return all[Math.floor(rng() * all.length)];
+  const own = all.filter((s) => SHIP_RACE[s] === raceId);
+  const pool = own.length ? own : all;
+  return pool[Math.floor(rng() * pool.length)];
 }
 
 /**

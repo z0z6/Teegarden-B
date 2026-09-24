@@ -92,12 +92,13 @@ console.log('\n2. Tablica misji');
   await page.click('.m[data-id="wolfhunt"]');
   ok(await page.isDisabled('#pack .opt'), 'Łowy watahy: wataha obowiązkowa (przełącznik zablokowany)');
   await page.click('.m[data-id="waves"]');
-  await page.keyboard.press('3');
+  await page.click('#ships .opt[data-id="warbird-heavy"]');
+  await page.keyboard.press('3'); // cyfry już nie zmieniają statku
   await page.keyboard.press('t');
   await page.keyboard.press('w');
   const url = await page.evaluate(() => window.__missions.gameUrl());
   ok(/misja=waves/.test(url) && /statek=warbird-heavy/.test(url) && /trudnosc=trudna/.test(url) && /wataha=1/.test(url) && /uklad=blizniaki/.test(url),
-    `klawisze 3 / T / W ustawiają statek, trudność, watahę: ${url}`);
+    `klik statku / T / W ustawiają statek, trudność, watahę (cyfra 3 ignorowana): ${url}`);
   await page.screenshot({ path: join(OUT, '2-board-waves.png') });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);

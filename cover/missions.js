@@ -88,7 +88,7 @@ ORDER.forEach((id, i) => {
 const shipsEl = document.getElementById('ships');
 // krótkie nazwy (pełna w podpowiedzi) - dwa Warbirdy muszą się różnić
 const SHORT = { 'warbird-light': 'Warbird lekki', 'raptor-interceptor': 'Raptor', 'warbird-heavy': 'Warbird ciężki', 'kharath-destroyer': 'Kharath' };
-SHIPS.forEach((s, i) => {
+SHIPS.forEach((s) => {
   const race = RACES[SHIP_RACE[s.id]];
   const st = deriveStats(SHIP_RACE[s.id]);
   const b = document.createElement('button');
@@ -97,7 +97,7 @@ SHIPS.forEach((s, i) => {
   b.dataset.id = s.id;
   b.style.setProperty('--c', race.color);
   b.innerHTML = `<i></i><b></b><span></span>`;
-  b.querySelector('b').innerHTML = `${SHORT[s.id] ?? s.name} <kbd>${i + 1}</kbd>`;
+  b.querySelector('b').textContent = SHORT[s.id] ?? s.name;
   b.querySelector('span').textContent = `${race.name} · kadłub ${st.hull} · pancerz ${st.armor} · czujn. ${st.attrs.sensors}`;
   b.title = s.name;
   b.addEventListener('click', () => { state.ship = s.id; audio.play('ui-click'); render(); });
@@ -207,8 +207,6 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault(); start();
   } else if (e.key === 'Escape') {
     go('./index.html', 'ui-back');
-  } else if (/^[1-4]$/.test(e.key)) {
-    state.ship = SHIPS[Number(e.key) - 1]?.id ?? state.ship; audio.play('ui-click'); render();
   } else if (e.key === 't' || e.key === 'T') {
     const ks = Object.keys(DIFFICULTY);
     state.diff = ks[(ks.indexOf(state.diff) + 1) % ks.length]; audio.play('ui-click'); render();

@@ -205,7 +205,7 @@ export function createMissions({
     comms.say({
       sender: success ? 'MISJA ZALICZONA' : 'MISJA NIEUDANA', sub: state.name,
       color: success ? '#4dd6a0' : '#ff5a4a', ttl: 7,
-      text: `${text}${cargo ? ` Nagroda: +${cargo} ładunku.` : ''} Enter — jeszcze raz · N — tablica misji.`,
+      text: `${text}${cargo ? ` Nagroda: +${cargo} ładunku.` : ''} Enter — jeszcze raz · N — tablica misji (zmiana statku).`,
     });
     alert('mission-end', CREW.navigator, `${state.name}: ${success ? 'zaliczona' : 'nieudana'}.`, success ? 'info' : 'danger', 6000);
     // po sukcesie niedobitki się wycofują (nie ma sensu ginąć za przegraną sprawę)

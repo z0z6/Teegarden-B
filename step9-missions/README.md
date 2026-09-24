@@ -39,7 +39,7 @@ startuje jako wolny lot. Tablica zapamiętuje ostatnie wybory.
 | **O** | dźwięk: wycisz / włącz (suwaki: przycisk głośnika w prawym górnym rogu) |
 | **7 / 8 / 9 / 0 / K** | jak wcześniej (sceny demo) — przerywają aktywną misję |
 
-Na tablicy misji: ↑ ↓ to wybór misji, 1–4 statek, T trudność, W wataha,
+Na tablicy misji: ↑ ↓ to wybór misji, statek klikiem, T trudność, W wataha,
 Enter start, Esc powrót do intro. Na dotyku: przyciski **Misje** (tablica)
 i **Rozkaz** (rozkazy przełączają się po kolei).
 
@@ -128,7 +128,9 @@ się na dyrektora eskadry:
 - **Szyk (B)** — przerywają walkę i wracają do formacji.
 
 Skrzydłowi meldują się przez dashboard (cel, osłona, odwrót do szyku).
-Przy zmianie statku (1–4) wataha zmienia rasę razem z graczem.
+Statek (= rasa kapitana i watahy) wybiera się na tablicy misji i leci nim
+całą misję, do sukcesu albo porażki. W grze nie ma już przełączania 1–4;
+zmiana statku to powrót na tablicę (N) i nowy start.
 
 ## Audio (`shared/audio/`)
 

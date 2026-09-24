@@ -251,7 +251,7 @@ export function createEncounters({
   function epilogue() {
     comms.say({
       sender: 'Koniec dema', sub: 'sceny fabularne', color: '#9fd8ff', ttl: 9,
-      text: 'Klawisze 7/8/9 uruchamiają sceny osobno (kontakt / przechwycenie / atak), 0 — sekwencja od nowa. Zmiana statku (1-4) zmienia rasę i losuje nowych rozmówców.',
+      text: 'Klawisze 7/8/9 uruchamiają sceny osobno (kontakt / przechwycenie / atak), 0 — sekwencja od nowa. Inna rasa kapitana = inni rozmówcy.',
     });
   }
 

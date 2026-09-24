@@ -426,12 +426,6 @@
     .touch-btn:active { background: rgba(159, 216, 255, 0.3); }
     #touch-boost { right: 110px; bottom: 175px; }
     #touch-brake { right: 24px; bottom: 175px; }
-    #touch-ship-switch {
-      position: fixed; top: 12px; right: 12px; z-index: 20;
-      width: auto; height: auto; padding: 8px 14px; border-radius: 8px;
-      background: rgba(159, 216, 255, 0.12); border: 1px solid rgba(159, 216, 255, 0.35);
-      color: #d9f3ff; font-family: 'Segoe UI', sans-serif; font-size: 12px;
-    }
 
     /* ============================================================
        UKŁAD DOTYKOWY (poprawka): akcje w zwartej grupie przy prawym
@@ -483,7 +477,7 @@
     <div class="ship-name" id="ship-name">—</div>
     <div class="system-name" id="system-name">—</div>
     <div class="dim desktop-only">Mysz — celowanie · W/S — ciąg · A/D — przechył (roll)</div>
-    <div class="dim desktop-only">Shift — boost · Spacja — hamulec · 1-4 — zaokrętuj na inny statek (= inna rasa)</div>
+    <div class="dim desktop-only">Shift — boost · Spacja — hamulec · N — tablica misji (tam zmiana statku = rasy)</div>
     <div class="dim desktop-only">F / LPM — ogień · Z/X/C — odpowiedź w komunikatorze</div>
     <div class="dim desktop-only">7/8/9 — sceny: kontakt / przechwycenie / atak · 0 — demo od nowa</div>
     <div class="dim desktop-only">J — skok fałdowy · K — parada fałdy (statki wszystkich ras)</div>
@@ -535,7 +529,6 @@
     <div class="touch-btn" id="touch-warp">SKOK</div>
     <div class="touch-btn" id="touch-weapon">BROŃ</div>
     <div class="touch-btn" id="touch-system">Następny układ</div>
-    <div class="touch-btn" id="touch-ship-switch">Zmień statek</div>
     <div class="touch-btn" id="touch-missions">MISJE</div>
     <div class="touch-btn" id="touch-order">ROZKAZ</div>
   </div>

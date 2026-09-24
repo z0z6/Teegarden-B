@@ -14,7 +14,7 @@ import { createNpcManager } from '../shared/systems/npc-ships.js';
 import { createComms } from '../shared/systems/comms.js';
 import { createEncounters } from '../shared/systems/encounters.js';
 import { createTargetLabels } from '../shared/systems/target-labels.js';
-import { RACES, raceForShip, deriveStats } from '../shared/data/races.js';
+import { RACES, raceForShip, shipForRace, deriveStats } from '../shared/data/races.js';
 import { setupAndroidLandscape } from '../shared/input/android-landscape.js';
 import { createWarpDrive, createPlayerWarp, WARP_SIGNATURES } from '../shared/systems/warp-drive.js';
 import { createWeapons, createPlayerArsenal, WEAPONS, WEAPON_ORDER, RACE_WEAPON } from '../shared/systems/weapons.js';
@@ -389,17 +389,11 @@ const shipState = {
 let lastInput = null;
 let lastHit = { collided: false, body: null, normal: null, penetration: 0 };
 
-const flightInput = createFlightInput({
-  onShipSwitch: (digit) => {
-    if (digit < SHIPS.length) {
-      loadShip(digit).catch((err) => {
-        console.error('Nie udało się wczytać statku:', err);
-        loadingEl.textContent = `Błąd wczytywania: ${err?.message || err}`;
-        loadingEl.classList.add('visible');
-      });
-    }
-  },
-});
+// Statek wybiera się na tablicy misji (missions.html) i leci nim całą misję,
+// aż do sukcesu albo porażki. Zmiana statku (= rasy kapitana) tylko przez
+// powrót na tablicę (N). Dlatego bez onShipSwitch: klawisze 1-4 w tym kroku
+// nic nie robią (starsze kroki 3-8 nadal przełączają statki po staremu).
+const flightInput = createFlightInput();
 
 // Podłącz UI dotykowe (patrz index.html, sekcja #touch-controls) - jeśli
 // elementów nie ma w DOM (np. inna wersja strony), attachTouchUI po
@@ -411,14 +405,6 @@ flightInput.attachTouchUI({
   rightKnob: document.getElementById('touch-right-knob'),
   boostBtn: document.getElementById('touch-boost'),
   brakeBtn: document.getElementById('touch-brake'),
-});
-
-// Przycisk zmiany statku dla dotyku (brak klawiszy 1-4 na telefonie) -
-// cyklicznie przełącza na kolejny statek z floty.
-const shipSwitchBtn = document.getElementById('touch-ship-switch');
-shipSwitchBtn?.addEventListener('click', () => {
-  const next = (currentShipIndex + 1) % SHIPS.length;
-  loadShip(next).catch((err) => console.error('Nie udało się wczytać statku:', err));
 });
 
 const PITCH_RATE = 0.9; // rad/s przy maksymalnym wychyleniu (myszy/joysticka/drążka XR)
@@ -1057,7 +1043,7 @@ function warpParade() {
       const pos = offset.clone().applyQuaternion(shipGroup.quaternion).add(shipGroup.position);
       spawned.push(npcs.spawn({
         raceId, factionKey: 'trade', side: 'neutral', position: pos,
-        shipId: SHIPS[i % SHIPS.length].id, mode: 'formation', offset,
+        shipId: shipForRace(raceId), mode: 'formation', offset,
       }));
     } });
   });
