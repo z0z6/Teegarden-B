@@ -185,6 +185,30 @@ export const SHIPS = [
     file: '../shared/ships/models/zrost-szczepieni-hawk-83-lod0.glb',
     bowAxis: '+Z',
   },
+  {
+    id: 'refleks-swietlisci-hawk-5',
+    name: 'Refleks — Czerwone Maski',
+    file: '../shared/ships/models/refleks-swietlisci-hawk-5-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'refleks-swietlisci-trade-19',
+    name: 'Refleks — Prawdziwe Skóry',
+    file: '../shared/ships/models/refleks-swietlisci-trade-19-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'refleks-swietlisci-coalition-33',
+    name: 'Refleks — Dziedzice',
+    file: '../shared/ships/models/refleks-swietlisci-coalition-33-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'refleks-swietlisci-trade-70',
+    name: 'Refleks — Pełny Blask',
+    file: '../shared/ships/models/refleks-swietlisci-trade-70-lod0.glb',
+    bowAxis: '+Z',
+  },
 ];
 
 /** Obrót wokół Y (radiany), który ustawia dziób modelu w lokalne -Z silnika. */

@@ -52,6 +52,10 @@ export const SHIP_RACE = {
   'zrost-szczepieni-trade-16': 'szczepieni',
   'zrost-szczepieni-coalition-38': 'szczepieni',
   'zrost-szczepieni-hawk-83': 'szczepieni',
+  'refleks-swietlisci-hawk-5': 'swietlisci',
+  'refleks-swietlisci-trade-19': 'swietlisci',
+  'refleks-swietlisci-coalition-33': 'swietlisci',
+  'refleks-swietlisci-trade-70': 'swietlisci',
 };
 
 export const RACES = {
