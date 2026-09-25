@@ -77,8 +77,13 @@ export const STATIONS = {
     cost: { credits: 700, zelazo: 110, nikiel: 35, kobalt: 12 }, buildTime: 35, capacity: 0, radius: 90, hull: 900,
     range: 2200, fireEvery: 0.32, damage: 13, boltSpeed: 1500,
   },
+  stocznia: {
+    name: 'Stocznia wojenna', short: 'STO', accent: '#c39bff',
+    role: 'Buduje okręty wojenne z metalu w układzie. Armia broni twoich pól i zdobywa cudze.',
+    cost: { credits: 2400, zelazo: 260, nikiel: 90, kobalt: 20 }, buildTime: 50, capacity: 300, radius: 150, hull: 1100,
+  },
 };
-export const STATION_ORDER = ['magazyn', 'przeladunek', 'dok', 'wieza'];
+export const STATION_ORDER = ['magazyn', 'przeladunek', 'dok', 'wieza', 'stocznia'];
 
 /** Autonomiczny dron górniczy: ląduje na powierzchni, wierci, wraca z urobkiem. */
 export const DRONE = {
@@ -151,3 +156,46 @@ export function costText(cost) {
   for (const m of METAL_ORDER) if (cost[m]) parts.push(`${cost[m]} t ${METALS[m].symbol}`);
   return parts.join(' · ');
 }
+
+// ============================================================
+// KROK 11: WARSTWA STRATEGICZNA (shared/systems/strategy.js, army.js)
+// ============================================================
+
+/**
+ * Rasy jako gracze ekonomiczni. Co STRATEGY.tick sekund każda rasa zarabia
+ * na swoich polach, wydaje (placówki, rozbudowa, okręty) i podejmuje decyzje
+ * (wojna, pokój, żądania wobec gracza). Relacje w skali -100..100.
+ */
+export const STRATEGY = {
+  tick: 5,               // s kroku strategicznego
+  income: 55,            // kr / krok za poziom rozwoju pola × wartość pola (fields.js fieldValue)
+  startCredits: 3500,    // kredyty rasy na starcie
+  startShips: 4,
+  settleCost: 2600,      // placówka na wolnym polu
+  settleTime: 70,        // s od decyzji do przejęcia pola
+  developCost: 1600,     // × docelowy poziom
+  maxDevelop: 5,
+  shipCost: 1250,        // okręt rasy (1 pkt siły)
+  shipUpkeep: 7,         // kr / krok za okręt
+  maxShips: 24,
+  attackEvery: 150,      // s między atakami tej samej rasy
+  siegeTime: 40,         // s oblężenia pola (zaocznie)
+  war: -50, peaceBack: -25, pact: 25, alliance: 60,
+  contactFriction: 0.22, // spadek relacji / krok za rywalizację w tym samym układzie (× chciwość)
+  poachPerTon: 0.03,     // spadek relacji za tonę wykopaną na cudzym polu
+  dominance: 0.5,        // udział wartości wszystkich pól = zwycięstwo
+  grace: 600,            // s na start: rasy nie wypowiadają wojny graczowi (czas na rozruch kopalni)
+  fieldsCapBase: 2,      // limit pól rasy: base + 1 co fieldsCapEvery s (ekspansja rozłożona w czasie,
+  fieldsCapEvery: 480,   //   żeby na starcie zostały wolne pola dla gracza)
+};
+
+/** Okręty gracza (stocznia): klasy, koszty, siła w bitwach zaocznych. */
+export const WARSHIPS = {
+  eskorta:   { name: 'Eskortowiec', power: 1, hull: 160, speed: 1.0, cost: { credits: 700, zelazo: 60, nikiel: 20 }, buildTime: 20, upkeep: 3,
+               role: 'Szybki myśliwiec do osłony dronów i pościgów.' },
+  fregata:   { name: 'Fregata', power: 3, hull: 420, speed: 0.85, cost: { credits: 1800, zelazo: 160, nikiel: 60, kobalt: 15 }, buildTime: 40, upkeep: 8,
+               role: 'Trzon floty: trzyma pole i wygrywa wymiany ognia.' },
+  krazownik: { name: 'Krążownik', power: 6, hull: 900, speed: 0.7, cost: { credits: 4200, zelazo: 320, nikiel: 120, kobalt: 40, platyna: 8 }, buildTime: 70, upkeep: 18,
+               role: 'Ciężki okręt do zdobywania cudzych pól.' },
+};
+export const WARSHIP_ORDER = ['eskorta', 'fregata', 'krazownik'];

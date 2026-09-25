@@ -16,7 +16,7 @@ npx serve .
 python3 -m http.server 8080
 ```
 
-Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie). Przycisk „Graj” prowadzi na **tablicę misji** (`missions.html`: odprawa, wybór statku, trudności i watahy), a stamtąd do najnowszego kroku (`step10-economy`). Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
+Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie). Przycisk „Graj” prowadzi na **tablicę misji** (`missions.html`: odprawa, wybór statku, trudności i watahy), a stamtąd do **kampanii „Dominacja”** (`step11-dominacja`) — gry głównej; misje z kroku 9 i piaskownica gospodarki są niżej na liście. Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
 
 Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tranzytującą planetą b tymi samymi shaderami co gra; wybrany układ zapamiętuje w przeglądarce i przekazuje do gry jako `?uklad=`. Czcionki (Big Shoulders Display, Manrope — OFL 1.1, licencje w `cover/fonts/`) są hostowane lokalnie. Bez WebGL okładka pokazuje statyczne tło.
 
@@ -36,6 +36,7 @@ Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tran
 | [`step8-star-systems`](./step8-star-systems) | **Układy gwiezdne**: 5 układów (m.in. prawdziwa Gwiazda Teegardena, para z dyskiem akrecyjnym, nadolbrzym), dużo większe gwiazdy, proceduralne powierzchnie gwiazd (granulacja, plazma, protuberancje, rozbłyski) i planet, skok międzygwiezdny |
 | [`step9-missions`](./step9-missions) | **Misje, taktyczne AI i audio**: 7 scenariuszy (przechwycenie, blokada, odparcie 10 wrogów, eskorta handlowca, zasadzka, pościg, łowy watahy) z osobną **tablicą misji** po okładce, **wataha** skrzydłowych rasy gracza z rozkazami, nowy mózg NPC (ocena ryzyka/nagrody, role w eskadrze, uniki, odwrót zamiast samobójstwa), poziomy trudności, **warstwa audio** (muzyka generatywna, fałda z głosem każdej rasy, ostrzeżenia, powiadomienia, walka) |
 | [`step10-economy`](./step10-economy) | **Ekonomia**: pas planetoid (klasy C/S/M) przy każdym układzie, promień wydobywczy i ładownia, **stacje orbitalne** (magazyn, stacja przeładunkowa z rynkiem, dok roju), holowniki między stacjami, **roje autonomicznych dronów górniczych** lądujących na obracających się skałach, **rabusie**: naloty na kopalnie (taktyczne AI poluje na drony i łupi stacje), ewakuacja rojów, platformy obronne, nagrody za zestrzelonych, symulacja zaoczna innych układów, zapis w przeglądarce |
+| [`step11-dominacja`](./step11-dominacja) | **Dominacja — gra główna**: gospodarka jako główna płaszczyzna w duchu RTS-ów. 25 pól surowcowych w 5 układach odkrywanych czujnikami, **rasy jako gracze ekonomiczni** (ekspansja, rozbudowa placówek, floty), rywalizacja o pola prowadzi do żądań, paktów, sojuszy i **wojen**; placówki i roje ras widoczne w układzie, **stocznia i flota** gracza (obrona, podbój), **mapa strategiczna z dyplomacją** (M), portrety ras i ikony SVG, zwycięstwo przy 50% sektora |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -86,7 +87,12 @@ shared/
     ├── economy.js              gospodarka: stacje, rynek, logistyka, roje dronów, zapis (krok 10)
     ├── economy-visuals.js      stacje, drony, iskry, promień wydobywczy (krok 10)
     ├── economy-panel.js        panel przemysłu (krok 10)
-    └── raids.js                rabusie: zagrożenie, naloty na kopalnie, raporty (krok 10)
+    ├── raids.js                rabusie i ataki ras na kopalnie, raporty (krok 10-11)
+    ├── fields.js               pola surowcowe: 5 na układ, charakter, wartość (krok 11)
+    ├── strategy.js             rasy jako gracze ekonomiczni, relacje, wojny, dyplomacja (krok 11)
+    ├── rival-presence.js       placówki i roje ras w układzie gracza (krok 11)
+    ├── army.js / army-panel.js stocznia i flota gracza (krok 11)
+    └── strategic-map.js        mapa strategiczna: sektor, dyplomacja, kronika (krok 11)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).

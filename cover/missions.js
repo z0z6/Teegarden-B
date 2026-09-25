@@ -24,13 +24,24 @@ import { racePortrait } from '../shared/data/race-portraits.js';
 const STORE = 'teegarden-b:misje';
 const SYSTEM_KEY = 'teegarden-b:uklad';
 const FREE = 'wolny';
-const ORDER = [...MISSION_ORDER, FREE];
+const CAMPAIGN = 'kampania'; // krok 11: gra główna - gospodarka, ekspansja, dyplomacja, podbój
+const ORDER = [CAMPAIGN, ...MISSION_ORDER, FREE];
+const CAMPAIGN_DEF = {
+  name: 'Dominacja — kampania', desc: 'Gra główna: zbieraj, rozbudowuj, zbrój się i przejmuj przestrzeń surowcową sektora.', threat: 3,
+  tags: ['gospodarka', 'ekspansja', 'dyplomacja', 'podbój'], pack: 'optional',
+  brief: 'Sześć ras dzieli między siebie 25 pól surowcowych w pięciu układach. Kopiesz, stawiasz magazyny i doki, wypuszczasz roje dronów, sprzedajesz metal i budujesz flotę. Rasy robią to samo — a kto dzieli z kimś układ, ten z nim rywalizuje: żądania, pakty, sojusze i wojny o najbogatsze pola.',
+  win: 'Kontroluj połowę wartości wszystkich pól sektora.',
+  lose: 'Nie ma przegranej — ale nieobronione kopalnie rasy złupią, a wolne pola zajmą przed tobą.',
+  tip: 'Na starcie rasy nie atakują przez 10 minut. Postaw magazyn przy polu macierzystym, potem dok i przeładunek. Sygnały „nieznane złoże” prowadzą do nowych pól; mapa strategiczna to M.',
+};
 const FREE_DEF = {
   name: 'Wolny lot', desc: 'Bez zadania: układ, sceny demo (7/8/9) i wataha na żądanie (L).', threat: 0, tags: ['swobodnie'], pack: 'optional',
   brief: 'Bez misji i bez presji czasu. Możesz latać po układzie, skakać przez fałdę, uruchamiać sceny demo z kroku 5 i ćwiczyć rozkazy watahy.',
   win: '—', lose: '—', tip: 'N w grze wraca na tę tablicę.',
 };
-const def = (id) => (id === FREE ? FREE_DEF : MISSIONS[id]);
+const FREE_DEF_10 = { ...FREE_DEF, name: 'Wolny lot — piaskownica', desc: 'Krok 10: sama gospodarka, bez ras i dyplomacji. Kopalnia, stacje, roje, piraci.',
+  brief: 'Piaskownica gospodarki z kroku 10: jedno pole przy starcie, stacje, roje dronów i rabusie, bez rywalizujących ras.', tip: 'Zapis piaskownicy jest osobny od kampanii.' };
+const def = (id) => (id === CAMPAIGN ? CAMPAIGN_DEF : id === FREE ? FREE_DEF_10 : MISSIONS[id]);
 
 // ------------------------------------------------------------
 // Stan (adres > zapamiętane > domyślne)
@@ -42,7 +53,7 @@ let savedSystem = null;
 try { savedSystem = localStorage.getItem(SYSTEM_KEY); } catch { /* bez zapisu */ }
 
 const state = {
-  mission: ORDER.includes(q.get('misja')) ? q.get('misja') : ORDER.includes(saved.mission) ? saved.mission : MISSION_ORDER[0],
+  mission: ORDER.includes(q.get('misja')) ? q.get('misja') : ORDER.includes(saved.mission) ? saved.mission : CAMPAIGN,
   ship: SHIPS.some((s) => s.id === q.get('statek')) ? q.get('statek') : SHIPS.some((s) => s.id === saved.ship) ? saved.ship : SHIPS[0].id,
   diff: DIFFICULTY[q.get('trudnosc')] ? q.get('trudnosc') : DIFFICULTY[saved.diff] ? saved.diff : 'normalna',
   pack: q.has('wataha') ? q.get('wataha') === '1' : !!saved.pack,
@@ -73,10 +84,10 @@ ORDER.forEach((id, i) => {
   const d = def(id);
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'm' + (id === FREE ? ' free' : '');
+  b.className = 'm' + (id === FREE ? ' free' : '') + (id === CAMPAIGN ? ' campaign' : '');
   b.dataset.id = id;
   b.setAttribute('role', 'option');
-  b.innerHTML = `<span class="n">${id === FREE ? '∞' : i + 1}</span><b></b>${id === FREE ? '<span></span>' : threatPips(d.threat)}<small></small>`;
+  b.innerHTML = `<span class="n">${id === FREE ? '∞' : id === CAMPAIGN ? '♛' : i}</span><b></b>${id === FREE || id === CAMPAIGN ? '<span></span>' : threatPips(d.threat)}<small></small>`;
   b.querySelector('b').textContent = d.name;
   b.querySelector('small').textContent = d.desc;
   b.addEventListener('click', () => select(id));
@@ -246,15 +257,16 @@ function render() {
     ? 'Ta misja jest dla watahy — trzech skrzydłowych startuje zawsze.'
     : `Trzech skrzydłowych rasy ${RACES[SHIP_RACE[state.ship]].name}. W grze: L, rozkazy G/H/V/B.`;
   sysEl.value = state.system;
-  $('start').firstChild.textContent = state.mission === FREE ? 'Leć ' : 'Start misji ';
+  $('start').firstChild.textContent = state.mission === CAMPAIGN ? 'Graj ' : state.mission === FREE ? 'Leć ' : 'Start misji ';
   persist();
 }
 
 function gameUrl() {
   const p = new URLSearchParams({ uklad: state.system, trudnosc: state.diff, statek: state.ship });
-  if (state.mission !== FREE) p.set('misja', state.mission);
+  if (state.mission !== FREE && state.mission !== CAMPAIGN) p.set('misja', state.mission);
   if (state.pack || def(state.mission).pack === 'auto') p.set('wataha', '1');
-  return `./step10-economy/?${p}`; // najnowszy krok (misje + ekonomia)
+  // kampania i misje: krok 11 (najnowszy); wolny lot: piaskownica gospodarki z kroku 10
+  return state.mission === FREE ? `./step10-economy/?${p}` : `./step11-dominacja/?${p}`;
 }
 
 let leaving = false;
@@ -345,6 +357,13 @@ const SCHEMA = {
     path('M70 124 C 120 30, 200 30, 238 76', 'a') + path('M70 156 C 150 200, 250 170, 256 108', 'a') + label(130, 40, 'kleszcze (H)') +
     gold(248, 92, 1.7, 'pulse') + foe(226, 72) + foe(276, 80) + foe(250, 124) + label(248, 150, 'frachtowiec + 3 eskorty', 'middle') +
     path('M262 84 L 362 36', 't') + ring(366, 34, 14, 't') + label(360, 64, 'nie może skoczyć', 'end'),
+  [CAMPAIGN]: (() => {
+    const hex = (x, y, r, c, o = 1) => `<polygon points="${[0, 1, 2, 3, 4, 5].map((k) => { const a = Math.PI / 6 + k * Math.PI / 3; return `${(x + Math.cos(a) * r).toFixed(1)},${(y + Math.sin(a) * r).toFixed(1)}`; }).join(' ')}" fill="${c}" fill-opacity="${0.18 * o}" stroke="${c}" stroke-opacity="${0.9 * o}" stroke-width="1.4"/>`;
+    const F = [[70, 60, '#ffd36b'], [118, 100, '#ffd36b'], [176, 58, '#7fd1ff'], [230, 104, '#7fd1ff'], [286, 56, '#ff9d5c'], [336, 110, '#c39bff'], [150, 158, '#9fb3c6'], [262, 164, '#7ee08a']];
+    return `<circle class="t" cx="200" cy="-40" r="70" opacity="0.25"/>` + F.map(([x, y, c], i) => hex(x, y, 20 + (i % 3) * 3, c)).join('') +
+      path('M118 100 C 160 120, 200 130, 230 104', 'h') + label(176, 128, 'spór o pole', 'middle') +
+      ship(96, 132, -30, 'p', 1.4) + label(24, 124, 'ty: kopalnie i flota') + label(336, 146, 'rasy', 'middle') + label(150, 192, 'wolne złoże', 'middle');
+  })(),
   [FREE]:
     `<circle class="t" cx="200" cy="100" r="16" opacity="0.9"/>` + ring(200, 100, 44, 'p') + ring(200, 100, 78, 'p') +
     `<circle class="p" cx="244" cy="100" r="4"/><circle class="p" cx="152" cy="140" r="5"/>` +

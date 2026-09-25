@@ -121,6 +121,22 @@ export function buildStationModel(type, accentHex) {
     }
     add(mesh(new THREE.BoxGeometry(6, 70, 6), D, 0, 40, 0));
     beacon(0, 78, 0, 0xffffff);
+  } else if (type === 'stocznia') {
+    // stocznia wojenna: suchy dok (dwie szyny + suwnice), w środku szkielet kadłuba
+    for (const x of [-60, 60]) add(mesh(new THREE.BoxGeometry(10, 14, 300), D, x, 0, 0));
+    for (let z = -130; z <= 130; z += 65) {
+      add(mesh(new THREE.BoxGeometry(130, 8, 8), D, 0, 46, z));
+      for (const x of [-60, 60]) add(mesh(new THREE.BoxGeometry(8, 46, 8), D, x, 23, z));
+    }
+    add(mesh(new THREE.BoxGeometry(18, 10, 220), H, 0, 8, 0));
+    for (let z = -95; z <= 95; z += 27) {
+      const rib = add(mesh(new THREE.TorusGeometry(26, 2.2, 6, 16, Math.PI), H, 0, 8, z));
+      rib.rotation.z = Math.PI;
+    }
+    add(mesh(new THREE.BoxGeometry(70, 30, 50), H, 0, -24, -165));
+    add(mesh(new THREE.BoxGeometry(62, 3, 42), A, 0, -8, -165)).userData.noScale = true;
+    for (let z = -130; z <= 130; z += 130) beacon(0, 52, z, accentHex, group, z * 0.01);
+    for (const x of [-60, 60]) for (const z of [-150, 150]) beacon(x, 10, z, 0xff5a4d, group, x + z);
   } else if (type === 'wieza') {
     // platforma obronna: sześciokątna podstawa, pylon, obrotowa głowica z
     // podwójnym działem (lufy wzdłuż +Z - głowicę obraca lookAt na cel)
@@ -253,14 +269,14 @@ export function createDroneRenderer(scene, max = 600) {
   return {
     begin() { n = 0; },
     /** pos - położenie, dir - kierunek dziobu (jednostkowy), state - klucz DRONE_STATE_COLOR */
-    push(pos, dir, state, pulse = 1) {
+    push(pos, dir, state, pulse = 1, color = null) {
       if (n >= max) return;
       q.setFromUnitVectors(fwd, dir);
       m.compose(pos, q, s);
       inst.setMatrixAt(n, m);
       tail.copy(dir).multiplyScalar(-4.6).add(pos);
       gp.setXYZ(n, tail.x, tail.y, tail.z);
-      const c = DRONE_STATE_COLOR[state] ?? DRONE_STATE_COLOR.lot;
+      const c = color ?? DRONE_STATE_COLOR[state] ?? DRONE_STATE_COLOR.lot; // krok 11: drony ras w kolorze rasy
       gc.setXYZ(n, c.r * pulse, c.g * pulse, c.b * pulse);
       gs.setX(n, state === 'wiercenie' ? 8 : 10);
       n++;

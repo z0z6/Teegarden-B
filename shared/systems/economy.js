@@ -41,7 +41,7 @@ import {
  * Alarm (setAlert) wysyła roje z włączoną ewakuacją do doków.
  */
 
-const SAVE_KEY = 'teegarden-b.ekonomia.v1';
+const SAVE_KEY = 'teegarden-b.ekonomia.v1'; // krok 10; krok 11 podaje własny (saveKey)
 const OFFLINE_DUTY = 0.45;
 
 const zeroMetals = () => Object.fromEntries(METAL_ORDER.map((m) => [m, 0]));
@@ -87,6 +87,8 @@ export function beltCenterFor(spawnPos, lookAt) {
 export function createEconomy({
   scene, storage = null, onEvent = () => {}, quality = 1, random = Math.random,
   combat = null, getHostiles = null,
+  // krok 11: kilka pól surowcowych na układ (fields.js) i własny klucz zapisu
+  fieldsFor = null, saveKey = SAVE_KEY,
 } = {}) {
   let state = load() ?? freshState();
   let rt = null;            // runtime bieżącego układu
@@ -117,7 +119,7 @@ export function createEconomy({
   // ------------------------------------------------------------
   function load() {
     try {
-      const raw = storage?.getItem(SAVE_KEY);
+      const raw = storage?.getItem(saveKey);
       if (!raw) return null;
       const s = JSON.parse(raw);
       if (s?.version !== 1) return null;
@@ -130,14 +132,15 @@ export function createEconomy({
   }
   function save() {
     if (!storage) return;
-    try { storage.setItem(SAVE_KEY, JSON.stringify(state)); } catch { /* prywatne okno / brak miejsca - gra działa dalej */ }
+    try { storage.setItem(saveKey, JSON.stringify(state)); } catch { /* prywatne okno / brak miejsca - gra działa dalej */ }
   }
   function reset() {
     const sysId = rt?.sysId, spawn = rt?.spawn;
     leaveSystem();
     state = freshState();
     beltCache.clear();
-    try { storage?.removeItem(SAVE_KEY); } catch { /* jw. */ }
+    defsCache.clear();
+    try { storage?.removeItem(saveKey); } catch { /* jw. */ }
     if (sysId) enterSystem(sysId, spawn);
     bump();
   }
@@ -148,16 +151,78 @@ export function createEconomy({
   function sysState(id) {
     return state.systems[id] ?? null;
   }
-  function beltFor(id) {
+  // ------------------------------------------------------------
+  // POLA SUROWCOWE: bez `fieldsFor` jedno pole = pas z kroku 10 (te same id)
+  // ------------------------------------------------------------
+  const defsCache = new Map();
+  function fieldDefs(id) {
     const sys = sysState(id);
-    if (!sys) return null;
-    let belt = beltCache.get(id);
+    if (!sys) return [];
+    let defs = defsCache.get(id);
+    if (!defs) {
+      defs = fieldsFor && sys.spawn
+        ? fieldsFor(id, { position: v3(sys.spawn.position), lookAt: v3(sys.spawn.lookAt) })
+        : [{ id: `${id}:0`, index: 0, systemId: id, name: 'Pas', kind: 'pas', center: sys.beltCenter, seed: hashString(`pas:${id}`), idPrefix: '', home: true, count: BELT.count, radius: BELT.radius, shares: null, richness: 1 }];
+      defsCache.set(id, defs);
+    }
+    return defs;
+  }
+  function beltOf(def) {
+    let belt = beltCache.get(def.id);
     if (!belt) {
-      belt = generateBelt(hashString(`pas:${id}`), sys.beltCenter, { quality });
-      for (const a of belt.asteroids) if (sys.mined[a.id]) a.reserves = sys.mined[a.id];
-      beltCache.set(id, belt);
+      belt = generateBelt(def.seed, def.center, {
+        quality, count: def.count, radius: def.radius, shares: def.shares, richness: def.richness, idPrefix: def.idPrefix, fieldId: def.id,
+      });
+      const sys = sysState(def.systemId);
+      for (const a of belt.asteroids) if (sys?.mined[a.id]) a.reserves = sys.mined[a.id];
+      beltCache.set(def.id, belt);
     }
     return belt;
+  }
+  const isDiscovered = (sysId, fid) => !!sysState(sysId)?.discovered?.[fid];
+  /** Planetoidy odkrytych pól układu (dla dronów, gracza, zaocznego wydobycia). */
+  function asteroidsIn(sysId) {
+    const out = [];
+    for (const d of fieldDefs(sysId)) if (isDiscovered(sysId, d.id)) out.push(...beltOf(d).asteroids);
+    return out;
+  }
+  function beltFor(id) { return { asteroids: asteroidsIn(id) }; }
+
+  function refreshAsteroids() {
+    if (!rt) return;
+    rt.belt = { asteroids: asteroidsIn(rt.sysId) };
+  }
+  /** Odkrycie pola: pojawia się pas, drony i gracz mogą tam kopać. */
+  function discoverField(fid, { silent = false } = {}) {
+    const def = rt && fieldDefs(rt.sysId).find((d) => d.id === fid);
+    const sys = rt && sysState(rt.sysId);
+    if (!def || sys.discovered[fid]) return false;
+    sys.discovered[fid] = true;
+    if (scene) rt.fieldViews.set(fid, createAsteroidBelt(scene, beltOf(def), { quality }));
+    refreshAsteroids();
+    bump();
+    if (!silent) { hooks.discovered?.(def); save(); }
+    return true;
+  }
+  /** Czujniki statku: pola w zasięgu (od skraju pasa) zostają odkryte. */
+  function scan(pos, range) {
+    if (!rt) return [];
+    const found = [];
+    for (const d of fieldDefs(rt.sysId)) {
+      if (isDiscovered(rt.sysId, d.id)) continue;
+      const dist = Math.hypot(pos.x - d.center.x, pos.y - d.center.y, pos.z - d.center.z) - d.radius;
+      if (dist < range && discoverField(d.id)) found.push(d);
+    }
+    return found;
+  }
+  /** Pole, w którym leży punkt (środek pasa + jego promień + margines). */
+  function fieldAt(sysId, pos, margin = 2500) {
+    let best = null, bestD = Infinity;
+    for (const d of fieldDefs(sysId)) {
+      const dist = Math.hypot(pos.x - d.center.x, pos.y - d.center.y, pos.z - d.center.z);
+      if (dist < d.radius + margin && dist < bestD) { best = d; bestD = dist; }
+    }
+    return best;
   }
 
   /** Wejście do układu: pas, stacje i drony stają się widoczne i liczone dokładnie. */
@@ -167,11 +232,18 @@ export function createEconomy({
       state.systems[id] = {
         beltCenter: plain(beltCenterFor(spawn.position, spawn.lookAt)),
         stations: [], swarms: [], mined: {}, nextId: 1,
+        spawn: { position: plain(v3(spawn.position)), lookAt: plain(v3(spawn.lookAt)) },
+        discovered: {},
       };
     }
-    const belt = beltFor(id);
-    rt = { sysId: id, spawn, belt, beltView: null, views: new Map(), stationRt: new Map(), drones: [], time: 0, alert: false };
-    if (scene) rt.beltView = createAsteroidBelt(scene, belt, { quality });
+    const sysS = state.systems[id];
+    sysS.discovered ??= {};
+    sysS.spawn ??= { position: plain(v3(spawn.position)), lookAt: plain(v3(spawn.lookAt)) };
+    const defs = fieldDefs(id);
+    sysS.discovered[defs[0].id] = true; // pole macierzyste znamy od razu
+    rt = { sysId: id, spawn, belt: null, fieldViews: new Map(), views: new Map(), stationRt: new Map(), drones: [], time: 0, alert: false };
+    if (scene) for (const d of defs) if (sysS.discovered[d.id]) rt.fieldViews.set(d.id, createAsteroidBelt(scene, beltOf(d), { quality }));
+    refreshAsteroids();
     for (const st of sysState(id).stations) { addStationView(st); attachStation(st); }
     for (const sw of sysState(id).swarms) for (let i = 0; i < sw.drones; i++) rt.drones.push(newDrone(sw));
     bump();
@@ -180,7 +252,7 @@ export function createEconomy({
     if (!rt) return;
     for (const d of rt.drones) combat?.unregister(d.actor);
     for (const r of rt.stationRt.values()) combat?.unregister(r.actor);
-    rt.beltView?.dispose();
+    for (const v of rt.fieldViews.values()) v.dispose();
     for (const v of rt.views.values()) { scene.remove(v.group); disposeObject(v.group); }
     rt = null;
     beam?.hide();
@@ -338,6 +410,8 @@ export function createEconomy({
     const def = STATIONS[type];
     if ((def.cost.credits ?? 0) > state.credits) return { ok: false, why: `Za mało kredytów (${def.cost.credits} kr).` };
     const p = v3(pos);
+    const veto = hooks.canBuildAt?.(p, type);
+    if (veto && !veto.ok) return veto;
     for (const s of stationsOf(rt.sysId)) {
       if (v3(s.pos).distanceTo(p) < PLAYER_MINING.minSpacing + STATIONS[s.type].radius) return { ok: false, why: `Za blisko: ${s.name}.` };
     }
@@ -438,6 +512,7 @@ export function createEconomy({
     if (!full && remaining(target) > 0) {
       const got = extract(target, Math.min(PLAYER_MINING.rate * dt, holdCap - sumMetals(state.hold)), state.hold);
       state.stats.minedPlayer += got;
+      hooks.minedInField?.(target.fieldId, got);
       playerMineAcc += got;
       if (playerMineAcc > 1.5) { markMined(target, _dirL, playerMineAcc); playerMineAcc = 0; }
       sparks?.emit(_hit, _toShip, '#ffc26b', quality < 0.8 ? 3 : 6, 60, 0.9, 0.7, 9);
@@ -618,6 +693,8 @@ export function createEconomy({
     for (const a of belt.asteroids) {
       const left = remaining(a);
       if (left <= a.total0 * 0.02) continue;
+      if (sw.field && sw.field !== 'auto' && a.fieldId !== sw.field) continue;
+      if (hooks.canMineField && !hooks.canMineField(a.fieldId)) continue; // cudze pole (krok 11)
       let value = 0;
       for (const m of METAL_ORDER) value += a.reserves[m] * price(m) * (sw.prefer === m ? 4 : 1);
       const score = Math.log(1 + value) - a.position.distanceTo(from) / 2500;
@@ -707,6 +784,7 @@ export function createEconomy({
           const got = extract(d.ast, Math.min(DRONE.mineRate * dt, DRONE.hold - d.load), d.cargo);
           d.load += got;
           state.stats.minedDrones += got;
+          hooks.minedInField?.(d.ast.fieldId, got);
           d.minedAcc += got;
           if (d.minedAcc > 2) { markMined(d.ast, d.site, d.minedAcc); d.minedAcc = 0; }
           d.timer += dt;
@@ -825,12 +903,14 @@ export function createEconomy({
    * w trakcie). Platformy zatrzymują po RAIDS.towerKills rabusiów, reszta
    * niszczy drony (roje z ewakuacją tracą połowę mniej) i łupi stacje.
    */
-  function resolveRaidOffline(sysId, raiders) {
+  function resolveRaidOffline(sysId, raiders, extraDefense = 0) {
     const sys = sysState(sysId);
     if (!sys) return null;
     const towers = sys.stations.filter((s) => s.type === 'wieza' && s.status === 'gotowa').length;
-    const through = Math.max(0, raiders - towers * RAIDS.towerKills);
-    const killed = Math.min(raiders, towers * RAIDS.towerKills);
+    // extraDefense (krok 11): siła armii gracza w układzie - ~1 zatrzymany napastnik na punkt siły
+    const stop = towers * RAIDS.towerKills + Math.floor(extraDefense);
+    const through = Math.max(0, raiders - stop);
+    const killed = Math.min(raiders, stop);
     let dronesLost = 0, stolen = 0;
     if (through > 0) {
       for (const sw of sys.swarms) {
@@ -974,7 +1054,7 @@ export function createEconomy({
     }
     if (rt) {
       rt.time += dt;
-      rt.beltView?.update(dt);
+      for (const v of rt.fieldViews.values()) v.update(dt);
       updateDrones(dt);
       drawDrones(rt.time);
       // stacje: postęp budowy, obrót, światła, iskry spawania
@@ -1089,6 +1169,11 @@ export function createEconomy({
     hooks, resolveRaidOffline, systemIds: () => Object.keys(state.systems),
     stationsIn: (id) => stationsOf(id), swarmsIn: (id) => sysState(id)?.swarms ?? [],
     beltCenter: (id) => sysState(id)?.beltCenter ?? null,
+    fieldDefs, fieldAt, discoverField, scan, isDiscovered, asteroidsIn,
+    /** Koszt { credits, metale } z kredytów i puli metalu bieżącego układu (stocznia, krok 11). */
+    canPayCost: (cost) => !!rt && canPay(rt.sysId, cost),
+    payCost: (cost) => { if (rt) { pay(rt.sysId, cost); bump(); } },
+    stationsNear: (sysId, pos, r) => stationsOf(sysId).filter((s) => Math.hypot(s.pos.x - pos.x, s.pos.y - pos.y, s.pos.z - pos.z) < r),
     enterSystem, leaveSystem, update, save, reset,
     // gracz
     playerMine, aimedAsteroid: (pos, fwd, range) => rt && aimedAsteroid(pos, fwd, range), nearestStation, unloadAt, canPlace, placeStation,
