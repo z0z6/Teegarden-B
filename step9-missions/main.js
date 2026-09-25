@@ -1229,6 +1229,7 @@ function buildWeaponBar() {
     el.innerHTML = '<span class="wname"></span><span class="wdesc"></span><span class="wammo"></span>';
     el.querySelector('.wname').textContent = WEAPONS[id].name;
     el.querySelector('.wdesc').textContent = WEAPONS[id].desc;
+    el.title = `${WEAPONS[id].name} — ${WEAPONS[id].desc}`; // pełna nazwa, gdy wąski slot ją ucina
     el.addEventListener('mousedown', (e) => e.stopPropagation()); // klik w pasek to nie strzał
     el.addEventListener('click', () => arsenal.select(id));
     weaponBar.appendChild(el);

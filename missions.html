@@ -73,8 +73,13 @@
 
     .detail {
       display: grid; grid-template-columns: 1fr minmax(240px, 300px); gap: 1.2rem 1.6rem;
-      padding: 1.3rem 1.5rem; background: var(--glass); border: 1px solid var(--line); border-radius: 6px;
-      backdrop-filter: blur(4px);
+      /* ostatni wiersz 1fr: nadmiar wysokości kolumny wyboru statku idzie pod odprawę,
+         a nie w dziurę między schematem a odprawą */
+      grid-template-rows: auto auto auto 1fr; align-items: start;
+      padding: 1.3rem 1.5rem; border: 1px solid var(--line); border-radius: 10px;
+      background: linear-gradient(180deg, rgba(14, 28, 44, 0.78), rgba(4, 10, 18, 0.7));
+      box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(8px) saturate(1.2);
     }
     .detail h2 { grid-column: 1 / -1; margin: 0; font: 800 2.2rem / 1 var(--display); letter-spacing: 0.01em; }
     .setup { grid-row: 3 / span 2; grid-column: 2; }
@@ -156,7 +161,7 @@
     @keyframes drift { to { transform: translateX(10px); } }
 
     .board > *, .detail > * { min-width: 0; }
-    @media (max-width: 1100px) { .detail { grid-template-columns: minmax(0, 1fr); } .schema, .setup, .brief { grid-column: 1; grid-row: auto; } }
+    @media (max-width: 1100px) { .detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; } .schema, .setup, .brief { grid-column: 1; grid-row: auto; } }
     @media (max-width: 760px) {
       .board { grid-template-columns: minmax(0, 1fr); }
       .detail { padding: 1rem; }
