@@ -40,6 +40,10 @@ export const SHIP_RACE = {
   'kamerton-rezonanci-trade-12': 'rezonanci',
   'kamerton-rezonanci-coalition-23': 'rezonanci',
   'kamerton-rezonanci-hawk-61': 'rezonanci',
+  'choral-piesniarze-hawk-2': 'piesniarze',
+  'choral-piesniarze-trade-9': 'piesniarze',
+  'choral-piesniarze-coalition-31': 'piesniarze',
+  'choral-piesniarze-hawk-77': 'piesniarze',
 };
 
 export const RACES = {

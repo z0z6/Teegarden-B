@@ -113,6 +113,30 @@ export const SHIPS = [
     file: '../shared/ships/models/kamerton-rezonanci-hawk-61-lod0.glb',
     bowAxis: '+Z',
   },
+  {
+    id: 'choral-piesniarze-hawk-2',
+    name: 'Chorał — Szpony',
+    file: '../shared/ships/models/choral-piesniarze-hawk-2-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'choral-piesniarze-trade-9',
+    name: 'Chorał — Chóry Map',
+    file: '../shared/ships/models/choral-piesniarze-trade-9-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'choral-piesniarze-coalition-31',
+    name: 'Chorał — Kukułki',
+    file: '../shared/ships/models/choral-piesniarze-coalition-31-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'choral-piesniarze-hawk-77',
+    name: 'Chorał — Pieśń Szponów',
+    file: '../shared/ships/models/choral-piesniarze-hawk-77-lod0.glb',
+    bowAxis: '+Z',
+  },
 ];
 
 /** Obrót wokół Y (radiany), który ustawia dziób modelu w lokalne -Z silnika. */
