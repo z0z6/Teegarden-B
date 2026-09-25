@@ -22,6 +22,7 @@ export const CREW = {
   sensors: { role: 'Oficer Czujników', initial: 'S', color: '#35e0c4' },
   engineer: { role: 'Główny Inżynier', initial: 'I', color: '#ff9d3d' },
   tactical: { role: 'Oficer Taktyczny', initial: 'T', color: '#ff4d4d' },
+  quartermaster: { role: 'Kwatermistrz', initial: 'K', color: '#ffd36b' }, // krok 10: gospodarka
 };
 
 const URGENCY_ORDER = { danger: 0, warning: 1, info: 2 };
