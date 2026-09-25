@@ -7,6 +7,7 @@ import { SHIPS } from '../shared/ships/fleet.js';
 import { RACES, SHIP_RACE, deriveStats } from '../shared/data/races.js';
 import { getAudio } from '../shared/audio/audio.js';
 import { mountAudioControls } from '../shared/audio/audio-controls.js';
+import { racePortrait } from '../shared/data/race-portraits.js';
 
 /**
  * TABLICA MISJI - drugi ekran okładki (intro -> tablica -> gra).
@@ -46,10 +47,12 @@ const state = {
   diff: DIFFICULTY[q.get('trudnosc')] ? q.get('trudnosc') : DIFFICULTY[saved.diff] ? saved.diff : 'normalna',
   pack: q.has('wataha') ? q.get('wataha') === '1' : !!saved.pack,
   system: SYSTEMS[q.get('uklad')] ? q.get('uklad') : SYSTEMS[savedSystem] ? savedSystem : 'teegarden',
+  picks: saved.picks && typeof saved.picks === 'object' ? saved.picks : {}, // ostatni model każdej rasy
 };
+state.picks[SHIP_RACE[state.ship]] = state.ship;
 function persist() {
   try {
-    localStorage.setItem(STORE, JSON.stringify({ mission: state.mission, ship: state.ship, diff: state.diff, pack: state.pack }));
+    localStorage.setItem(STORE, JSON.stringify({ mission: state.mission, ship: state.ship, diff: state.diff, pack: state.pack, picks: state.picks }));
     localStorage.setItem(SYSTEM_KEY, state.system);
   } catch { /* bez zapisu */ }
 }
@@ -85,24 +88,92 @@ ORDER.forEach((id, i) => {
 // ------------------------------------------------------------
 // Ustawienia: statek, trudność, wataha, układ
 // ------------------------------------------------------------
-const shipsEl = document.getElementById('ships');
-// krótkie nazwy (pełna w podpowiedzi) - dwa Warbirdy muszą się różnić
-const SHORT = {}; // opcjonalnie: { 'id-statku': 'krótka nazwa' }, gdy pełna jest za długa na kafelek
-SHIPS.forEach((s) => {
-  const race = RACES[SHIP_RACE[s.id]];
-  const st = deriveStats(SHIP_RACE[s.id]);
+// Statek = rasa załogi. Najpierw rasa (kafelek z portretem), pod spodem
+// modele tej rasy (miniatury 3D). Statystyki zależą tylko od rasy, więc
+// pokazujemy je raz, w nagłówku modeli. Rasy bez żadnego statku nie mają
+// kafelka - pojawią się same, gdy build-ships doda ich pierwszy model.
+const racesEl = document.getElementById('races');
+const hullsEl = document.getElementById('hulls');
+const raceOf = (shipId) => SHIP_RACE[shipId];
+const shipsOf = (raceId) => SHIPS.filter((s) => raceOf(s.id) === raceId);
+const RACE_IDS = Object.keys(RACES).filter((r) => shipsOf(r).length);
+// "Goniec — Kwartał Spisowy" -> kadłub "Goniec", wariant "Kwartał Spisowy"
+function splitName(name) {
+  const i = name.indexOf(' — ');
+  return i < 0 ? { hull: name, variant: name } : { hull: name.slice(0, i), variant: name.slice(i + 3) };
+}
+const modelsWord = (n) => (n === 1 ? 'model' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'modele' : 'modeli');
+
+for (const r of RACE_IDS) {
+  const race = RACES[r];
+  const n = shipsOf(r).length;
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'opt';
-  b.dataset.id = s.id;
+  b.className = 'race';
+  b.dataset.race = r;
   b.style.setProperty('--c', race.color);
-  b.innerHTML = `<i></i><b></b><span></span>`;
-  b.querySelector('b').textContent = SHORT[s.id] ?? s.name;
-  b.querySelector('span').textContent = `${race.name} · kadłub ${st.hull} · pancerz ${st.armor} · czujn. ${st.attrs.sensors}`;
-  b.title = s.name;
-  b.addEventListener('click', () => { state.ship = s.id; audio.play('ui-click'); render(); });
-  shipsEl.appendChild(b);
-});
+  b.innerHTML = `<span class="pic">${racePortrait(r, { seed: 3, faction: 'trade', size: 52 })}</span><b></b><small></small>`;
+  b.querySelector('b').textContent = race.name;
+  b.querySelector('small').textContent = `${n} ${modelsWord(n)}`;
+  b.title = `${race.name}: wybierz, żeby zobaczyć ${n === 1 ? 'statek' : 'statki'} tej rasy`;
+  b.addEventListener('click', () => pickRace(r));
+  b.addEventListener('pointerenter', () => audio.play('ui-hover'));
+  racesEl.appendChild(b);
+}
+
+function pickRace(r) {
+  if (raceOf(state.ship) === r) return;
+  const remembered = state.picks[r];
+  state.ship = shipsOf(r).some((s) => s.id === remembered) ? remembered : shipsOf(r)[0].id;
+  audio.play('ui-click');
+  render();
+}
+
+let shownRace = null;
+// Miniatura = gotowy PNG z build-ships (models/thumbs/<id>.png). Ścieżki we
+// fleet.js są względne do stron o katalog głębiej, tablica leży w korzeniu.
+const thumbUrl = (s) => s.file.replace(/^\.\.\//, './').replace(/\/models\/([^/]+)-lod0\.glb$/, '/models/thumbs/$1.png');
+function renderHulls(r) {
+  shownRace = r;
+  const race = RACES[r];
+  const st = deriveStats(r);
+  hullsEl.style.setProperty('--c', race.color);
+  hullsEl.replaceChildren();
+  const head = document.createElement('p');
+  head.className = 'race-stats';
+  head.textContent = `${race.name} · kadłub ${st.hull} · pancerz ${st.armor} · czujniki ${st.attrs.sensors}`;
+  hullsEl.appendChild(head);
+  // grupy po kadłubie (rasa może mieć np. przechwytywacz i niszczyciel)
+  const groups = new Map();
+  for (const s of shipsOf(r)) {
+    const { hull } = splitName(s.name);
+    if (!groups.has(hull)) groups.set(hull, []);
+    groups.get(hull).push(s);
+  }
+  for (const [hull, list] of groups) {
+    const h = document.createElement('h4');
+    h.textContent = hull;
+    const grid = document.createElement('div');
+    grid.className = 'models';
+    for (const s of list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'model';
+      b.dataset.id = s.id;
+      b.title = s.name;
+      b.innerHTML = '<span class="thumb"><img alt="" decoding="async" /></span><span class="v"></span>';
+      b.querySelector('.v').textContent = splitName(s.name).variant;
+      b.addEventListener('click', () => { state.ship = s.id; state.picks[r] = s.id; audio.play('ui-click'); render(); });
+      b.addEventListener('pointerenter', () => audio.play('ui-hover'));
+      const img = b.querySelector('img');
+      img.addEventListener('load', () => img.classList.add('ok'), { once: true });
+      img.addEventListener('error', () => b.querySelector('.thumb').classList.add('none'), { once: true }); // brak miniatury: kropka w kolorze rasy
+      img.src = thumbUrl(s);
+      grid.appendChild(b);
+    }
+    hullsEl.append(h, grid);
+  }
+}
 
 const diffEl = document.getElementById('diff');
 const DIFF_NOTE = { latwa: '1 naraz', normalna: '2 naraz', trudna: '3 naraz' };
@@ -161,7 +232,10 @@ function render() {
   $('d-win').textContent = d.win ?? '';
   $('d-lose').textContent = d.lose ?? '';
   $('d-tip').textContent = d.tip ?? '';
-  for (const b of shipsEl.children) b.setAttribute('aria-pressed', String(b.dataset.id === state.ship));
+  const shipRace = raceOf(state.ship);
+  for (const b of racesEl.children) b.setAttribute('aria-pressed', String(b.dataset.race === shipRace));
+  if (shownRace !== shipRace) renderHulls(shipRace);
+  for (const b of hullsEl.querySelectorAll('.model')) b.setAttribute('aria-pressed', String(b.dataset.id === state.ship));
   for (const b of diffEl.children) b.setAttribute('aria-pressed', String(b.dataset.id === state.diff));
   const auto = d.pack === 'auto';
   const packOn = auto || state.pack;

@@ -17,7 +17,8 @@
  * Kroki dla każdej pozycji: builder(opts) → scalenie meshy po materiale
  * (hardpointy hp_* zostają jako puste węzły) → GLTFExporter (binary) →
  * gltfpack: LOD0 -cc, LOD1 -si 0.35 -sp -cc, LOD2 -si 0.08 -sp -sa -cc
- * (te same flagi co w README.md).
+ * (te same flagi co w README.md). Do tego miniatura models/thumbs/<id>.png
+ * (thumb-raster.mjs) - obrazek statku do wyboru na tablicy misji.
  */
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
@@ -27,6 +28,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { renderThumbPNG } from './thumb-raster.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -167,7 +169,10 @@ for (const s of ships) {
     const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
 
     const lod0 = resolve(modelsDir, `${s.id}-lod0.glb`);
+    const thumb = renderThumbPNG(root, { bowAxis }); // liczona też przy --dry: błąd wyjdzie w teście
     if (!DRY) {
+      await mkdir(resolve(modelsDir, 'thumbs'), { recursive: true });
+      await writeFile(resolve(modelsDir, 'thumbs', `${s.id}.png`), thumb);
       const raw = resolve(rawDir, `${s.id}-raw.glb`);
       await writeFile(raw, await exportGLB(root));
       if (packOK) {

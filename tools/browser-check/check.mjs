@@ -92,7 +92,8 @@ console.log('\n2. Tablica misji');
   await page.click('.m[data-id="wolfhunt"]');
   ok(await page.isDisabled('#pack .opt'), 'Łowy watahy: wataha obowiązkowa (przełącznik zablokowany)');
   await page.click('.m[data-id="waves"]');
-  await page.click('#ships .opt[data-id="goniec-wybudzeni-trade-11"]');
+  await page.click('#races .race[data-race="wybudzeni"]');
+  await page.click('#hulls .model[data-id="goniec-wybudzeni-trade-11"]');
   await page.keyboard.press('3'); // cyfry już nie zmieniają statku
   await page.keyboard.press('t');
   await page.keyboard.press('w');
@@ -123,7 +124,7 @@ console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
   }));
   ok(st.active && st.mission === 'waves', `misja z adresu wystartowała (${st.mission})`);
   ok(st.pack, 'wataha z adresu');
-  ok(st.race === 'rezonanci', `statek z adresu (rasa ${st.race})`);
+  ok(st.race === 'wybudzeni', `statek z adresu (rasa ${st.race})`);
   ok(st.system === 'teegarden', 'układ z adresu');
   ok(await page.locator('#mission-board').count() === 0, 'w grze nie ma już nakładki tablicy');
 
