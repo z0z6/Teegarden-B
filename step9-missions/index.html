@@ -4,7 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Space Game — Krok 9: Misje, wataha i taktyczne AI</title>
+  <link rel="preload" href="../cover/fonts/manrope-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
   <style>
+    /* Te same czcionki i barwy co okładka i tablica misji (index.html, missions.html):
+       gra jest trzecim ekranem tej samej całości, więc mówi tym samym językiem wizualnym. */
+    @font-face { font-family: 'Big Shoulders Display'; font-weight: 800; font-display: swap; src: url('../cover/fonts/big-shoulders-display-latin-800-normal.woff2') format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+    @font-face { font-family: 'Big Shoulders Display'; font-weight: 800; font-display: swap; src: url('../cover/fonts/big-shoulders-display-latin-ext-800-normal.woff2') format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+    @font-face { font-family: 'Manrope'; font-weight: 400; font-display: swap; src: url('../cover/fonts/manrope-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+    @font-face { font-family: 'Manrope'; font-weight: 400; font-display: swap; src: url('../cover/fonts/manrope-latin-ext-400-normal.woff2') format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+    @font-face { font-family: 'Manrope'; font-weight: 600; font-display: swap; src: url('../cover/fonts/manrope-latin-600-normal.woff2') format('woff2'); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+    @font-face { font-family: 'Manrope'; font-weight: 600; font-display: swap; src: url('../cover/fonts/manrope-latin-ext-600-normal.woff2') format('woff2'); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+    :root {
+      --space: #05070c; --ink: #eaf4ff; --ink-dim: #9fb3c6; --hud: #9fd8ff; --ember: #ff7a45;
+      --gold: #ffd36b; --foe: #ff5a4d; --friend: #4dd6a0;
+      --display: 'Big Shoulders Display', 'Oswald', 'Arial Narrow', sans-serif;
+      --body: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+      /* szkło paneli HUD: lekki pionowy gradient + górna krawędź "łapiąca światło" */
+      --panel: linear-gradient(180deg, rgba(14, 28, 44, 0.74), rgba(4, 10, 18, 0.64));
+      --panel-line: rgba(159, 216, 255, 0.2);
+      --panel-shadow: 0 12px 32px -14px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
     html, body {
       margin: 0;
       padding: 0;
@@ -17,10 +36,10 @@
     }
     #hud {
       position: fixed;
-      top: 12px;
-      left: 12px;
+      top: 16px;
+      left: 18px;
       color: #9fd8ff;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: var(--body);
       font-size: 13px;
       opacity: 0.85;
       pointer-events: none;
@@ -40,7 +59,7 @@
       top: 20px;
       right: 64px; /* obok przycisku dźwięku (krok 9) */
       color: #9fd8ff;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: var(--body);
       font-size: 13px;
       opacity: 0;
       transition: opacity 0.2s ease;
@@ -62,12 +81,12 @@
        ============================================================ */
     #telemetry {
       position: fixed;
-      left: 12px; bottom: 12px;
-      width: 230px;
-      padding: 10px 12px 9px;
+      left: 16px; bottom: 16px;
+      width: 236px;
+      padding: 12px 14px 11px;
       box-sizing: border-box;
       color: #9fd8ff;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: var(--body);
       font-size: 12px;
       background: rgba(6, 14, 24, 0.55);
       border: 1px solid rgba(159, 216, 255, 0.25);
@@ -83,7 +102,7 @@
       display: flex; align-items: baseline; gap: 6px;
     }
     #tm-speed {
-      font-size: 26px; font-weight: 600; color: #d9f3ff;
+      font-size: 34px; font-weight: 800; color: #d9f3ff;
       font-variant-numeric: tabular-nums; min-width: 4.2ch;
     }
     #telemetry .tm-unit { opacity: 0.65; }
@@ -131,7 +150,7 @@
       display: flex; align-items: center; gap: 10px;
       padding: 8px 10px;
       color: #d9f3ff;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: var(--body);
       background: rgba(6, 14, 24, 0.68);
       border: 1px solid rgba(159, 216, 255, 0.25);
       border-left-width: 4px;
@@ -167,7 +186,7 @@
     #targets { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 12; }
     .tlabel {
       position: absolute; transform: translate(-50%, -140%);
-      font-family: 'Segoe UI', sans-serif; font-size: 12px; line-height: 1.25;
+      font-family: var(--body); font-size: 12px; line-height: 1.25;
       text-align: center; white-space: nowrap; text-shadow: 0 0 6px #000, 0 0 2px #000;
     }
     .tlabel.off { transform: translate(-50%, -50%); }
@@ -179,7 +198,7 @@
       position: fixed; left: 50%; bottom: 74px;
       transform: translateX(-50%) translateY(16px);
       width: min(480px, calc(100vw - 24px)); box-sizing: border-box;
-      padding: 10px 12px; color: #d9f3ff; font-family: 'Segoe UI', sans-serif;
+      padding: 10px 12px; color: #d9f3ff; font-family: var(--body);
       background: rgba(6, 14, 24, 0.88); border: 1px solid rgba(159, 216, 255, 0.35);
       border-radius: 10px; backdrop-filter: blur(4px);
       opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
@@ -199,7 +218,7 @@
     }
     .comms-choice:hover { background: rgba(159, 216, 255, 0.2); }
     .comms-choice kbd {
-      flex: none; min-width: 18px; text-align: center; padding: 1px 5px; font: 600 11px 'Segoe UI', sans-serif;
+      flex: none; min-width: 18px; text-align: center; padding: 1px 5px; font: 600 11px var(--body);
       color: #06121f; background: #9fd8ff; border-radius: 4px;
     }
     .comms-choice .hint { margin-left: auto; font-size: 11px; opacity: 0.6; text-align: right; }
@@ -211,7 +230,7 @@
     #damage { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 14;
       box-shadow: inset 0 0 140px 20px rgba(255, 40, 40, 0.75); }
     #death { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 30;
-      background: rgba(30, 0, 0, 0.6); text-align: center; color: #ffd6d6; font-family: 'Segoe UI', sans-serif; }
+      background: rgba(30, 0, 0, 0.6); text-align: center; color: #ffd6d6; font-family: var(--body); }
     #death.visible { display: flex; }
     .death-title { font-size: 34px; letter-spacing: 0.12em; font-weight: 600; }
     .death-sub { margin-top: 8px; font-size: 15px; opacity: 0.8; }
@@ -224,13 +243,13 @@
        KROK 7: pasek broni, ciepło, namiar
        ============================================================ */
     #weapon-bar {
-      position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);
-      display: flex; gap: 6px; z-index: 16;
-      font-family: 'Segoe UI', sans-serif;
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+      display: flex; gap: 8px; z-index: 16;
+      font-family: var(--body);
     }
     .wslot {
       --wc: #9fd8ff;
-      position: relative; width: 116px; padding: 6px 8px 6px 10px; text-align: left; cursor: pointer;
+      position: relative; width: 134px; padding: 7px 9px 7px 11px; text-align: left; cursor: pointer;
       color: #d9f3ff; font: inherit;
       background: rgba(6, 14, 24, 0.6); backdrop-filter: blur(4px);
       border: 1px solid rgba(159, 216, 255, 0.2); border-left: 3px solid color-mix(in srgb, var(--wc) 45%, transparent);
@@ -254,7 +273,7 @@
     .wslot.empty { opacity: 0.3; }
     .wslot.empty .wammo { color: #ff4d4d; }
     #tm-flares.low { color: #ff4d4d; }
-    @media (max-width: 1250px) { .wdesc { display: none; } .wslot { width: 96px; } }
+    @media (max-width: 1400px) { .wdesc { display: none; } .wslot { width: 108px; } }
     #weapon-bar.overheated .wslot.active { border-left-color: #ff4d4d; animation: crew-pulse 0.6s ease-in-out infinite; }
     #tm-heat-bar { height: 100%; width: 0; background: #ffb13d; border-radius: 3px; transition: background 0.2s; }
     #tm-heat-bar.hot { background: #ff4d4d; }
@@ -277,7 +296,7 @@
       position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0.96);
       width: min(560px, calc(100vw - 24px)); max-height: 80vh; overflow-y: auto; box-sizing: border-box;
       padding: 14px; z-index: 1300; opacity: 0; pointer-events: none; transition: opacity 0.18s, transform 0.18s;
-      color: #d9f3ff; font-family: 'Segoe UI', sans-serif;
+      color: #d9f3ff; font-family: var(--body);
       background: rgba(6, 14, 24, 0.9); border: 1px solid rgba(255, 210, 150, 0.35); border-radius: 12px; backdrop-filter: blur(6px);
     }
     #system-map.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
@@ -295,7 +314,7 @@
       position: fixed; top: 12px; right: 130px; z-index: 20;
       width: auto; height: auto; padding: 8px 14px; border-radius: 8px;
       background: rgba(255, 210, 150, 0.12); border: 1px solid rgba(255, 210, 150, 0.35);
-      color: #ffe2b0; font-family: 'Segoe UI', sans-serif; font-size: 12px;
+      color: #ffe2b0; font-family: var(--body); font-size: 12px;
     }
     #VRButton { left: auto !important; right: 12px !important; bottom: 12px !important; }
 
@@ -307,7 +326,7 @@
       position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
       width: min(460px, calc(100vw - 560px)); min-width: 300px; box-sizing: border-box;
       padding: 8px 12px 9px; z-index: 16; pointer-events: none; display: none;
-      color: #d9f3ff; font-family: 'Segoe UI', sans-serif; font-size: 12px;
+      color: #d9f3ff; font-family: var(--body); font-size: 12px;
       background: rgba(6, 14, 24, 0.62); border: 1px solid rgba(255, 211, 107, 0.35); border-radius: 8px; backdrop-filter: blur(4px);
     }
     #mission.visible { display: block; }
@@ -325,7 +344,7 @@
     #pack {
       position: fixed; left: 12px; top: 270px; width: 230px; box-sizing: border-box; display: none;
       padding: 7px 10px 8px; z-index: 15; pointer-events: none;
-      color: #d9f3ff; font-family: 'Segoe UI', sans-serif; font-size: 12px;
+      color: #d9f3ff; font-family: var(--body); font-size: 12px;
       background: rgba(6, 14, 24, 0.55); border: 1px solid rgba(77, 214, 160, 0.35); border-radius: 8px;
     }
     #pack.visible { display: block; }
@@ -340,7 +359,7 @@
       position: fixed; top: 12px; z-index: 20;
       width: auto; height: auto; padding: 8px 14px; border-radius: 8px;
       background: rgba(255, 211, 107, 0.12); border: 1px solid rgba(255, 211, 107, 0.4);
-      color: #ffe2b0; font-family: 'Segoe UI', sans-serif; font-size: 12px;
+      color: #ffe2b0; font-family: var(--body); font-size: 12px;
     }
     #touch-missions { right: 272px; }
     #touch-order { right: 360px; display: none; border-color: rgba(77, 214, 160, 0.5); color: #bff5dd; }
@@ -423,7 +442,7 @@
       background: rgba(159, 216, 255, 0.12);
       border: 1px solid rgba(159, 216, 255, 0.35);
       color: #d9f3ff;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: var(--body);
       font-size: 11px;
       display: flex; align-items: center; justify-content: center;
       touch-action: none;
@@ -466,6 +485,182 @@
     @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
       #crew-alerts { top: 52px; }
     }
+
+    /* ============================================================
+       WARSTWA WIZUALNA: szkło, typografia i akcenty wspólne z okładką.
+       Tylko wygląd (kolory, tła, cienie, kroje) - bez pozycji i
+       rozmiarów, które wyżej stroją media queries dla dotyku i telefonu.
+       ============================================================ */
+    body { font-family: var(--body); -webkit-font-smoothing: antialiased; }
+    /* winieta: kadr "z kokpitu", a HUD przy krawędziach jest czytelny także na tle jasnej gwiazdy */
+    #vignette {
+      position: fixed; inset: 0; z-index: 11; pointer-events: none;
+      background: radial-gradient(ellipse 75% 70% at 50% 50%, transparent 55%, rgba(2, 4, 8, 0.55) 100%);
+    }
+
+    /* --- nazwa statku, układ i ściąga sterowania (lewy górny róg) --- */
+    #hud { opacity: 1; color: var(--ink-dim); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85); }
+    #hud .ship-name {
+      font-family: var(--display); font-weight: 800; font-size: 28px; line-height: 1; letter-spacing: 0.02em;
+      color: var(--ink); text-shadow: 0 0 26px rgba(159, 216, 255, 0.35), 0 1px 10px rgba(0, 0, 0, 0.85);
+    }
+    #hud .system-name {
+      display: flex; align-items: center; gap: 8px; margin-top: 7px;
+      font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #ffd9a0; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85);
+    }
+    #hud .system-name::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #ffb45c; box-shadow: 0 0 10px #ffb45c; }
+    #hud .help {
+      display: grid; grid-template-columns: max-content max-content; gap: 3px 12px; align-items: baseline;
+      margin-top: 14px; padding: 9px 14px 10px 12px; max-height: 420px; overflow: hidden;
+      font-size: 12px; line-height: 1.35; opacity: 1;
+      background: linear-gradient(90deg, rgba(6, 14, 24, 0.6), rgba(6, 14, 24, 0));
+      border-left: 2px solid var(--panel-line);
+      transition: opacity 0.4s, max-height 0.4s, margin 0.4s, padding 0.4s;
+    }
+    #hud .help b { justify-self: end; font-weight: 600; color: var(--hud); white-space: nowrap; }
+    #hud .help span { color: var(--ink-dim); }
+    #hud .help-hint { margin-top: 10px; font-size: 11px; opacity: 0; transition: opacity 0.4s; }
+    #hud.collapsed .help { opacity: 0; max-height: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
+    #hud.collapsed .help-hint { opacity: 0.85; }
+    #hud kbd {
+      display: inline-block; min-width: 1.5em; padding: 1px 5px; margin-right: 4px; text-align: center;
+      font: 600 10px var(--body); color: var(--ink); text-shadow: none;
+      background: rgba(159, 216, 255, 0.12); border: 1px solid var(--panel-line); border-bottom-width: 2px; border-radius: 4px;
+    }
+    /* ściąga schowana: wataha podjeżdża pod nazwę statku */
+    body:has(#hud.collapsed) #pack { top: 118px; }
+    #pack { transition: top 0.4s; }
+    #loading-model { color: var(--ink-dim); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.85); letter-spacing: 0.04em; }
+
+    /* --- wspólne szkło paneli --- */
+    #telemetry, #pack, #mission, .crew-alert, #comms, #system-map {
+      background: var(--panel); border-color: var(--panel-line); box-shadow: var(--panel-shadow);
+      -webkit-backdrop-filter: blur(10px) saturate(1.25); backdrop-filter: blur(10px) saturate(1.25);
+    }
+    #telemetry, #pack, #mission { border-radius: 10px; }
+    #telemetry .tm-title, #pack .pk-title, #mission-name, .crew-role {
+      font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase;
+    }
+
+    /* --- telemetria --- */
+    #telemetry { color: var(--ink-dim); }
+    #telemetry .tm-title { display: flex; align-items: center; gap: 7px; color: var(--hud); opacity: 0.75; }
+    #telemetry .tm-title::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--hud); box-shadow: 0 0 8px var(--hud); }
+    #tm-speed { font-family: var(--display); line-height: 1; min-width: 3.2ch; letter-spacing: 0.01em; color: var(--ink); text-shadow: 0 0 20px rgba(159, 216, 255, 0.3); }
+    #tm-mode { font-size: 10px; letter-spacing: 0.12em; border-radius: 99px; padding: 3px 9px; border: 1px solid rgba(159, 216, 255, 0.18); }
+    #telemetry .tm-bar { height: 5px; background: rgba(159, 216, 255, 0.1); border-radius: 99px; }
+    #tm-speed-bar { background: linear-gradient(90deg, #3d86ff, var(--hud)); box-shadow: 0 0 10px rgba(159, 216, 255, 0.55); border-radius: 99px; }
+    #tm-speed-bar.over-cruise { background: linear-gradient(90deg, #ff9d3d, var(--gold)); box-shadow: 0 0 10px rgba(255, 157, 61, 0.6); }
+    #tm-cruise-mark { background: rgba(234, 244, 255, 0.85); box-shadow: 0 0 4px rgba(234, 244, 255, 0.8); }
+    #telemetry .tm-row span:first-child { opacity: 1; color: var(--ink-dim); }
+    #telemetry .tm-row span:last-child { color: var(--ink); font-weight: 600; }
+    #tm-hull-bar { background: linear-gradient(90deg, #22a877, var(--friend)); box-shadow: 0 0 8px rgba(77, 214, 160, 0.5); border-radius: 99px; }
+    #tm-hull-bar.low { background: linear-gradient(90deg, #c92a2a, #ff4d4d); box-shadow: 0 0 10px rgba(255, 77, 77, 0.7); }
+    #tm-heat-bar { background: linear-gradient(90deg, #ff9d3d, #ffc860); border-radius: 99px; }
+    #tm-heat-bar.hot { background: linear-gradient(90deg, #ff6a3d, #ff4d4d); box-shadow: 0 0 10px rgba(255, 77, 77, 0.7); }
+
+    /* --- komunikaty załogi --- */
+    .crew-alert { color: var(--ink); border-radius: 10px; border-left-width: 3px; }
+    .crew-alert.urgency-warning { background: linear-gradient(180deg, rgba(52, 34, 6, 0.8), rgba(26, 16, 2, 0.7)); }
+    .crew-alert.urgency-danger { background: linear-gradient(180deg, rgba(62, 12, 12, 0.84), rgba(30, 4, 4, 0.74)); }
+    .crew-avatar { font-family: var(--display); font-weight: 800; font-size: 17px; box-shadow: 0 0 0 2px rgba(6, 14, 24, 0.9), 0 0 0 3px rgba(255, 255, 255, 0.18), 0 0 14px rgba(159, 216, 255, 0.25); }
+    .crew-role { color: var(--ink-dim); opacity: 1; font-size: 9.5px; }
+
+    /* --- komunikator --- */
+    #comms { color: var(--ink); border-radius: 12px; }
+    .comms-sender { font-weight: 600; letter-spacing: 0.01em; }
+    .comms-choice { color: var(--ink); background: rgba(159, 216, 255, 0.06); border-color: var(--panel-line); border-radius: 8px; transition: background 0.12s, border-color 0.12s; }
+    .comms-choice:hover { background: rgba(159, 216, 255, 0.16); border-color: rgba(159, 216, 255, 0.45); }
+    .comms-choice kbd { color: var(--space); background: var(--hud); border-radius: 5px; box-shadow: 0 0 10px rgba(159, 216, 255, 0.35); }
+
+    /* --- etykiety celów i namiar --- */
+    .tlabel { text-shadow: 0 1px 3px #000, 0 0 10px rgba(0, 0, 0, 0.9); }
+    .tlabel .tl-title { letter-spacing: 0.02em; }
+    .tlabel .tl-sub { opacity: 0.8; font-variant-numeric: tabular-nums; }
+    /* namiar: cztery narożniki zamiast pełnej ramki - mniej zasłania cel, wygląda jak celownik */
+    #lock-reticle {
+      --rc: rgba(255, 177, 61, 0.95);
+      border: 0;
+      background:
+        linear-gradient(var(--rc), var(--rc)) top left / 28% 2px, linear-gradient(var(--rc), var(--rc)) top left / 2px 28%,
+        linear-gradient(var(--rc), var(--rc)) top right / 28% 2px, linear-gradient(var(--rc), var(--rc)) top right / 2px 28%,
+        linear-gradient(var(--rc), var(--rc)) bottom left / 28% 2px, linear-gradient(var(--rc), var(--rc)) bottom left / 2px 28%,
+        linear-gradient(var(--rc), var(--rc)) bottom right / 28% 2px, linear-gradient(var(--rc), var(--rc)) bottom right / 2px 28%;
+      background-repeat: no-repeat;
+      filter: drop-shadow(0 0 4px rgba(255, 177, 61, 0.7));
+    }
+    #lock-reticle.locked { --rc: #ff4d4d; box-shadow: none; filter: drop-shadow(0 0 6px rgba(255, 77, 77, 0.9)); }
+
+    /* --- pasek broni --- */
+    .wslot {
+      color: var(--ink); background: var(--panel); box-shadow: var(--panel-shadow);
+      border-color: var(--panel-line); border-left-color: color-mix(in srgb, var(--wc) 45%, transparent);
+      border-radius: 9px; opacity: 0.66;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    }
+    .wslot.active {
+      background: linear-gradient(180deg, color-mix(in srgb, var(--wc) 20%, rgba(10, 20, 32, 0.85)), rgba(4, 10, 18, 0.78));
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--wc) 35%, transparent), 0 10px 28px -8px color-mix(in srgb, var(--wc) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+    .wslot:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+    .wname { overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.01em; }
+    .wslot.active .wname { color: #fff; }
+    .wdesc { color: var(--ink-dim); opacity: 1; }
+    .wslot.special::after { top: -9px; font-size: 8.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 7px; border-radius: 99px; box-shadow: 0 0 10px color-mix(in srgb, var(--wc) 60%, transparent); }
+    .wammo { font-family: var(--display); font-weight: 800; font-size: 17px; line-height: 1; text-shadow: 0 0 10px color-mix(in srgb, var(--wc) 60%, transparent); }
+
+    /* --- misja --- */
+    #mission { color: var(--ink); border-color: rgba(255, 211, 107, 0.3); border-top: 2px solid var(--gold); }
+    #mission[data-status="success"] { border-top-color: var(--friend); }
+    #mission[data-status="fail"] { border-top-color: var(--foe); }
+    #mission-name { font-size: 10px; }
+    #mission-objective { font-family: var(--display); font-weight: 800; font-size: 19px; letter-spacing: 0.02em; line-height: 1.1; }
+    #mission-detail { color: var(--ink-dim); opacity: 1; }
+    #mission-bar { height: 5px; background: rgba(255, 255, 255, 0.08); border-radius: 99px; }
+    #mission-fill { background: linear-gradient(90deg, #ffb13d, var(--gold)); box-shadow: 0 0 10px rgba(255, 211, 107, 0.6); border-radius: 99px; }
+    #mission[data-status="success"] #mission-fill { background: linear-gradient(90deg, #22a877, var(--friend)); box-shadow: 0 0 10px rgba(77, 214, 160, 0.6); }
+
+    /* --- wataha --- */
+    #pack { color: var(--ink); border-color: rgba(77, 214, 160, 0.3); border-left: 2px solid var(--friend); }
+    #pack .pk-row span:first-child { font-weight: 600; }
+    #pack .pk-plan { color: var(--ink-dim); opacity: 1; }
+    #pack .pk-bar { height: 5px; border-radius: 99px; }
+    #pack .pk-bar i { border-radius: 99px; }
+
+    /* --- mapa układów --- */
+    #system-map { background: linear-gradient(180deg, rgba(16, 24, 36, 0.94), rgba(6, 10, 18, 0.92)); border-color: rgba(255, 210, 150, 0.3); border-radius: 14px; }
+    #system-map .map-title { font-family: var(--display); font-weight: 800; font-size: 26px; letter-spacing: 0.02em; }
+    #system-map .map-item { border-radius: 10px; transition: background 0.12s, border-color 0.12s; }
+    #system-map .map-item.here { background: rgba(255, 180, 92, 0.12); box-shadow: inset 3px 0 0 #ffb45c; }
+
+    /* --- ekran śmierci --- */
+    #death { background: radial-gradient(ellipse at 50% 50%, rgba(60, 4, 4, 0.55), rgba(10, 0, 0, 0.85)); -webkit-backdrop-filter: blur(3px) saturate(0.6); backdrop-filter: blur(3px) saturate(0.6); }
+    #death.visible > div { animation: death-in 0.6s cubic-bezier(.2, .7, .2, 1) both; }
+    .death-title { font-family: var(--display); font-weight: 800; font-size: clamp(44px, 8vw, 88px); line-height: 0.9; letter-spacing: 0.04em; color: #ffe1dc; text-shadow: 0 0 40px rgba(255, 77, 77, 0.55); }
+    .death-sub { margin-top: 14px; letter-spacing: 0.06em; color: #ffc2b8; }
+    @keyframes death-in { from { opacity: 0; transform: scale(1.06); letter-spacing: 0.2em; } to { opacity: 1; transform: none; } }
+
+    /* --- dotyk --- */
+    .touch-btn { font-weight: 600; line-height: 1.15; text-align: center; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+    #telemetry .tm-row span:first-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #telemetry .tm-row span:last-child { flex: none; white-space: nowrap; }
+    /* dotyk: nazwa statku mniejsza - na telefonie tuż pod nią stoi telemetria */
+    @media (pointer: coarse) {
+      #hud .ship-name { font-size: 20px; }
+      #hud .system-name { margin-top: 4px; font-size: 10px; letter-spacing: 0.12em; }
+    }
+    @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+      #hud { top: 10px; }
+      #hud .ship-name { font-size: 17px; }
+      #hud .system-name { margin-top: 2px; font-size: 9px; }
+    }
+    .joystick-zone { background: radial-gradient(circle, rgba(159, 216, 255, 0.04) 40%, rgba(159, 216, 255, 0.12)); }
+    .joystick-knob { background: radial-gradient(circle at 40% 35%, rgba(217, 243, 255, 0.55), rgba(159, 216, 255, 0.25)); box-shadow: 0 0 16px rgba(159, 216, 255, 0.35); }
+
+    @media (prefers-reduced-motion: reduce) {
+      #hud .help, #hud .help-hint, #pack { transition: none; }
+      #death.visible > div { animation: none; }
+    }
   </style>
 
   <!-- Importmap: three@0.184.0 (ta sama wersja co w narzędziach, którymi
@@ -483,15 +678,21 @@
   <div id="hud">
     <div class="ship-name" id="ship-name">—</div>
     <div class="system-name" id="system-name">—</div>
-    <div class="dim desktop-only">Mysz — celowanie · W/S — ciąg · A/D — przechył (roll)</div>
-    <div class="dim desktop-only">Shift — boost · Spacja — hamulec · N — tablica misji (tam zmiana statku = rasy)</div>
-    <div class="dim desktop-only">F / LPM — ogień · Z/X/C — odpowiedź w komunikatorze</div>
-    <div class="dim desktop-only">7/8/9 — sceny: kontakt / przechwycenie / atak · 0 — demo od nowa</div>
-    <div class="dim desktop-only">J — skok fałdowy · K — parada fałdy (statki wszystkich ras)</div>
-    <div class="dim desktop-only">Q/E lub kółko — zmiana broni · rakiety i torpedy namierzają same</div>
-    <div class="dim desktop-only">U — skok do następnego układu · M — mapa układów</div>
-    <div class="dim desktop-only">N — tablica misji · Enter — misja jeszcze raz · L — wataha · O — dźwięk</div>
-    <div class="dim desktop-only">Wataha: G — atak na mój cel · H — kleszcze · V — osłona · B — szyk</div>
+    <div class="help dim desktop-only" id="hud-help">
+      <b>Mysz</b><span>celowanie</span>
+      <b><kbd>W</kbd><kbd>S</kbd></b><span>ciąg · <kbd>A</kbd><kbd>D</kbd> przechył</span>
+      <b><kbd>Shift</kbd></b><span>boost · <kbd>Spacja</kbd> hamulec</span>
+      <b><kbd>F</kbd> LPM</b><span>ogień · <kbd>Q</kbd><kbd>E</kbd> / kółko — zmiana broni</span>
+      <b></b><span>rakiety i torpedy namierzają same</span>
+      <b><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd></b><span>odpowiedź w komunikatorze</span>
+      <b><kbd>J</kbd></b><span>skok fałdowy · <kbd>K</kbd> parada fałdy (wszystkie rasy)</span>
+      <b><kbd>U</kbd></b><span>następny układ · <kbd>M</kbd> mapa układów</span>
+      <b><kbd>7</kbd><kbd>8</kbd><kbd>9</kbd></b><span>sceny: kontakt / przechwycenie / atak · <kbd>0</kbd> demo</span>
+      <b><kbd>N</kbd></b><span>tablica misji (tam zmiana statku) · <kbd>Enter</kbd> misja od nowa</span>
+      <b><kbd>L</kbd></b><span>wataha · <kbd>G</kbd> mój cel · <kbd>H</kbd> kleszcze · <kbd>V</kbd> osłona · <kbd>B</kbd> szyk</span>
+      <b><kbd>O</kbd></b><span>dźwięk · <kbd>I</kbd> schowaj tę ściągę</span>
+    </div>
+    <div class="help-hint dim desktop-only"><kbd>I</kbd> sterowanie</div>
   </div>
   <div id="loading-model">Cumowanie… ładowanie statku</div>
 
@@ -518,6 +719,7 @@
   </div>
   <div id="targets"></div>
   <div id="comms"></div>
+  <div id="vignette"></div>
   <div id="damage"></div>
   <div id="warp-flash"></div>
   <div id="lock-reticle"></div>
@@ -541,6 +743,28 @@
     <div class="touch-btn" id="touch-order">ROZKAZ</div>
   </div>
 
+  <script>
+    // Ściąga sterowania: widoczna na starcie, po chwili sama się chowa (zostaje
+    // podpowiedź "I sterowanie"); I albo ? przełącza. Komunikat three.js
+    // "VR NOT SUPPORTED" / "WEBXR NOT AVAILABLE" nic graczowi nie daje, a leży
+    // w rogu ekranu - chowamy go; przycisk "ENTER VR" zostaje.
+    (() => {
+      const hud = document.getElementById('hud');
+      let auto = setTimeout(() => hud.classList.add('collapsed'), 12000);
+      addEventListener('keydown', (e) => {
+        if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.code === 'KeyI' || e.key === '?') { clearTimeout(auto); hud.classList.toggle('collapsed'); }
+      });
+      const hideXrNotice = () => {
+        for (const el of document.querySelectorAll('body > button, body > a')) {
+          if (/NOT SUPPORTED|NOT AVAILABLE|NEEDS HTTPS|NOT ALLOWED/i.test(el.textContent)) el.style.setProperty('display', 'none', 'important');
+        }
+      };
+      const mo = new MutationObserver(hideXrNotice);
+      mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+      setTimeout(() => mo.disconnect(), 15000);
+    })();
+  </script>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
