@@ -254,7 +254,7 @@ function gameUrl() {
   const p = new URLSearchParams({ uklad: state.system, trudnosc: state.diff, statek: state.ship });
   if (state.mission !== FREE) p.set('misja', state.mission);
   if (state.pack || def(state.mission).pack === 'auto') p.set('wataha', '1');
-  return `./step9-missions/?${p}`;
+  return `./step10-economy/?${p}`; // najnowszy krok (misje + ekonomia)
 }
 
 let leaving = false;

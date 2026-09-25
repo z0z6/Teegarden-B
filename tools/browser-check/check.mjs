@@ -1,5 +1,5 @@
 // Dymny test w prawdziwej przeglądarce (headless Chromium przez Playwright):
-// okładka -> tablica misji -> gra z misją, bez błędów w konsoli, z działającą
+// okładka -> tablica misji -> gra z misją (krok 10, z ekonomią), bez błędów w konsoli, z działającą
 // warstwą audio. Zapisuje zrzuty ekranu do tools/browser-check/out/.
 //
 //   npm i playwright@1.56.0   (+ przeglądarka: npx playwright install chromium)
@@ -107,7 +107,7 @@ console.log('\n2. Tablica misji');
   ok(!overflow, 'telefon w pionie: bez przewijania w bok');
   await page.screenshot({ path: join(OUT, '2-board-phone.png'), fullPage: false });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await Promise.all([page.waitForURL(/step9-missions/, { waitUntil: 'domcontentloaded' }), page.keyboard.press('Enter')]);
+  await Promise.all([page.waitForURL(/step10-economy/, { waitUntil: 'domcontentloaded' }), page.keyboard.press('Enter')]);
   ok(true, 'Enter uruchamia grę');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await page.close();
@@ -116,7 +116,7 @@ console.log('\n2. Tablica misji');
 // ------------------------------------------------------------
 console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
 {
-  const { page, errors } = await open('/step9-missions/?misja=waves&statek=goniec-wybudzeni-hawk-7&trudnosc=trudna&wataha=1&uklad=teegarden&debug');
+  const { page, errors } = await open('/step10-economy/?misja=waves&statek=goniec-wybudzeni-hawk-7&trudnosc=trudna&wataha=1&uklad=teegarden&debug');
   await page.waitForFunction(() => window.__game?.missions?.active, null, { timeout: 60000 }).catch(() => {});
   const st = await page.evaluate(() => ({
     mission: __game.missions.state.id, active: __game.missions.active, pack: __game.wolfpack.active,
@@ -175,12 +175,75 @@ console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
   // N w trakcie misji: pierwsze N tylko ostrzega, drugie wraca na tablicę
   await page.keyboard.press('KeyN');
   await page.waitForTimeout(300);
-  ok(/step9-missions/.test(page.url()), 'pierwsze N w trakcie misji nie wychodzi (ostrzeżenie)');
+  ok(/step10-economy/.test(page.url()), 'pierwsze N w trakcie misji nie wychodzi (ostrzeżenie)');
   await Promise.all([page.waitForURL(/missions\.html/, { timeout: 8000, waitUntil: 'domcontentloaded' }), page.keyboard.press('KeyN')]);
   const back = new URL(page.url());
   ok(back.searchParams.get('misja') === 'capture' && back.searchParams.get('statek') === 'goniec-wybudzeni-hawk-7',
     `drugie N: tablica misji z tymi samymi ustawieniami (${back.search})`);
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
+  await page.close();
+}
+
+// ------------------------------------------------------------
+console.log('\n3b. Ekonomia (krok 10): kopanie, budowa, panel, roje');
+{
+  const { page, errors } = await open('/step10-economy/?uklad=teegarden&debug');
+  await page.waitForFunction(() => window.__game?.playerState?.alive && window.__game.economy, null, { timeout: 60000 });
+  await page.evaluate(() => { __game.economy.reset(); });
+  ok(await page.isVisible('#eco-hud'), 'HUD przemysłu widoczny');
+  // statek przy planetoidzie, dziobem do niej, T wciśnięte
+  const hold = await page.evaluate(() => {
+    const g = __game, a = [...g.economy.asteroids()].sort((x, y) => y.radius - x.radius)[0];
+    const V = g.shipGroup.position.constructor;
+    g.shipGroup.position.copy(a.position).addScaledVector(new V(0.3, 0.2, 1).normalize(), a.radius + 250);
+    g.shipGroup.lookAt(a.position); g.shipGroup.rotateY(Math.PI);
+    g.mining.held = true;
+    for (let i = 0; i < 30 * 20; i++) g.tick(1 / 30);
+    g.mining.held = false;
+    return Object.values(g.economy.state.hold).reduce((x, y) => x + y, 0);
+  });
+  ok(hold > 20, `promień wydobywczy napełnia ładownię (${Math.round(hold)} t)`);
+  await page.evaluate(() => { __game.shipGroup.translateZ(800); __game.tick(1 / 30); });
+  await page.keyboard.press('KeyP');
+  await page.waitForTimeout(400);
+  ok(await page.isVisible('#industry'), 'P otwiera panel przemysłu');
+  await page.click('[data-act="place"][data-type="magazyn"]');
+  const placed = await page.evaluate(() => __game.economy.stations().map((s) => s.type));
+  ok(placed.includes('magazyn'), 'z panelu: plac budowy magazynu przed dziobem');
+  await page.keyboard.press('KeyP');
+  const built = await page.evaluate(() => {
+    const g = __game, st = g.economy.stations()[0];
+    g.shipGroup.position.set(st.pos.x + 250, st.pos.y, st.pos.z);
+    g.tick(1 / 30);
+    g.unloadNearby();
+    for (let i = 0; i < 30 * 25; i++) g.economy.update(1 / 30);
+    return st.status;
+  });
+  ok(built === 'gotowa', 'Y przy placu + montaż: magazyn gotowy');
+  const drones = await page.evaluate(() => {
+    const e = __game.economy, P = __game.shipGroup.position.constructor;
+    const mag = e.stations()[0];
+    Object.assign(mag.storage, { zelazo: 1500, nikiel: 400, kobalt: 80, platyna: 0 });
+    e.state.credits += 5000;
+    const c = e.state.systems.teegarden.beltCenter;
+    let spot = null;
+    for (let k = 0; k < 40 && !spot; k++) {
+      const p = new P(c.x + Math.cos(k) * 1500, c.y + 900 + k * 60, c.z + Math.sin(k) * 1500);
+      if (e.canPlace('dok', p).ok) spot = p;
+    }
+    const dok = e.placeStation('dok', spot);
+    for (let i = 0; i < 30 * 80; i++) e.update(1 / 30); // holowniki ~25 s + montaż 40 s
+    const w = e.createSwarm(dok.id); e.orderDrones(w.id, 6);
+    for (let i = 0; i < 30 * 70; i++) e.update(1 / 30);
+    return { n: e.runtime.drones.length, drilling: e.runtime.drones.filter((d) => d.state === 'wiercenie').length, mined: e.state.stats.minedDrones };
+  });
+  ok(drones.n === 6 && drones.mined > 5, `rój 6 dronów kopie (${drones.drilling} wierci, wydobyto ${Math.round(drones.mined)} t)`);
+  await page.keyboard.press('KeyP');
+  await page.waitForTimeout(400);
+  ok(await page.locator('.ip-sw').count() === 1, 'panel pokazuje rój');
+  await page.screenshot({ path: join(OUT, '3b-industry.png') });
+  ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
+  await page.evaluate(() => __game.economy.reset());
   await page.close();
 }
 
@@ -210,8 +273,8 @@ console.log('\n4. Audio lab: każdy przycisk gra bez błędu');
 }
 
 // ------------------------------------------------------------
-console.log('\n5. Kroki 5–8 po zmianach we wspólnych modułach (wczytanie, ogień, skok)');
-for (const step of ['step5-encounters', 'step6-warp', 'step7-weapons', 'step8-star-systems']) {
+console.log('\n5. Kroki 5–9 po zmianach we wspólnych modułach (wczytanie, ogień, skok)');
+for (const step of ['step5-encounters', 'step6-warp', 'step7-weapons', 'step8-star-systems', 'step9-missions']) {
   const { page, errors } = await open(`/${step}/`);
   await page.waitForTimeout(5000);
   await page.keyboard.down('KeyF'); await page.waitForTimeout(800); await page.keyboard.up('KeyF');

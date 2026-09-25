@@ -16,7 +16,7 @@ npx serve .
 python3 -m http.server 8080
 ```
 
-Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie). Przycisk „Graj” prowadzi na **tablicę misji** (`missions.html`: odprawa, wybór statku, trudności i watahy), a stamtąd do najnowszego kroku. Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
+Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie). Przycisk „Graj” prowadzi na **tablicę misji** (`missions.html`: odprawa, wybór statku, trudności i watahy), a stamtąd do najnowszego kroku (`step10-economy`). Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
 
 Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tranzytującą planetą b tymi samymi shaderami co gra; wybrany układ zapamiętuje w przeglądarce i przekazuje do gry jako `?uklad=`. Czcionki (Big Shoulders Display, Manrope — OFL 1.1, licencje w `cover/fonts/`) są hostowane lokalnie. Bez WebGL okładka pokazuje statyczne tło.
 
@@ -35,6 +35,7 @@ Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tran
 | [`step7-weapons`](./step7-weapons) | **Uzbrojenie**: 5 broni o różnej mechanice (działko, rakiety z namierzaniem, torpedy Grot i Trójząb z głowicą, która gubi cel, torpeda z implozją), system **Ciepła** z kart ras, broń rasowa NPC |
 | [`step8-star-systems`](./step8-star-systems) | **Układy gwiezdne**: 5 układów (m.in. prawdziwa Gwiazda Teegardena, para z dyskiem akrecyjnym, nadolbrzym), dużo większe gwiazdy, proceduralne powierzchnie gwiazd (granulacja, plazma, protuberancje, rozbłyski) i planet, skok międzygwiezdny |
 | [`step9-missions`](./step9-missions) | **Misje, taktyczne AI i audio**: 7 scenariuszy (przechwycenie, blokada, odparcie 10 wrogów, eskorta handlowca, zasadzka, pościg, łowy watahy) z osobną **tablicą misji** po okładce, **wataha** skrzydłowych rasy gracza z rozkazami, nowy mózg NPC (ocena ryzyka/nagrody, role w eskadrze, uniki, odwrót zamiast samobójstwa), poziomy trudności, **warstwa audio** (muzyka generatywna, fałda z głosem każdej rasy, ostrzeżenia, powiadomienia, walka) |
+| [`step10-economy`](./step10-economy) | **Ekonomia**: pas planetoid (klasy C/S/M) przy każdym układzie, promień wydobywczy i ładownia, **stacje orbitalne** (magazyn, stacja przeładunkowa z rynkiem, dok roju), holowniki między stacjami, **roje autonomicznych dronów górniczych** lądujących na obracających się skałach, symulacja zaoczna innych układów, zapis w przeglądarce |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
 jak wygląda — nie tylko *co* robi.
@@ -60,6 +61,7 @@ shared/
 │   └── n-body.js          generyczny silnik grawitacji N-ciał (leapfrog)
 ├── data/
 │   ├── races.js            rasy, stronnictwa, relacje, statystyki (jedno miejsce do strojenia)
+│   ├── economy.js          metale, klasy planetoid, stacje, drony, rynek (krok 10)
 │   └── galaxy.js           znany wszechświat: 12 000 układów, domeny ras, rdzenie, koalicje
 └── systems/
     ├── triple-star-system.js   konkretny układ potrójny (masy, orbity, wizualizacja)
@@ -79,7 +81,11 @@ shared/
     ├── planet-surface.js       proceduralne planety i pierścienie (krok 8)
     ├── tactical-ai.js          mózg NPC: wybór celu, role eskadry, uniki, odwrót, temperament ras (krok 9)
     ├── wolfpack.js             wataha: skrzydłowi rasy gracza i rozkazy (krok 9)
-    └── missions.js             7 misji, zagłuszacze fałdy, cele i znaczniki (krok 9)
+    ├── missions.js             7 misji, zagłuszacze fałdy, cele i znaczniki (krok 9)
+    ├── asteroid-belt.js        pas planetoid: złoża, kształt, powierzchnia, ślady wydobycia (krok 10)
+    ├── economy.js              gospodarka: stacje, rynek, logistyka, roje dronów, zapis (krok 10)
+    ├── economy-visuals.js      stacje, drony, iskry, promień wydobywczy (krok 10)
+    └── economy-panel.js        panel przemysłu (krok 10)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
