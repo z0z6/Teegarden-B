@@ -9,6 +9,8 @@
  * Metoda: zwykły z-bufor z nadpróbkowaniem (SS×SS próbek na piksel, potem
  * uśrednienie = wygładzone krawędzie), płaskie cieniowanie per trójkąt
  * (światło główne + kontra + otoczenie) z kolorem i świeceniem materiału.
+ * Materiały przezroczyste (transparent + opacity < 1, np. powłoka Świetlistych)
+ * idą w drugim przebiegu: od najdalszych, mieszane z tym, co pod spodem.
  * Kadr: dziób w lewo-do-przodu, lekko z góry - ten sam dla każdego statku,
  * każdy wypełnia kadr tak samo (dopasowanie kuli otaczającej).
  */
@@ -33,7 +35,7 @@ export function renderThumbPNG(root, { bowAxis = '+Z', width = 200, height = 120
   root.updateMatrixWorld(true);
 
   // zebrane trójkąty w układzie świata (po obrocie)
-  const tris = []; // [ax,ay,az,bx,by,bz,cx,cy,cz, r,g,b(liniowe), er,eg,eb]
+  const tris = []; // [ax,ay,az,bx,by,bz,cx,cy,cz, r,g,b(liniowe), er,eg,eb, krycie]
   const box = new THREE.Box3();
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   root.traverse((o) => {
@@ -44,6 +46,7 @@ export function renderThumbPNG(root, { bowAxis = '+Z', width = 200, height = 120
     const mat = Array.isArray(o.material) ? o.material[0] : o.material;
     const col = mat?.color ?? new THREE.Color(0.6, 0.6, 0.6);
     const em = mat?.emissive ? mat.emissive.clone().multiplyScalar(mat.emissiveIntensity ?? 1) : new THREE.Color(0, 0, 0);
+    const alpha = mat?.transparent && (mat.opacity ?? 1) < 1 ? Math.max(0.05, mat.opacity) : 1;
     const n = idx ? idx.count : pos.count;
     for (let i = 0; i < n; i += 3) {
       const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
@@ -51,7 +54,7 @@ export function renderThumbPNG(root, { bowAxis = '+Z', width = 200, height = 120
       b.fromBufferAttribute(pos, i1).applyMatrix4(m);
       c.fromBufferAttribute(pos, i2).applyMatrix4(m);
       box.expandByPoint(a).expandByPoint(b).expandByPoint(c);
-      tris.push([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, col.r, col.g, col.b, em.r, em.g, em.b]);
+      tris.push([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, col.r, col.g, col.b, em.r, em.g, em.b, alpha]);
     }
   });
   if (!tris.length) throw new Error('miniatura: model nie ma trójkątów');
@@ -91,11 +94,20 @@ export function renderThumbPNG(root, { bowAxis = '+Z', width = 200, height = 120
 
   const zbuf = new Float32Array(W * H).fill(Infinity);
   const cbuf = new Float32Array(W * H * 3);
-  const cov = new Uint8Array(W * H);
+  const abuf = new Float32Array(W * H); // krycie próbki (kolor w cbuf jest przemnożony przez krycie)
   const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nrm = new THREE.Vector3(), toCam = new THREE.Vector3();
   const P = [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()];
 
-  for (const t of tris) {
+  // najpierw nieprzezroczyste (z-bufor), potem przezroczyste od najdalszych
+  const camPos = camera.position;
+  const depth = (t) => {
+    const x = (t[0] + t[3] + t[6]) / 3 - camPos.x, y = (t[1] + t[4] + t[7]) / 3 - camPos.y, z = (t[2] + t[5] + t[8]) / 3 - camPos.z;
+    return x * x + y * y + z * z;
+  };
+  const opaque = tris.filter((t) => t[15] >= 1);
+  const glassy = tris.filter((t) => t[15] < 1).sort((p, q) => depth(q) - depth(p));
+  for (const t of [...opaque, ...glassy]) {
+    const A = t[15];
     a.set(t[0], t[1], t[2]); b.set(t[3], t[4], t[5]); c.set(t[6], t[7], t[8]);
     // normalna ściany, zwrócona do kamery (rysujemy obie strony)
     nrm.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a));
@@ -137,9 +149,15 @@ export function renderThumbPNG(root, { bowAxis = '+Z', width = 200, height = 120
         const z = w0 * p0.z + w1 * p1.z + w2 * p2.z;
         const i = y * W + x;
         if (z >= zbuf[i]) continue;
-        zbuf[i] = z;
-        cov[i] = 1;
-        cbuf[i * 3] = r; cbuf[i * 3 + 1] = g; cbuf[i * 3 + 2] = bl;
+        if (A >= 1) {
+          zbuf[i] = z;
+          abuf[i] = 1;
+          cbuf[i * 3] = r; cbuf[i * 3 + 1] = g; cbuf[i * 3 + 2] = bl;
+        } else { // "over": przezroczysta warstwa nad tym, co już jest (bez zapisu z)
+          const k = 1 - A;
+          cbuf[i * 3] = r * A + cbuf[i * 3] * k; cbuf[i * 3 + 1] = g * A + cbuf[i * 3 + 1] * k; cbuf[i * 3 + 2] = bl * A + cbuf[i * 3 + 2] * k;
+          abuf[i] = A + abuf[i] * k;
+        }
       }
     }
   }
@@ -153,18 +171,18 @@ export function renderThumbPNG(root, { bowAxis = '+Z', width = 200, height = 120
   const n = ss * ss;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      let r = 0, g = 0, bl = 0, hit = 0;
+      let r = 0, g = 0, bl = 0, al = 0;
       for (let sy = 0; sy < ss; sy++) {
         for (let sx = 0; sx < ss; sx++) {
           const i = (y * ss + sy) * W + (x * ss + sx);
-          if (!cov[i]) continue;
-          hit++; r += cbuf[i * 3]; g += cbuf[i * 3 + 1]; bl += cbuf[i * 3 + 2];
+          if (!abuf[i]) continue;
+          al += abuf[i]; r += cbuf[i * 3]; g += cbuf[i * 3 + 1]; bl += cbuf[i * 3 + 2];
         }
       }
       const o = (y * width + x) * 4;
-      if (!hit) continue;
-      rgba[o] = tone(r / hit); rgba[o + 1] = tone(g / hit); rgba[o + 2] = tone(bl / hit);
-      rgba[o + 3] = Math.round((255 * hit) / n);
+      if (al <= 0) continue;
+      rgba[o] = tone(r / al); rgba[o + 1] = tone(g / al); rgba[o + 2] = tone(bl / al);
+      rgba[o + 3] = Math.round(Math.min(1, al / n) * 255);
     }
   }
   return encodePNG(rgba, width, height);
