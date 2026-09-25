@@ -28,6 +28,7 @@ import { createGameAudio } from '../shared/audio/game-audio.js';
 import { mountAudioControls } from '../shared/audio/audio-controls.js';
 import { createEconomy } from '../shared/systems/economy.js';
 import { createEconomyPanel } from '../shared/systems/economy-panel.js';
+import { createRaids } from '../shared/systems/raids.js';
 import { METALS, METAL_ORDER, PLAYER_MINING } from '../shared/data/economy.js';
 
 // ============================================================
@@ -801,7 +802,9 @@ const tactics = createTactics({
 const npcs = createNpcManager(scene, combat, playerProxy, {
   warp, weapons, tactics,
   // przeszkody do omijania: gwiazdy, planety, księżyce, planetoidy i gruz w pobliżu gracza
-  getObstacles: () => collectSolidBodies(starSystem, debrisField, shipGroup.position),
+  getObstacles: () => collectSolidBodies(starSystem, debrisField, shipGroup.position)
+    .concat(economy.solids()), // krok 10: NPC omijają też planetoidy pasa i stacje
+  getContacts: () => economy.contacts(), // krok 10: drony i stacje jako cele (rabusie)
 });
 const comms = createComms(document.getElementById('comms'));
 const labels = createTargetLabels(document.getElementById('targets'), camera);
@@ -1470,11 +1473,27 @@ const safeStorage = (() => {
 })();
 const economy = createEconomy({
   scene, storage: safeStorage, quality: QUALITY,
+  combat, getHostiles: () => npcs.hostiles(), // drony/stacje w walce, platformy strzelają do wrogów
   onEvent: (e) => dashboard.show(`eco-${e.key}`, {
     crew: CREW.quartermaster, urgency: e.urgency, ttl: e.urgency === 'info' ? 5500 : 7000, text: e.text,
   }),
 });
 economy.enterSystem(starSystem.id, starSystem.spawn);
+
+// RABUSIE (shared/systems/raids.js): zagrożenie rośnie z liczbą dronów i
+// obrotem; nalot w układzie gracza = ostrzeżenie, potem prawdziwe wrogie NPC
+// polujące na drony i stacje. W trakcie misji nalot czeka.
+const raids = createRaids({
+  economy, npcs, rng: Math.random,
+  canRaid: () => !missions.active && playerState.alive && !playerWarp.active,
+  systemName: (id) => SYSTEMS[id]?.name ?? id,
+  playerRaceId: () => playerState.raceId,
+  onEvent: (e) => dashboard.show(`raid-${e.key}`, {
+    crew: e.key.startsWith('raid-off') || e.key === 'raid-end' ? CREW.quartermaster : CREW.tactical,
+    urgency: e.urgency, ttl: e.ttl ?? 7000, text: e.text,
+  }),
+});
+economy.hooks.towerFire = (st, p) => gameAudio?.fire('pulse', p.clone(), 'ally');
 
 // ŚWIATŁO GWIAZDY NAD PASEM. Punktowe światła gwiazd gasną z kwadratem
 // odległości (patrz README kroku 4) i na dystansie pasa planetoid (dziesiątki
@@ -1508,7 +1527,7 @@ function shipAhead() {
 const holdCapacity = () => RACES[playerState.raceId].ship.cargo * PLAYER_MINING.holdPerCargo;
 
 const industryPanel = createEconomyPanel(document.getElementById('industry'), {
-  economy, getShip: shipAhead, getSystemName: () => starSystem.name,
+  economy, raids, getShip: shipAhead, getSystemName: () => starSystem.name,
 });
 
 const mining = { held: false, touch: false, last: null };
@@ -1543,6 +1562,7 @@ const ecoEls = {
   root: document.getElementById('eco-hud'), credits: document.getElementById('eco-credits'), income: document.getElementById('eco-income'),
   holdBar: document.getElementById('eco-hold-bar'), holdText: document.getElementById('eco-hold-text'),
   drones: document.getElementById('eco-drones'), prompt: document.getElementById('eco-prompt'),
+  raid: document.getElementById('eco-raid'), raidText: document.getElementById('eco-raid-text'), threat: document.getElementById('eco-threat'),
 };
 ecoEls.holdBar.innerHTML = METAL_ORDER.map((m) => `<i data-m="${m}" style="background:${METALS[m].color}"></i>`).join('');
 ecoEls.prompt.addEventListener('click', () => { if (ecoEls.prompt.dataset.act === 'unload') unloadNearby(); });
@@ -1556,6 +1576,7 @@ const fmtKr = (n) => Math.round(n).toLocaleString('pl-PL');
 function updateEconomy(delta) {
   updateStarlight();
   economy.update(delta, camera);
+  raids.update(delta);
   const alive = playerState.alive && !!flightProfile && !playerWarp.controlsLocked;
   const cap = holdCapacity();
   const sh = shipAhead();
@@ -1595,6 +1616,18 @@ function updateEconomy(delta) {
   ecoEls.prompt.dataset.act = act;
   ecoEls.prompt.hidden = !prompt;
   ecoEls.root.classList.toggle('mining', !!mining.last && !mining.last.full);
+
+  // nalot: pasek zagrożenia, a w trakcie - stan walki
+  const r = raids.status;
+  const threat = raids.threat();
+  ecoEls.raid.dataset.phase = r ? r.phase : threat > 0.66 ? 'high' : 'calm';
+  ecoEls.raid.hidden = !r && !economy.stations().length;
+  ecoEls.threat.style.width = `${Math.round((r ? 1 : threat) * 100)}%`;
+  ecoEls.raidText.textContent = !r
+    ? `Zagrożenie nalotem: ${Math.round(threat * 100)}%`
+    : r.phase === 'warning'
+      ? `NALOT za ${Math.ceil(r.t)} s · ${r.n} rabusiów`
+      : `NALOT: ${r.alive}/${r.n} rabusiów · zestrzeleni ${r.kills} · stracone drony ${r.dronesLost}${r.stolen > 0.5 ? ` · zrabowano ${Math.round(r.stolen)} t` : ''}`;
 }
 
 // ============================================================
@@ -1664,7 +1697,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     get starSystem() { return starSystem; }, jumpToSystem, swapSystem, camera, renderer, scene, warpParade,
     get speed() { return shipState.speed; },
     audio: getAudio(), gameAudio, goToBoard, replayMission, boardUrl, respawn, killPlayer, damagePlayer, engageWarp,
-    economy, industryPanel, mining, holdCapacity, unloadNearby, shipAhead,
+    economy, industryPanel, mining, holdCapacity, unloadNearby, shipAhead, raids,
   };
 }
 

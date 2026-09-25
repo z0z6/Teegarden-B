@@ -17,7 +17,7 @@ const fmtDist = (d) => (d >= 1000 ? `${(d / 1000).toFixed(1)} tys. j.` : `${Math
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sum = (o) => METAL_ORDER.reduce((a, m) => a + (o[m] || 0), 0);
 
-export function createEconomyPanel(root, { economy, getShip, getSystemName, onClose }) {
+export function createEconomyPanel(root, { economy, raids = null, getShip, getSystemName, onClose }) {
   let builtVersion = -1;
   let open = false;
   let confirmReset = 0;
@@ -48,7 +48,7 @@ export function createEconomyPanel(root, { economy, getShip, getSystemName, onCl
       return `<div class="ip-card" style="--ac:${d.accent}">
         <div class="ip-card-h"><b>${d.name}</b><span class="ip-tag">${d.short}</span></div>
         <p>${d.role}</p>
-        <div class="ip-cost">${costText(d.cost)} · montaż ${d.buildTime} s${d.capacity ? ` · ${fmt(d.capacity)} t` : ''}</div>
+        <div class="ip-cost">${costText(d.cost)} · montaż ${d.buildTime} s${d.capacity ? ` · ${fmt(d.capacity)} t` : ''} · kadłub ${fmt(d.hull)}</div>
         <button class="ip-btn" data-act="place" data-type="${type}">Postaw przed dziobem</button>
         <div class="ip-why" data-live="why-${type}"></div>
       </div>`;
@@ -59,7 +59,8 @@ export function createEconomyPanel(root, { economy, getShip, getSystemName, onCl
       const own = swarms.filter((w) => w.home === st.id);
       return `<div class="ip-card ip-st" style="--ac:${d.accent}">
         <div class="ip-card-h"><b>${esc(st.name)}</b><span class="ip-tag" data-live="st-${st.id}-status"></span></div>
-        ${metalBar(st.storage, d.capacity, `st-${st.id}`)}
+        ${d.capacity ? metalBar(st.storage, d.capacity, `st-${st.id}`) : ''}
+        <span class="ip-hull"><i data-live="st-${st.id}-hull"></i></span>
         <div class="ip-sub" data-live="st-${st.id}-sub"></div>
         ${st.type === 'dok' && st.status === 'gotowa' ? `
           <div class="ip-sub">${own.length ? own.map((w) => esc(w.name)).join(', ') : 'brak rojów'} · limit ${STATIONS.dok.droneSlots} dronów</div>
@@ -88,6 +89,7 @@ export function createEconomyPanel(root, { economy, getShip, getSystemName, onCl
           <button class="ip-btn" data-act="drones" data-sw="${w.id}" data-n="5">+5</button>
           <button class="ip-btn ghost" data-act="scrap" data-sw="${w.id}">−1</button>
           <button class="ip-btn ghost" data-act="mode" data-sw="${w.id}">${w.mode === 'wydobycie' ? 'Do doku' : 'Wydobycie'}</button>
+          <button class="ip-btn ghost ${w.evac !== false ? 'on' : ''}" data-act="evac" data-sw="${w.id}" title="Przy alarmie nalotu drony wracają do doku (w doku nie da się ich trafić). Kosztuje przestój, ratuje drony.">Ewakuacja: ${w.evac !== false ? 'tak' : 'nie'}</button>
           <button class="ip-btn ghost danger" data-act="disband" data-sw="${w.id}" title="Rozbiera drony (połowa metalu wraca do doku)">Rozwiąż</button>
         </div>
       </div>`;
@@ -97,6 +99,7 @@ export function createEconomyPanel(root, { economy, getShip, getSystemName, onCl
       <div class="ip-head">
         <div><div class="ip-kicker">Przemysł · ${esc(getSystemName())}</div><div class="ip-credits"><span data-live="credits"></span> <small>kr</small></div></div>
         <div class="ip-income" data-live="income"></div>
+        <div class="ip-raid" data-live="raid"></div>
         <button class="ip-close" data-act="close" aria-label="Zamknij">×</button>
       </div>
       <div class="ip-market">${market}</div>
@@ -127,6 +130,10 @@ export function createEconomyPanel(root, { economy, getShip, getSystemName, onCl
       const w = economy.swarms().find((x) => x.id === b.dataset.sw);
       economy.setSwarm(w.id, { mode: w.mode === 'wydobycie' ? 'powrot' : 'wydobycie' });
     } else if (act === 'disband') economy.disbandSwarm(b.dataset.sw);
+    else if (act === 'evac') {
+      const w = economy.swarms().find((x) => x.id === b.dataset.sw);
+      economy.setSwarm(w.id, { evac: w.evac === false });
+    }
     else if (act === 'reset') {
       if (confirmReset > 0) { economy.reset(); confirmReset = 0; } else { confirmReset = 4; refresh(); }
     }
@@ -167,24 +174,40 @@ export function createEconomyPanel(root, { economy, getShip, getSystemName, onCl
     for (const st of economy.stations()) {
       const d = STATIONS[st.type];
       const need = sum(st.need);
-      set(`st-${st.id}-status`, st.status === 'gotowa' ? d.short : need > 0 ? 'plac budowy' : `montaż ${Math.round(st.progress * 100)}%`);
+      set(`st-${st.id}-status`, st.status !== 'gotowa' ? (need > 0 ? 'plac budowy' : `montaż ${Math.round(st.progress * 100)}%`)
+        : st.immune > 0 ? (st.type === 'wieza' ? 'wyłączona' : 'splądrowana') : d.short);
+      const hullEl = root.querySelector(`[data-live="st-${st.id}-hull"]`);
+      if (hullEl) {
+        const h = (st.hull ?? d.hull) / d.hull;
+        hullEl.style.width = `${Math.max(0, h * 100).toFixed(0)}%`;
+        hullEl.parentElement.classList.toggle('low', h < 0.4);
+        hullEl.parentElement.hidden = st.status !== 'gotowa' || h > 0.999;
+      }
       for (const m of METAL_ORDER) width(`st-${st.id}-${m}`, (st.storage[m] / d.capacity) * 100);
       let sub = `${fmt(sum(st.storage))} / ${fmt(d.capacity)} t`;
       if (st.status === 'budowa' && need > 0) sub = `brakuje: ${METAL_ORDER.filter((m) => st.need[m] > 0.5).map((m) => `${fmt(st.need[m])} t ${METALS[m].symbol}`).join(', ')}`;
       else if (st.type === 'dok' && st.queue.length) sub += ` · w produkcji ${st.queue.length} ${st.buildT > 0 ? `(${st.buildT.toFixed(1)} s)` : '(czeka na metal)'}`;
       else if (st.type === 'przeladunek' && sum(st.storage) > 0.5) sub += ' · wysyłka trwa';
+      if (st.type === 'wieza') sub = st.status === 'gotowa' ? `zasięg ${fmt(d.range)} j. · kadłub ${Math.round((st.hull ?? d.hull) / d.hull * 100)}%${st.immune > 0 ? ` · wraca za ${Math.ceil(st.immune)} s` : ''}` : sub;
+      else if (st.status === 'gotowa' && (st.hull ?? d.hull) < d.hull * 0.999) sub += ` · kadłub ${Math.round(st.hull / d.hull * 100)}%`;
       set(`st-${st.id}-sub`, sub);
     }
     const rt = economy.runtime;
     for (const w of economy.swarms()) {
-      const c = { wiercenie: 0, lot: 0, powrot: 0, czeka: 0, dok: 0 };
+      const c = { wiercenie: 0, lot: 0, powrot: 0, czeka: 0, dok: 0, ewakuacja: 0 };
       for (const d of rt?.drones ?? []) if (d.swarm === w) c[d.state === 'ladowanie' ? 'lot' : d.state === 'rozladunek' ? 'powrot' : d.state]++;
       const queued = economy.stations().find((s) => s.id === w.home)?.queue.filter((x) => x === w.id).length ?? 0;
       set(`sw-${w.id}-n`, `${w.drones} dronów${queued ? ` (+${queued} w budowie)` : ''}`);
-      set(`sw-${w.id}-states`, `wierci ${c.wiercenie} · leci ${c.lot} · wraca ${c.powrot}${c.czeka ? ` · czeka ${c.czeka}` : ''} · w doku ${c.dok}`);
+      set(`sw-${w.id}-states`, `wierci ${c.wiercenie} · leci ${c.lot} · wraca ${c.powrot}${c.czeka ? ` · czeka ${c.czeka}` : ''}${c.ewakuacja ? ` · ewakuacja ${c.ewakuacja}` : ''} · w doku ${c.dok}`);
     }
     const st = s.stats;
-    set('stats', `Wydobyto: ${fmt(st.minedPlayer)} t ręcznie, ${fmt(st.minedDrones)} t dronami · sprzedano ${fmt(sum(st.sold))} t za ${fmt(st.earned)} kr · zbudowano ${st.dronesBuilt} dronów${s.offlineDrones ? ` · ${s.offlineDrones} dronów pracuje w innych układach` : ''}`);
+    set('stats', `Wydobyto: ${fmt(st.minedPlayer)} t ręcznie, ${fmt(st.minedDrones)} t dronami · sprzedano ${fmt(sum(st.sold))} t za ${fmt(st.earned)} kr · zbudowano ${st.dronesBuilt} dronów${s.offlineDrones ? ` · ${s.offlineDrones} dronów pracuje w innych układach` : ''}`
+      + (st.raids ? ` · naloty: ${st.raids}, stracone drony ${st.dronesLost}, zrabowano ${fmt(st.stolen)} t, zestrzeleni rabusie ${st.raidersKilled} (+${fmt(st.bounty)} kr)` : ''));
+    const r = raids?.status;
+    set('raid', r ? (r.phase === 'warning' ? `NALOT za ${Math.ceil(r.t)} s` : `NALOT: ${r.alive}/${r.n} rabusiów`)
+      : raids && economy.stations().length ? `zagrożenie nalotem ${Math.round(raids.threat() * 100)}%` : '');
+    const raidEl = root.querySelector('[data-live="raid"]');
+    if (raidEl) raidEl.classList.toggle('hot', !!r);
     if (confirmReset > 0) confirmReset -= 1;
     set('reset', confirmReset > 0 ? 'Na pewno? Kliknij jeszcze raz' : 'Nowa gra ekonomiczna');
   }

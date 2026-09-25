@@ -48,6 +48,10 @@ import { resolveCollisions } from './collision.js';
  * "żelazna zasada" - od teraz dotyczy też NPC). Wrogowie mogą też atakować
  * sojuszników i eskortowane statki, nie tylko gracza.
  * Bez `tactics` wszystko działa jak w krokach 5-8.
+ *
+ * DODATKOWE KONTAKTY (opcjonalnie, od kroku 10): `getContacts()` zwraca cele
+ * spoza listy NPC w tym samym formacie co npc.contact (drony, stacje) -
+ * rabusie mogą na nie polować. Pociski trafiają je jako aktorzy combat.js.
  */
 
 const CALLSIGNS = ['Iskra', 'Wrona', 'Kwant', 'Mgła', 'Kolec', 'Zegar', 'Bursztyn', 'Cień', 'Lis', 'Otchłań'];
@@ -79,7 +83,7 @@ function getBeaconTexture() {
  * @param {ReturnType<import('./combat.js').createCombat>} combat
  * @param {object} player - { position, quaternion, getVelocity(out), isAlive() }
  */
-export function createNpcManager(scene, combat, player, { warp = null, weapons = null, tactics = null, getObstacles = null } = {}) {
+export function createNpcManager(scene, combat, player, { warp = null, weapons = null, tactics = null, getObstacles = null, getContacts = null } = {}) {
   const list = [];
   const listeners = { killed: [], left: [], retreat: [], disabled: [], hit: [] };
   const emit = (t, p) => listeners[t].forEach((fn) => fn(p));
@@ -544,6 +548,9 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
       n.forward.set(0, 0, -1).applyQuaternion(n.group.quaternion);
       if (n.alive && !n.hidden && !n.stealth && !n.arriving) world.contacts.push(n.contact);
     }
+    // krok 10: cele spoza listy NPC (drony górnicze, stacje) - widzą je mózgi
+    // wrogów; bez `getContacts` wszystko jak w krokach 5-9
+    if (getContacts) for (const c of getContacts()) world.contacts.push(c);
     world.time = tactics?.time ?? 0;
   }
 

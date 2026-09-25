@@ -217,7 +217,106 @@ console.log('\n7. Imperium pracuje zaocznie');
 }
 
 // ------------------------------------------------------------
-console.log('\n8. Nowa gra');
+console.log('\n8. Rabusie');
+{
+  // prawdziwa walka: combat + weapons + taktyczne AI + NPC; modele .glb się nie
+  // wczytują (Node) - NPC mają promień domyślny, jak w grze zanim model dojdzie
+  const ctx2d = new Proxy({}, { get: (t, k) => (k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {}) });
+  globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => ctx2d, style: {} }) };
+  globalThis.window ??= { innerWidth: 1280, innerHeight: 720 };
+  const origErr = console.error;
+  console.error = (...a) => { if (String(a[0]).includes('NPC: nie udało się wczytać modelu')) return; origErr(...a); };
+  const { createCombat } = await import('../shared/systems/combat.js');
+  const { createWeapons } = await import('../shared/systems/weapons.js');
+  const { createNpcManager } = await import('../shared/systems/npc-ships.js');
+  const { createTactics } = await import('../shared/systems/tactical-ai.js');
+  const { createRaids } = await import('../shared/systems/raids.js');
+  const { RAIDS } = await import('../shared/data/economy.js');
+
+  function world(storageKey) {
+    memory.delete('teegarden-b.ekonomia.v1');
+    const scene = new THREE.Scene();
+    const combat = createCombat(scene);
+    const weapons = createWeapons({ scene, combat, camera: new THREE.PerspectiveCamera() });
+    const tactics = createTactics({ combat, rng: seededRng(3) });
+    const ship = new THREE.Object3D(); ship.position.set(0, 90000, 0); // gracz daleko: bronią się same stacje
+    const player = { position: ship.position, quaternion: ship.quaternion, getVelocity: (o) => o.set(0, 0, 0), isAlive: () => true };
+    let eco = null;
+    const npcs = createNpcManager(scene, combat, player, { weapons, tactics, getContacts: () => eco.contacts() });
+    eco = createEconomy({ scene, storage, random: seededRng(11), combat, getHostiles: () => npcs.hostiles() });
+    const log = [];
+    const raids = createRaids({ economy: eco, npcs, rng: seededRng(5), onEvent: (e) => log.push(e) });
+    eco.enterSystem('teegarden', spawn);
+    const c = eco.state.systems.teegarden.beltCenter;
+    const C = new THREE.Vector3(c.x, c.y + 1300, c.z);
+    eco.state.credits = 1e5;
+    const ready = (st) => { for (const m of METAL_ORDER) st.need[m] = 0; st.progress = 1; st.status = 'gotowa'; };
+    const mag = eco.placeStation('magazyn', C); ready(mag);
+    const dok = eco.placeStation('dok', C.clone().add(new THREE.Vector3(900, 0, 0))); ready(dok);
+    Object.assign(mag.storage, { zelazo: 1500, nikiel: 500, kobalt: 100, platyna: 0 });
+    const sw = eco.createSwarm(dok.id);
+    eco.orderDrones(sw.id, 14);
+    const step = (sec, each) => { for (let t = 0; t < sec; t += 1 / 30) { npcs.update(1 / 30); combat.update(1 / 30); weapons.update(1 / 30); eco.update(1 / 30); raids.update(1 / 30); each?.(t); } };
+    step(14 * DRONE.buildTime + 40);
+    return { eco, npcs, raids, sw, dok, mag, C, log, step, ready };
+  }
+
+  // A) bez ewakuacji, bez obrony: rabusie niszczą drony
+  {
+    const W = world();
+    ok(W.sw.drones === 14 && W.eco.runtime.drones.filter((d) => d.state !== 'dok').length > 8, `rój pracuje (${W.sw.drones} dronów w polu)`);
+    W.eco.setSwarm(W.sw.id, { evac: false });
+    const threat0 = W.raids.threat();
+    W.raids.trigger();
+    W.step(1);
+    ok(W.raids.status?.phase === 'warning' && W.eco.alert, `alarm: ${W.log.at(-1)?.text}`);
+    W.step(RAIDS.warning + 1);
+    const st = W.raids.status;
+    ok(st?.phase === 'active' && W.npcs.byTag('raider').length === st.n, `rabusie z fałdy: ${st?.n} statków`);
+    const lost0 = W.eco.state.stats.dronesLost;
+    let maxAlive = 0;
+    W.step(RAIDS.maxTime + 40, () => { maxAlive = Math.max(maxAlive, W.raids.status?.alive ?? 0); });
+    const lost = W.eco.state.stats.dronesLost - lost0;
+    ok(lost > 0, `bez ewakuacji i obrony rabusie zniszczyli ${lost} dronów (zostało ${W.sw.drones})`);
+    ok(W.raids.status === null && !W.eco.alert, 'nalot zakończony, alarm zdjęty');
+    ok(W.log.some((e) => e.key === 'raid-end'), `raport: ${W.log.find((e) => e.key === 'raid-end')?.text}`);
+    ok(threat0 < 1 && W.eco.state.raids.teegarden.cooldown > 0, `po nalocie przerwa (${Math.round(W.eco.state.raids.teegarden.cooldown)} s)`);
+    W.eco.dispose();
+  }
+
+  // B) ewakuacja + platforma obronna
+  {
+    const W = world();
+    const tower = W.eco.placeStation('wieza', W.C.clone().add(new THREE.Vector3(450, 0, 500)));
+    ok(!!tower, 'plac platformy obronnej');
+    W.ready(tower);
+    W.raids.trigger();
+    W.step(RAIDS.warning - 1);
+    const out = W.eco.runtime.drones.filter((d) => d.state !== 'dok').length;
+    ok(out <= 2, `ewakuacja przed wejściem rabusiów: w polu ${out}/${W.eco.runtime.drones.length} dronów`);
+    const lost0 = W.eco.state.stats.dronesLost, cr0 = W.eco.state.credits, k0 = W.eco.state.stats.raidersKilled;
+    W.step(RAIDS.maxTime + 40);
+    const kills = W.eco.state.stats.raidersKilled - k0;
+    ok(kills >= 1, `platforma zestrzeliła ${kills} rabusiów`);
+    ok(W.eco.state.credits >= cr0 + kills * RAIDS.bounty - 1, `nagroda kupców: +${Math.round(W.eco.state.credits - cr0)} kr`);
+    ok(W.eco.state.stats.dronesLost - lost0 <= 2, `drony schowane w doku przeżyły (strata ${W.eco.state.stats.dronesLost - lost0})`);
+    W.step(20);
+    ok(W.eco.runtime.drones.some((d) => d.state !== 'dok'), 'po nalocie roje wracają do pracy');
+    console.log(`       ${W.log.find((e) => e.key === 'raid-end')?.text}`);
+
+    // C) nalot zaoczny: gracz w innym układzie
+    W.eco.enterSystem('potrojny', { position: new THREE.Vector3(0, 5000, 90000), lookAt: new THREE.Vector3() });
+    W.raids.trigger('teegarden');
+    W.step(1);
+    const off = W.log.find((e) => e.key === 'raid-off-teegarden');
+    ok(!!off, `nalot zaoczny rozstrzygnięty: ${off?.text}`);
+    W.eco.dispose();
+  }
+  console.error = origErr;
+}
+
+// ------------------------------------------------------------
+console.log('\n9. Nowa gra');
 eco.reset();
 ok(eco.state.credits === freshState().credits && eco.stations().length === 0, 'reset: czysty stan, pas odnowiony');
 

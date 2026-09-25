@@ -696,6 +696,21 @@
     .eh-prompt[data-act="unload"] { cursor: pointer; color: #cffbe8; background: rgba(77, 214, 160, 0.14); border-color: rgba(77, 214, 160, 0.45); }
     .eh-prompt[hidden] { display: none; }
     @media (max-width: 1180px) { #eco-hud { bottom: 104px; } }
+    /* nalot: spokojnie - cienki pasek zagrożenia; ostrzeżenie i walka - czerwony alarm */
+    .eh-raid { margin-top: 7px; font-size: 10.5px; color: var(--ink-dim); }
+    .eh-raid[hidden] { display: none; }
+    .eh-threat { display: block; height: 3px; margin-top: 3px; background: rgba(255, 255, 255, 0.08); border-radius: 99px; overflow: hidden; }
+    .eh-threat i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffb13d, var(--foe)); border-radius: 99px; transition: width 0.4s; }
+    .eh-raid[data-phase="high"] { color: #ffc9a6; }
+    .eh-raid[data-phase="warning"], .eh-raid[data-phase="active"] {
+      margin: 8px -6px -4px; padding: 6px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; letter-spacing: 0.02em;
+      color: #ffe1dc; background: rgba(255, 77, 77, 0.18); border: 1px solid rgba(255, 90, 77, 0.55);
+      animation: raid-pulse 1s ease-in-out infinite;
+    }
+    .eh-raid[data-phase="warning"] .eh-threat, .eh-raid[data-phase="active"] .eh-threat { display: none; }
+    #eco-hud:has(.eh-raid[data-phase="active"]), #eco-hud:has(.eh-raid[data-phase="warning"]) { border-top-color: var(--foe); }
+    @keyframes raid-pulse { 50% { box-shadow: 0 0 16px rgba(255, 77, 77, 0.5); } }
+    @media (prefers-reduced-motion: reduce) { .eh-raid { animation: none !important; } }
 
     #industry {
       position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0.97);
@@ -744,6 +759,13 @@
     .ip-bar { display: flex; height: 7px; margin: 5px 0 5px; background: rgba(159, 216, 255, 0.08); border-radius: 99px; overflow: hidden; }
     .ip-bar i { display: block; height: 100%; width: 0; transition: width 0.3s; }
     .ip-states { margin: 4px 0 6px; font-size: 11.5px; color: var(--hud); }
+    .ip-hull { display: block; height: 4px; margin: 2px 0 5px; background: rgba(255, 255, 255, 0.07); border-radius: 99px; overflow: hidden; }
+    .ip-hull[hidden] { display: none; }
+    .ip-hull i { display: block; height: 100%; background: var(--friend); border-radius: 99px; transition: width 0.3s; }
+    .ip-hull.low i { background: var(--foe); }
+    .ip-btn.ghost.on { color: #e6c3ff; border-color: rgba(230, 195, 255, 0.45); }
+    .ip-raid { padding-bottom: 5px; font-size: 11.5px; font-weight: 600; color: var(--ink-dim); }
+    .ip-raid.hot { color: #ffe1dc; padding: 4px 10px; margin-bottom: 2px; border-radius: 99px; background: rgba(255, 77, 77, 0.2); border: 1px solid rgba(255, 90, 77, 0.55); }
     .ip-sw label { display: grid; grid-template-columns: 76px 1fr; align-items: center; gap: 6px; margin: 4px 0; font-size: 11.5px; color: var(--ink-dim); }
     .ip-sw select {
       min-width: 0; font: 600 11.5px var(--body); color: var(--ink); background: rgba(4, 10, 18, 0.85);
@@ -862,6 +884,7 @@
     <div class="eh-bar" id="eco-hold-bar"></div>
     <div class="eh-drones" id="eco-drones"></div>
     <button class="eh-prompt" id="eco-prompt" type="button" hidden></button>
+    <div class="eh-raid" id="eco-raid" hidden><span id="eco-raid-text"></span><span class="eh-threat"><i id="eco-threat"></i></span></div>
   </div>
   <div id="industry" role="dialog" aria-label="Panel przemysłu"></div>
 

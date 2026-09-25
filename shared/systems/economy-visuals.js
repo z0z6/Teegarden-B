@@ -59,7 +59,7 @@ const lightMat = (hex) => new THREE.MeshBasicMaterial({ color: hex, toneMapped: 
 
 /**
  * Buduje model stacji danego typu.
- * @returns {{ group, parts, spinners, beacons, ghost, accent }}
+ * @returns {{ group, parts, spinners, beacons, ghost, accent, turret, muzzles }}
  */
 export function buildStationModel(type, accentHex) {
   const accent = new THREE.Color(accentHex);
@@ -67,6 +67,8 @@ export function buildStationModel(type, accentHex) {
   const parts = [];      // kolejność "montażu" przy budowie
   const spinners = [];   // { obj, axis, speed }
   const beacons = [];    // światła pozycyjne (mrugają)
+  let turret = null;     // głowica platformy obronnej
+  const muzzles = [];    // wyloty luf (lokalnie w głowicy)
   const H = hullMat(), D = darkMat();
   const A = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.9, metalness: 0.2, roughness: 0.5 });
   const add = (mesh, parent = group) => { parent.add(mesh); parts.push(mesh); return mesh; };
@@ -119,6 +121,28 @@ export function buildStationModel(type, accentHex) {
     }
     add(mesh(new THREE.BoxGeometry(6, 70, 6), D, 0, 40, 0));
     beacon(0, 78, 0, 0xffffff);
+  } else if (type === 'wieza') {
+    // platforma obronna: sześciokątna podstawa, pylon, obrotowa głowica z
+    // podwójnym działem (lufy wzdłuż +Z - głowicę obraca lookAt na cel)
+    add(mesh(new THREE.CylinderGeometry(70, 80, 16, 6), D));
+    add(mesh(new THREE.CylinderGeometry(76, 76, 3, 6, 1, true), A, 0, 9, 0)).userData.noScale = true; // świecąca krawędź, nie cała płyta
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const leg = add(mesh(new THREE.BoxGeometry(10, 70, 10), D, Math.cos(a) * 55, -40, Math.sin(a) * 55));
+      leg.rotation.z = Math.cos(a) * 0.35; leg.rotation.x = -Math.sin(a) * 0.35;
+    }
+    add(mesh(new THREE.CylinderGeometry(18, 24, 40, 12), H, 0, 28, 0));
+    turret = new THREE.Group(); turret.position.set(0, 58, 0); group.add(turret);
+    add(mesh(new THREE.SphereGeometry(26, 16, 10, 0, Math.PI * 2, 0, Math.PI / 1.6), H), turret);
+    add(mesh(new THREE.BoxGeometry(46, 16, 34), D, 0, 4, 2), turret);
+    for (const x of [-11, 11]) {
+      const barrel = add(mesh(new THREE.CylinderGeometry(3.4, 4.2, 70, 10), H, x, 6, 40), turret);
+      barrel.rotation.x = Math.PI / 2;
+      add(mesh(new THREE.CylinderGeometry(4.8, 4.8, 8, 10), A, x, 6, 74), turret).rotation.x = Math.PI / 2;
+      muzzles.push(new THREE.Vector3(x, 6, 80));
+    }
+    beacon(0, 86, -6, 0xff5a4d, turret);
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; beacon(Math.cos(a) * 74, 12, Math.sin(a) * 74, accentHex, group, i * 0.4); }
   } else {
     // przeładunek: kratownica, kontenery, obrotowa suwnica, lądowisko frachtowców
     add(mesh(new THREE.BoxGeometry(300, 12, 12), D));
@@ -157,12 +181,12 @@ export function buildStationModel(type, accentHex) {
     p.updateMatrix();
     g.matrixAutoUpdate = false;
     g.matrix.copy(p.matrix);
-    if (p.parent !== group) g.matrix.premultiply(p.parent.matrix);
+    if (p.parent !== group) { p.parent.updateMatrix(); g.matrix.premultiply(p.parent.matrix); }
     ghost.add(g);
   }
   group.add(ghost);
   for (const p of parts) { p.userData.baseScale = p.scale.clone(); }
-  return { group, parts, spinners, beacons, ghost, accent };
+  return { group, parts, spinners, beacons, ghost, accent, turret, muzzles };
 }
 
 /** Postęp budowy 0..1: części "dojeżdżają" po kolei, siatka gaśnie. */
@@ -208,6 +232,7 @@ export const DRONE_STATE_COLOR = {
   powrot: new THREE.Color('#4dd6a0'),     // wraca z urobkiem
   rozladunek: new THREE.Color('#4dd6a0'),
   czeka: new THREE.Color('#ff5a4d'),      // brak miejsca w stacjach
+  ewakuacja: new THREE.Color('#e6c3ff'),  // alarm: ucieczka do doku
 };
 
 export function createDroneRenderer(scene, max = 600) {

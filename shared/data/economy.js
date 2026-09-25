@@ -57,22 +57,28 @@ export const STATIONS = {
   magazyn: {
     name: 'Magazyn', short: 'MAG', accent: '#ffb45c',
     role: 'Składuje metal. Z magazynów i doków holowniki same zaopatrują budowy i produkcję dronów.',
-    cost: { credits: 300, zelazo: 40 }, buildTime: 20, capacity: 2000, radius: 120,
+    cost: { credits: 300, zelazo: 40 }, buildTime: 20, capacity: 2000, radius: 120, hull: 600,
   },
   przeladunek: {
     name: 'Stacja przeładunkowa', short: 'PRZ', accent: '#4dd6a0',
     role: 'Skupuje metal i wysyła go frachtowcami poza układ. Sprzedaż po kursie rynkowym.',
-    cost: { credits: 500, zelazo: 90, nikiel: 20 }, buildTime: 30, capacity: 500, radius: 150,
+    cost: { credits: 500, zelazo: 90, nikiel: 20 }, buildTime: 30, capacity: 500, radius: 150, hull: 500,
     throughput: 5, // t/s wysyłki (sprzedaży) z bufora stacji
   },
   dok: {
     name: 'Dok roju', short: 'DOK', accent: '#9fd8ff',
     role: 'Orbitalna stocznia dronów górniczych i baza rojów. Drony budowane z metalu w układzie.',
-    cost: { credits: 900, zelazo: 140, nikiel: 45, kobalt: 6 }, buildTime: 40, capacity: 400, radius: 140,
+    cost: { credits: 900, zelazo: 140, nikiel: 45, kobalt: 6 }, buildTime: 40, capacity: 400, radius: 140, hull: 800,
     droneSlots: 48, // tyle dronów może mieć baza w jednym doku
   },
+  wieza: {
+    name: 'Platforma obronna', short: 'OBR', accent: '#ff7a45',
+    role: 'Podwójne działo na obrotowej wieży. Sama strzela do wrogów w zasięgu 2200 j.; stacje i drony w pobliżu są bezpieczniejsze.',
+    cost: { credits: 700, zelazo: 110, nikiel: 35, kobalt: 12 }, buildTime: 35, capacity: 0, radius: 90, hull: 900,
+    range: 2200, fireEvery: 0.32, damage: 13, boltSpeed: 1500,
+  },
 };
-export const STATION_ORDER = ['magazyn', 'przeladunek', 'dok'];
+export const STATION_ORDER = ['magazyn', 'przeladunek', 'dok', 'wieza'];
 
 /** Autonomiczny dron górniczy: ląduje na powierzchni, wierci, wraca z urobkiem. */
 export const DRONE = {
@@ -85,6 +91,30 @@ export const DRONE = {
   mineRate: 0.8,    // t/s wiercenia na powierzchni
   unloadTime: 1.5,  // s rozładunku w stacji
   hover: 5,         // j. nad powierzchnią w trakcie wiercenia
+  hull: 30,         // 2-3 trafienia z działka rabusia
+};
+
+/**
+ * RABUSIE (nalot na kopalnię). Zagrożenie rośnie z tym, co widać z daleka:
+ * liczbą dronów i obrotem stacji przeładunkowej. Gdy dojdzie do 1, najpierw
+ * jest ostrzeżenie (czas na ewakuację rojów), potem rabusie wychodzą z fałdy
+ * na skraju pasa i polują na drony, a stacje łupią.
+ */
+export const RAIDS = {
+  base: 0.0012,          // /s zagrożenia, gdy w układzie stoi choć jedna stacja
+  perDrone: 0.00028,     // /s za każdego drona
+  perKrMin: 0.0000012,   // /s za każdy kr/min przychodu
+  cooldown: 240,         // s spokoju po nalocie
+  warning: 15,           // s od ostrzeżenia do wyjścia rabusiów z fałdy
+  maxTime: 180,          // s - potem rabusie odlatują z tym, co mają
+  minRaiders: 2, maxRaiders: 6,
+  raiderHull: 120,
+  lootDrones: 10,        // tylu zniszczonych dronów = rabusie mają dość i odlatują
+  lootTons: 300,         // albo tyle ton zrabowanego metalu
+  stationLoot: 0.4,      // część zapasów stacji zrabowana, gdy jej kadłub spadnie do zera
+  stationImmune: 25,     // s po splądrowaniu (stacja nie jest już celem)
+  bounty: 250,           // kr za zniszczonego rabusia (nagroda kupców)
+  towerKills: 2,         // ilu rabusiów "zatrzymuje" jedna platforma w symulacji zaocznej
 };
 
 /** Statek gracza. */

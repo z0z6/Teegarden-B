@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  METALS, METAL_ORDER, STATIONS, DRONE, PLAYER_MINING, MARKET, LOGISTICS, START, SWARM_NAMES, BELT, ASTEROID_CLASSES,
+  METALS, METAL_ORDER, STATIONS, DRONE, PLAYER_MINING, MARKET, LOGISTICS, START, SWARM_NAMES, BELT, ASTEROID_CLASSES, RAIDS,
 } from '../data/economy.js';
 import {
   generateBelt, createAsteroidBelt, surfacePoint, markMined, markDepleted, remaining, hashString,
@@ -31,6 +31,14 @@ import {
  * reszta to przeloty), a logistyka, sprzedaż, budowy i produkcja dronów idą tą
  * samą ścieżką kodu co w bieżącym układzie. Imperium pracuje, gdy gracz
  * lata gdzie indziej.
+ *
+ * WALKA (opcjonalnie, `combat` + `getHostiles`): drony i gotowe stacje są
+ * aktorami combat.js (pociski wroga je trafiają) i kontaktami dla mózgów NPC
+ * (contacts() -> npc-ships `getContacts`), więc rabusie (raids.js) mogą na nie
+ * polować. Dron ma 30 pkt kadłuba; stacji się nie niszczy, tylko łupi: gdy
+ * kadłub spadnie do zera, rabusie zabierają część zapasów, a stacja na chwilę
+ * przestaje być celem. Platforma obronna sama strzela do wrogów w zasięgu.
+ * Alarm (setAlert) wysyła roje z włączoną ewakuacją do doków.
  */
 
 const SAVE_KEY = 'teegarden-b.ekonomia.v1';
@@ -49,7 +57,11 @@ export function freshState() {
     market: Object.fromEntries(METAL_ORDER.map((m) => [m, 1])),
     hold: zeroMetals(),
     systems: {},
-    stats: { earned: 0, sold: zeroMetals(), minedPlayer: 0, minedDrones: 0, dronesBuilt: 0 },
+    stats: {
+      earned: 0, sold: zeroMetals(), minedPlayer: 0, minedDrones: 0, dronesBuilt: 0,
+      dronesLost: 0, stolen: 0, raids: 0, raidersKilled: 0, bounty: 0,
+    },
+    raids: {}, // [układ] = { threat, cooldown } - reżyser nalotów (raids.js)
     tutorial: { step: 0 },
   };
 }
@@ -72,7 +84,10 @@ export function beltCenterFor(spawnPos, lookAt) {
  *   quality      - 0..1 (telefony: mniej planetoid i iskier)
  *   random       - źródło losowości (testy: deterministyczne)
  */
-export function createEconomy({ scene, storage = null, onEvent = () => {}, quality = 1, random = Math.random } = {}) {
+export function createEconomy({
+  scene, storage = null, onEvent = () => {}, quality = 1, random = Math.random,
+  combat = null, getHostiles = null,
+} = {}) {
   let state = load() ?? freshState();
   let rt = null;            // runtime bieżącego układu
   const beltCache = new Map(); // dane pasów (bez siatek) - także dla układów "zaocznych"
@@ -95,6 +110,7 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     onEvent({ key, text, urgency });
   }
   const bump = () => { structVersion++; };
+  const hooks = {}; // raids.js: droneLost(d), stolen(tons, st)
 
   // ------------------------------------------------------------
   // ZAPIS
@@ -105,6 +121,10 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
       if (!raw) return null;
       const s = JSON.parse(raw);
       if (s?.version !== 1) return null;
+      // zapis sprzed rabusiów: brakujące pola z nowego stanu
+      const f = freshState();
+      s.stats = { ...f.stats, ...s.stats };
+      s.raids ??= {};
       return s;
     } catch { return null; }
   }
@@ -150,14 +170,16 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
       };
     }
     const belt = beltFor(id);
-    rt = { sysId: id, spawn, belt, beltView: null, views: new Map(), drones: [], time: 0 };
+    rt = { sysId: id, spawn, belt, beltView: null, views: new Map(), stationRt: new Map(), drones: [], time: 0, alert: false };
     if (scene) rt.beltView = createAsteroidBelt(scene, belt, { quality });
-    for (const st of sysState(id).stations) addStationView(st);
+    for (const st of sysState(id).stations) { addStationView(st); attachStation(st); }
     for (const sw of sysState(id).swarms) for (let i = 0; i < sw.drones; i++) rt.drones.push(newDrone(sw));
     bump();
   }
   function leaveSystem() {
     if (!rt) return;
+    for (const d of rt.drones) combat?.unregister(d.actor);
+    for (const r of rt.stationRt.values()) combat?.unregister(r.actor);
     rt.beltView?.dispose();
     for (const v of rt.views.values()) { scene.remove(v.group); disposeObject(v.group); }
     rt = null;
@@ -172,6 +194,61 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     setStationProgress(model, st.progress, st.status === 'gotowa');
     scene.add(model.group);
     rt.views.set(st.id, model);
+  }
+
+  // ------------------------------------------------------------
+  // STACJE W WALCE: kontakt (cel dla mózgów NPC) + aktor (trafienia)
+  // ------------------------------------------------------------
+  function attachStation(st) {
+    if (!rt || rt.stationRt.has(st.id)) return;
+    const def = STATIONS[st.type];
+    st.hull ??= def.hull;
+    const pos = v3(st.pos);
+    const alive = () => st.status === 'gotowa' && !(st.immune > 0);
+    const r = { fireCd: 0, muzzle: 0, target: null, lastHit: -99 };
+    r.contact = {
+      id: `st-${st.id}`, kind: 'station', station: st, side: 'ally', value: st.type === 'wieza' ? 0.9 : 0.6,
+      position: pos, velocity: new THREE.Vector3(),
+      get hullFrac() { return st.hull / def.hull; },
+      radius: def.radius * 0.7, recentAttackers: new Map(), isAlive: alive,
+    };
+    r.actor = {
+      side: 'ally', position: pos, radius: def.radius * 0.7, isAlive: alive,
+      takeDamage: (amount, shooter) => damageStation(st, amount, shooter),
+    };
+    r.shooter = { callsign: st.name, contact: r.contact }; // odwet: NPC wie, kto go bije
+    rt.stationRt.set(st.id, r);
+    combat?.register(r.actor);
+  }
+
+  function damageStation(st, amount, shooter) {
+    if (st.status !== 'gotowa' || st.immune > 0) return;
+    const def = STATIONS[st.type];
+    st.hull -= amount * 0.6; // pancerz stacji
+    const r = rt?.stationRt.get(st.id);
+    if (r) r.lastHit = state.time;
+    if (shooter?.contact && r) r.contact.recentAttackers.set(shooter.contact, state.time);
+    emit(`station-hit-${st.id}`, `${st.name} pod ostrzałem! Kadłub ${Math.max(0, Math.round(st.hull / def.hull * 100))}%.`, 'danger', 8);
+    if (st.hull <= 0) lootStation(st);
+  }
+
+  /** Kadłub stacji na zero: rabusie zabierają część zapasów, stacja chwilowo bez znaczenia. */
+  function lootStation(st) {
+    const def = STATIONS[st.type];
+    let stolen = 0;
+    for (const m of METAL_ORDER) {
+      const k = st.storage[m] * RAIDS.stationLoot;
+      st.storage[m] -= k; stolen += k;
+    }
+    state.stats.stolen += stolen;
+    hooks.stolen?.(stolen, st);
+    st.hull = def.hull * 0.35;
+    st.immune = RAIDS.stationImmune;
+    if (rt && scene) combat?.flash(v3(st.pos), def.radius * 1.6, 0xff7a45, 0.7);
+    emit(`looted-${st.id}`, st.type === 'wieza'
+      ? `${st.name} wyłączona na ${RAIDS.stationImmune} s — systemy uzbrojenia przegrzane.`
+      : `${st.name} splądrowana: rabusie zabrali ${Math.round(stolen)} t metalu.`, 'danger');
+    bump();
   }
 
   // ------------------------------------------------------------
@@ -281,10 +358,11 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     const st = {
       id: `s${sys.nextId++}`, type, name: `${def.name} ${count}`, pos: plain(v3(pos)),
       status: 'budowa', need: Object.fromEntries(METAL_ORDER.map((m) => [m, def.cost[m] ?? 0])),
-      progress: 0, storage: zeroMetals(), queue: [], buildT: 0,
+      progress: 0, storage: zeroMetals(), queue: [], buildT: 0, hull: def.hull,
     };
     sys.stations.push(st);
     addStationView(st);
+    attachStation(st);
     bump();
     const needTxt = METAL_ORDER.filter((m) => st.need[m] > 0).map((m) => `${st.need[m]} t ${METALS[m].symbol}`).join(', ');
     emit('build', `Plac budowy: ${st.name}. Potrzeba: ${needTxt}. Dowieź metal (Y) albo poczekaj na holowniki z magazynów.`, 'info');
@@ -418,7 +496,7 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     if (!dock || dock.type !== 'dok' || dock.status !== 'gotowa') { emit('swarm', 'Rój potrzebuje gotowego doku.', 'warning'); return null; }
     const used = new Set(Object.values(state.systems).flatMap((s) => s.swarms.map((w) => w.name)));
     const name = `Rój ${SWARM_NAMES.find((n) => !used.has(`Rój ${n}`)) ?? sys.nextId}`;
-    const sw = { id: `w${sys.nextId++}`, name, home: dock.id, drop: null, target: 'auto', prefer: null, mode: 'wydobycie', drones: 0 };
+    const sw = { id: `w${sys.nextId++}`, name, home: dock.id, drop: null, target: 'auto', prefer: null, mode: 'wydobycie', drones: 0, evac: true };
     sys.swarms.push(sw);
     bump();
     save();
@@ -456,7 +534,7 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     mine.sort((a, b) => (a.state === 'dok' ? 0 : 1) - (b.state === 'dok' ? 0 : 1));
     for (const d of mine) {
       if (k >= n) break;
-      rt.drones.splice(rt.drones.indexOf(d), 1);
+      removeDrone(d);
       sw.drones--; k++;
       const back = {};
       for (const m of METAL_ORDER) back[m] = (DRONE.cost[m] ?? 0) * 0.5 + (d.cargo[m] || 0);
@@ -484,15 +562,46 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     save();
   }
 
+  let droneSeq = 0;
   function newDrone(sw, at = null) {
     const home = byId(rt.sysId, sw.home);
-    return {
+    const d = {
       swarm: sw, state: 'dok', pos: at ? at.clone() : (home ? v3(home.pos) : new THREE.Vector3()),
       vel: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1), cargo: zeroMetals(), load: 0,
       ast: null, site: new THREE.Vector3(), timer: random() * 2, minedAcc: 0,
       jitter: new THREE.Vector3(random() - 0.5, random() - 0.5, random() - 0.5).multiplyScalar(2),
-      drop: null,
+      drop: null, hull: DRONE.hull, alive: true, id: `dron-${++droneSeq}`,
     };
+    // w doku dron jest schowany: nie da się go trafić ani wybrać na cel
+    const alive = () => d.alive && d.state !== 'dok';
+    d.contact = {
+      id: d.id, kind: 'drone', drone: d, side: 'ally', value: 0.35,
+      position: d.pos, velocity: d.vel,
+      get hullFrac() { return d.hull / DRONE.hull; },
+      radius: 7, recentAttackers: new Map(), isAlive: alive,
+    };
+    d.actor = { side: 'ally', position: d.pos, radius: 7, isAlive: alive, takeDamage: (a) => damageDrone(d, a) };
+    combat?.register(d.actor);
+    return d;
+  }
+  function removeDrone(d) {
+    const i = rt.drones.indexOf(d);
+    if (i >= 0) rt.drones.splice(i, 1);
+    combat?.unregister(d.actor);
+  }
+  function damageDrone(d, amount) {
+    if (!d.alive) return;
+    d.hull -= amount;
+    if (d.hull > 0) { sparks?.emit(d.pos, _n.set(0, 1, 0), '#ffffff', 4, 40, 1, 0.3, 4); return; }
+    d.alive = false;
+    removeDrone(d);
+    d.swarm.drones = Math.max(0, d.swarm.drones - 1);
+    state.stats.dronesLost++;
+    combat?.flash(d.pos, 34, 0xffa640, 0.5);
+    sparks?.emit(d.pos, _n.set(0, 1, 0), '#ffb13d', 14, 70, 1, 0.8, 6);
+    hooks.droneLost?.(d);
+    emit('drone-lost', `Tracimy drony! ${d.swarm.name}: zostało ${d.swarm.drones}.`, 'danger', 6);
+    bump();
   }
 
   /** Cel roju: wskazana planetoida albo najlepsza pod względem wartości/odległości. */
@@ -535,14 +644,25 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     const sysId = rt.sysId;
     // max ~3 starty/s na układ - rój wylatuje sznurem, nie "wybuchem"
     rt.launchAcc = Math.min(3, (rt.launchAcc ?? 0) + dt * 3);
-    for (const d of rt.drones) {
+    for (const d of [...rt.drones]) {
       const sw = d.swarm;
       const home = byId(sysId, sw.home);
       if (!home) continue;
+      const evac = rt.alert && sw.evac !== false;
+      if (evac && d.state !== 'dok' && d.state !== 'ewakuacja') { d.state = 'ewakuacja'; d.drop = null; }
       switch (d.state) {
+        case 'ewakuacja': {
+          if (!evac) { d.state = d.load > 0.01 ? 'powrot' : 'lot'; d.ast = null; break; }
+          if (steer(d, v3(home.pos), dt, STATIONS.dok.radius * 0.6)) {
+            deposit(home, d.cargo); // urobek zostaje w doku (co się zmieści)
+            d.load = sumMetals(d.cargo);
+            d.state = 'dok'; d.timer = random() * 2;
+          }
+          break;
+        }
         case 'dok': {
           d.pos.copy(v3(home.pos));
-          if (sw.mode === 'wydobycie') {
+          if (sw.mode === 'wydobycie' && !evac) {
             d.timer -= dt;
             if (d.timer <= 0 && rt.launchAcc >= 1) {
               rt.launchAcc -= 1;
@@ -651,11 +771,102 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
   }
 
   // ------------------------------------------------------------
+  // PLATFORMY OBRONNE
+  // ------------------------------------------------------------
+  const _aim = new THREE.Vector3(), _mz = new THREE.Vector3(), _fd = new THREE.Vector3();
+  function updateTowers(dt) {
+    if (!combat) return;
+    const hostiles = getHostiles?.() ?? [];
+    const def = STATIONS.wieza;
+    for (const st of stationsOf(rt.sysId)) {
+      if (st.type !== 'wieza' || st.status !== 'gotowa' || st.immune > 0) continue;
+      const r = rt.stationRt.get(st.id);
+      const pos = r.contact.position;
+      // cel: najbliższy żywy wróg w zasięgu (trzymamy poprzedni, dopóki w zasięgu)
+      let t = r.target;
+      if (!t || !t.alive || t.hidden || t.group.position.distanceTo(pos) > def.range) {
+        t = null;
+        let best = def.range;
+        for (const h of hostiles) {
+          if (!h.alive || h.hidden || h.arriving) continue;
+          const dd = h.group.position.distanceTo(pos);
+          if (dd < best) { best = dd; t = h; }
+        }
+        r.target = t;
+      }
+      r.fireCd -= dt;
+      if (!t) continue;
+      const dist = t.group.position.distanceTo(pos);
+      _aim.copy(t.group.position).addScaledVector(t.velocity, dist / def.boltSpeed);
+      const v = rt.views.get(st.id);
+      if (v?.turret) {
+        v.group.updateMatrixWorld();
+        v.turret.lookAt(_aim);
+        v.turret.updateMatrixWorld();
+      }
+      if (r.fireCd > 0) continue;
+      r.fireCd = def.fireEvery;
+      if (v?.turret && v.muzzles.length) {
+        _mz.copy(v.muzzles[r.muzzle++ % v.muzzles.length]);
+        v.turret.localToWorld(_mz);
+      } else _mz.copy(pos).add(_fd.set(0, 60, 0));
+      _fd.copy(_aim).sub(_mz).normalize();
+      _fd.x += (random() - 0.5) * 0.02; _fd.y += (random() - 0.5) * 0.02; _fd.z += (random() - 0.5) * 0.02;
+      combat.fire({
+        origin: _mz.clone(), direction: _fd.normalize().clone(), side: 'ally', speed: def.boltSpeed,
+        damage: def.damage, color: 0xffa060, life: def.range / def.boltSpeed + 0.3, shooter: r.shooter, hitScale: 1.8,
+      });
+      hooks.towerFire?.(st, _mz);
+    }
+  }
+
+  /**
+   * Nalot rozstrzygnięty "zaocznie" (gracza nie ma w układzie albo odleciał
+   * w trakcie). Platformy zatrzymują po RAIDS.towerKills rabusiów, reszta
+   * niszczy drony (roje z ewakuacją tracą połowę mniej) i łupi stacje.
+   */
+  function resolveRaidOffline(sysId, raiders) {
+    const sys = sysState(sysId);
+    if (!sys) return null;
+    const towers = sys.stations.filter((s) => s.type === 'wieza' && s.status === 'gotowa').length;
+    const through = Math.max(0, raiders - towers * RAIDS.towerKills);
+    const killed = Math.min(raiders, towers * RAIDS.towerKills);
+    let dronesLost = 0, stolen = 0;
+    if (through > 0) {
+      for (const sw of sys.swarms) {
+        const k = Math.min(sw.drones, Math.round(through * 3 * (sw.evac !== false ? 0.5 : 1)));
+        sw.drones -= k; dronesLost += k;
+        if (rt?.sysId === sysId) for (const d of rt.drones.filter((x) => x.swarm === sw).slice(0, k)) removeDrone(d);
+      }
+      const share = Math.min(0.6, RAIDS.stationLoot * through / 3);
+      for (const st of sys.stations) for (const m of METAL_ORDER) { const k = st.storage[m] * share; st.storage[m] -= k; stolen += k; }
+    }
+    state.stats.dronesLost += dronesLost;
+    state.stats.stolen += stolen;
+    state.stats.raidersKilled += killed;
+    const bounty = killed * RAIDS.bounty;
+    state.credits += bounty;
+    state.stats.bounty += bounty;
+    bump();
+    save();
+    return { raiders, towers, killed, dronesLost, stolen, bounty, repelled: through === 0 };
+  }
+
+  // ------------------------------------------------------------
   // SYMULACJA UKŁADU (wspólna: bieżący i "zaoczne")
   // ------------------------------------------------------------
   function tickSystem(sysId, dt, detailed) {
     const sys = sysState(sysId);
     if (!sys) return;
+
+    // 0) stacje: odliczanie po splądrowaniu, powolna naprawa kadłuba (bez ostrzału od 10 s)
+    for (const st of sys.stations) {
+      const def = STATIONS[st.type];
+      st.hull ??= def.hull;
+      if (st.immune > 0) { st.immune = Math.max(0, st.immune - dt); if (!st.immune) bump(); }
+      const lastHit = rt?.sysId === sysId ? rt.stationRt.get(st.id)?.lastHit ?? -99 : -99;
+      if (st.hull < def.hull && state.time - lastHit > 10) st.hull = Math.min(def.hull, st.hull + def.hull * 0.01 * dt);
+    }
 
     // 1) budowy: holowniki dowożą brakujący metal z puli, potem montaż
     let tugBudget = LOGISTICS.rate * dt;
@@ -779,6 +990,7 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
         }
       }
       tugs?.update(rt.lanes ?? [], rt.time);
+      updateTowers(dt);
     }
     sparks?.update(dt);
 
@@ -791,7 +1003,7 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
   // ------------------------------------------------------------
   function summary() {
     const sysId = rt?.sysId;
-    const drones = { total: 0, wiercenie: 0, lot: 0, powrot: 0, czeka: 0, dok: 0 };
+    const drones = { total: 0, wiercenie: 0, lot: 0, powrot: 0, czeka: 0, dok: 0, ewakuacja: 0 };
     for (const d of rt?.drones ?? []) {
       drones.total++;
       const k = d.state === 'ladowanie' ? 'lot' : d.state === 'rozladunek' ? 'powrot' : d.state;
@@ -826,7 +1038,10 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
         const fill = sumMetals(st.storage) / def.capacity;
         sub = st.type === 'dok'
           ? `${sysState(rt.sysId).swarms.filter((w) => w.home === st.id).reduce((a, w) => a + w.drones, 0)} dronów · ${Math.round(fill * 100)}%`
+          : st.type === 'wieza' ? `zasięg ${def.range} j.`
           : `${Math.round(sumMetals(st.storage))} / ${def.capacity} t`;
+        if (st.immune > 0) sub = st.type === 'wieza' ? `wyłączona ${Math.ceil(st.immune)} s` : 'splądrowana';
+        else if ((st.hull ?? def.hull) < def.hull * 0.98) sub += ` · kadłub ${Math.round(st.hull / def.hull * 100)}%`;
       }
       out.push({ id: `eco-${st.id}`, position: v3(st.pos).add(_n.set(0, def.radius * 0.9, 0)), title: st.name, sub, color: def.accent });
     }
@@ -860,6 +1075,20 @@ export function createEconomy({ scene, storage = null, onEvent = () => {}, quali
     get version() { return structVersion; },
     get runtime() { return rt; },
     get systemId() { return rt?.sysId ?? null; },
+    get alert() { return !!rt?.alert; },
+    /** Alarm w bieżącym układzie: roje z ewakuacją chowają się w dokach. */
+    setAlert(v) { if (rt && rt.alert !== !!v) { rt.alert = !!v; bump(); } },
+    /** Cele dla mózgów NPC (npc-ships getContacts): drony poza dokiem i gotowe stacje. */
+    contacts() {
+      if (!rt) return [];
+      const out = [];
+      for (const d of rt.drones) if (d.alive && d.state !== 'dok') out.push(d.contact);
+      for (const r of rt.stationRt.values()) if (r.contact.isAlive()) out.push(r.contact);
+      return out;
+    },
+    hooks, resolveRaidOffline, systemIds: () => Object.keys(state.systems),
+    stationsIn: (id) => stationsOf(id), swarmsIn: (id) => sysState(id)?.swarms ?? [],
+    beltCenter: (id) => sysState(id)?.beltCenter ?? null,
     enterSystem, leaveSystem, update, save, reset,
     // gracz
     playerMine, aimedAsteroid: (pos, fwd, range) => rt && aimedAsteroid(pos, fwd, range), nearestStation, unloadAt, canPlace, placeStation,

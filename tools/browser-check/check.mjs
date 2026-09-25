@@ -185,7 +185,7 @@ console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
 }
 
 // ------------------------------------------------------------
-console.log('\n3b. Ekonomia (krok 10): kopanie, budowa, panel, roje');
+console.log('\n3b. Ekonomia (krok 10): kopanie, budowa, panel, roje, rabusie');
 {
   const { page, errors } = await open('/step10-economy/?uklad=teegarden&debug');
   await page.waitForFunction(() => window.__game?.playerState?.alive && window.__game.economy, null, { timeout: 60000 });
@@ -242,6 +242,24 @@ console.log('\n3b. Ekonomia (krok 10): kopanie, budowa, panel, roje');
   await page.waitForTimeout(400);
   ok(await page.locator('.ip-sw').count() === 1, 'panel pokazuje rój');
   await page.screenshot({ path: join(OUT, '3b-industry.png') });
+  await page.keyboard.press('KeyP');
+  // rabusie: nalot z ostrzeżeniem, ewakuacja rojów, walka, raport
+  const raid = await page.evaluate(() => {
+    const g = __game, e = g.economy;
+    g.raids.trigger();
+    for (let i = 0; i < 30 * 2; i++) g.tick(1 / 30);
+    const warn = g.raids.status?.phase;
+    for (let i = 0; i < 30 * 16; i++) g.tick(1 / 30);
+    const docked = e.runtime.drones.filter((d) => d.state === 'dok').length;
+    const st = g.raids.status;
+    const raiders = g.npcs.byTag('raider').length;
+    for (let i = 0; i < 30 * 240 && g.raids.status; i++) g.tick(1 / 30);
+    return { warn, docked, total: e.runtime.drones.length, phase: st?.phase, n: st?.n, raiders, over: !g.raids.status };
+  });
+  ok(raid.warn === 'warning', 'nalot: najpierw ostrzeżenie');
+  ok(raid.phase === 'active' && raid.raiders === raid.n, `rabusie z fałdy (${raid.n})`);
+  ok(raid.docked === raid.total, `ewakuacja: ${raid.docked}/${raid.total} dronów w doku`);
+  ok(raid.over, 'nalot się kończy (zestrzeleni albo odlecieli)');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.evaluate(() => __game.economy.reset());
   await page.close();

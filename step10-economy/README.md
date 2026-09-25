@@ -36,7 +36,7 @@ step10-economy/?misja=waves&...          misja z tablicy, ekonomia działa w tle
 |---|---|
 | **T** (przytrzymaj) | promień wydobywczy w planetoidę przed dziobem (stożek ~20°, zasięg 950 j. od powierzchni) |
 | **Y** | rozładunek ładowni w najbliższej stacji albo na placu budowy (zasięg 380 j. od powierzchni stacji) |
-| **P** | panel przemysłu: budowa, stacje, roje, rynek (Esc zamyka) |
+| **P** | panel przemysłu: budowa, stacje, roje, rynek, ewakuacja rojów (Esc zamyka) |
 
 Na dotyku: przycisk **KOP** obok OGNIA, a panel przemysłu na dole ekranu
 (dotknięcie podpowiedzi rozładowuje, „panel” otwiera przemysł).
@@ -109,6 +109,62 @@ rysowania dla setek dronów). Z daleka rój widać po świetlikach silników:
 punkty z minimalnym rozmiarem w pikselach, w kolorze stanu (niebieski lot,
 bursztynowy wiercenie, zielony powrót, czerwony czeka).
 
+## Rabusie (`shared/systems/raids.js`)
+
+Kopalnia, którą widać z daleka, przyciąga rabusiów. Każdy układ z choć
+jedną gotową stacją ma **licznik zagrożenia**. Rośnie z liczbą dronów i z
+obrotem stacji przeładunkowej (`RAIDS` w `shared/data/economy.js`). Przy
+pierwszym doku z kilkunastoma dronami nalot przychodzi po 3–5 minutach, a po
+każdym nalocie są 4 minuty spokoju. Pasek zagrożenia jest w HUD przemysłu i
+w nagłówku panelu.
+
+Nalot w układzie gracza:
+
+1. **Ostrzeżenie (15 s).** Oficer taktyczny melduje sygnatury fałdy. Roje z
+   włączoną **ewakuacją** wracają do doków. Dron w doku jest schowany: nie da
+   się go trafić ani wybrać na cel.
+2. **Walka.** 2–6 rabusiów wychodzi z fałdy po drugiej stronie pasa niż
+   stacje, z jednej losowej rasy innej niż gracza, z frakcji koalicyjnej
+   (np. Bez Numeru, Kukułki). To zwykłe wrogie NPC z mózgiem z
+   `tactical-ai.js` (uniki, flankowanie, odwet, odwrót rannych), tylko z
+   innym priorytetem celów: **drony (×3) > stacje (×2) > gracz**. Bronią się
+   gracz, wataha (L) i **platformy obronne**.
+3. **Koniec.** Rabusie odlatują, gdy mają dość łupu (10 dronów albo 300 t
+   metalu) albo po 3 minutach. Kwatermistrz raportuje wynik, a kupcy płacą
+   **250 kr za każdego zestrzelonego**.
+
+**Co mogą zabrać.** Dron ma 30 pkt kadłuba (2–3 trafienia). Stacji się nie
+niszczy, tylko łupi: gdy jej kadłub spadnie do zera, rabusie zabierają 40%
+zapasów, a stacja przez 25 s nie jest już celem. Platforma zostaje wtedy
+wyłączona. Kadłuby stacji same się naprawiają, gdy nikt ich nie ostrzeliwuje.
+
+**Platforma obronna** (4. stacja, 700 kr · 110 t Fe · 35 t Ni · 12 t Co):
+obrotowa głowica z podwójnym działem, zasięg 2200 j. Sama wybiera
+najbliższego wroga, strzela z wyprzedzeniem i jest zwykłym celem dla
+rabusiów. Strzela też do wrogów z misji.
+
+**Ewakuacja albo nie** (przełącznik przy każdym roju, domyślnie włączony).
+Z ewakuacją rój przerywa pracę na cały nalot. Bez niej kopie dalej i ginie.
+Z platformą obronną przy doku da się wyłączyć ewakuację i zaryzykować.
+
+**Nalot bez gracza.** W układzie, w którym gracza nie ma, nalot rozstrzyga
+się zaocznie (`economy.resolveRaidOffline`): każda platforma zatrzymuje
+dwóch rabusiów, reszta niszczy drony (roje z ewakuacją tracą połowę mniej) i
+łupi stacje. Tak samo kończy się nalot, gdy gracz odleci w trakcie. W czasie
+misji nalot czeka, bo misje mają własny balans.
+
+**Jak rabusie widzą drony.** Mózg NPC wybiera cele z `world.contacts`, a
+pociski trafiają „aktorów” z `combat.js`. Drony i stacje dostały oba
+interfejsy (`economy.contacts()`, `combat.register`). Do `createNpcManager`
+doszła opcjonalna `getContacts`, dopisywana do świata mózgów. Kroki 5–9 jej
+nie przekazują, więc działają bez zmian. Drony mają niską „wartość” (0,35),
+więc wrogowie z misji wolą gracza, a tylko rabusie mają priorytet na drony.
+
+**Błąd znaleziony testem:** odlot przez fałdę (`npcs.remove`) zdejmuje statek
+z listy, ale nie gasi mu flagi `alive`. Reżyser liczył odlecianych rabusiów
+jako obecnych i nalot nigdy się nie kończył. Teraz obecność = `alive` i
+obecność na liście.
+
 ## Dwa poziomy symulacji
 
 Układ, w którym jest gracz, liczymy dokładnie: każdy dron leci, ląduje i
@@ -144,6 +200,7 @@ shared/systems/asteroid-belt.js   pas planetoid: dane (Node) + siatki, powierzch
 shared/systems/economy.js         stan, rynek, budowy, logistyka, drony, zapis, symulacja zaoczna
 shared/systems/economy-visuals.js stacje (z animacją montażu), drony, iskry, promień, holowniki
 shared/systems/economy-panel.js   panel przemysłu (P)
+shared/systems/raids.js           rabusie: zagrożenie, ostrzeżenie, nalot NPC, raport, naloty zaoczne
 step10-economy/main.js            klej: sterowanie T/Y/P, HUD, światło gwiazdy, kolizje
 step10-economy/check.mjs          bezgłowy test całej pętli (Node)
 ```
@@ -160,14 +217,20 @@ Test przechodzi całą pętlę: deterministyczny pas → kopanie do pełnej
 i spadek kursu → powrót kursu → dok i 12 dronów → drony lądują na obracających
 się skałach (sprawdzana odległość od powierzchni) → rozkazy (złoże,
 powrót, wydobycie, rozbiórka) → pełne magazyny (drony czekają, alert) →
-zapis i odczyt → praca zaoczna w innym układzie → nowa gra.
+zapis i odczyt → praca zaoczna w innym układzie → **rabusie** (prawdziwe
+combat, weapons, taktyczne AI): nalot bez ewakuacji niszczy drony i kończy
+się raportem; z ewakuacją i platformą rój chowa się przed wejściem rabusiów,
+platforma zestrzeliwuje napastników, kupcy płacą nagrodę; nalot zaoczny →
+nowa gra.
 
 Test w przeglądarce (`tools/browser-check/check.mjs`, sekcja 3b) sprawdza
-to samo w prawdziwej grze: HUD, promień, panel P, budowę z panelu, Y i rój.
+to samo w prawdziwej grze: HUD, promień, panel P, budowę z panelu, Y, rój i
+nalot (ostrzeżenie, ewakuacja, rabusie z fałdy, koniec nalotu).
 
 ## Co dalej
 
-- Rabusie polujący na drony i konwoje holowników (misja „obrona kopalni”).
+- Misja „obrona kopalni” na tablicy misji (nalot z fabułą i nagrodą).
+- Rabusie polujący też na holowniki między stacjami.
 - Rafineria: stop z metali (drożej niż surowiec) jako czwarta stacja.
 - Frachtowce jako prawdziwe statki NPC przylatujące przez fałdę po towar.
 - Handel między układami: różne kursy w różnych układach.
