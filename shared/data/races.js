@@ -44,6 +44,14 @@ export const SHIP_RACE = {
   'choral-piesniarze-trade-9': 'piesniarze',
   'choral-piesniarze-coalition-31': 'piesniarze',
   'choral-piesniarze-hawk-77': 'piesniarze',
+  'paragraf-wykonawcy-hawk-9': 'wykonawcy',
+  'paragraf-wykonawcy-trade-14': 'wykonawcy',
+  'paragraf-wykonawcy-coalition-27': 'wykonawcy',
+  'paragraf-wykonawcy-hawk-52': 'wykonawcy',
+  'zrost-szczepieni-hawk-4': 'szczepieni',
+  'zrost-szczepieni-trade-16': 'szczepieni',
+  'zrost-szczepieni-coalition-38': 'szczepieni',
+  'zrost-szczepieni-hawk-83': 'szczepieni',
 };
 
 export const RACES = {

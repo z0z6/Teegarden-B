@@ -137,6 +137,54 @@ export const SHIPS = [
     file: '../shared/ships/models/choral-piesniarze-hawk-77-lod0.glb',
     bowAxis: '+Z',
   },
+  {
+    id: 'paragraf-wykonawcy-hawk-9',
+    name: 'Paragraf — Literaliści',
+    file: '../shared/ships/models/paragraf-wykonawcy-hawk-9-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'paragraf-wykonawcy-trade-14',
+    name: 'Paragraf — Duchowi',
+    file: '../shared/ships/models/paragraf-wykonawcy-trade-14-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'paragraf-wykonawcy-coalition-27',
+    name: 'Paragraf — Rewizjoniści',
+    file: '../shared/ships/models/paragraf-wykonawcy-coalition-27-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'paragraf-wykonawcy-hawk-52',
+    name: 'Paragraf — Klauzula Ostateczna',
+    file: '../shared/ships/models/paragraf-wykonawcy-hawk-52-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'zrost-szczepieni-hawk-4',
+    name: 'Zrost — Pełny Szczep',
+    file: '../shared/ships/models/zrost-szczepieni-hawk-4-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'zrost-szczepieni-trade-16',
+    name: 'Zrost — Izba Kwarantanny',
+    file: '../shared/ships/models/zrost-szczepieni-trade-16-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'zrost-szczepieni-coalition-38',
+    name: 'Zrost — Odporni',
+    file: '../shared/ships/models/zrost-szczepieni-coalition-38-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'zrost-szczepieni-hawk-83',
+    name: 'Zrost — Kwitnąca Kolonia',
+    file: '../shared/ships/models/zrost-szczepieni-hawk-83-lod0.glb',
+    bowAxis: '+Z',
+  },
 ];
 
 /** Obrót wokół Y (radiany), który ustawia dziób modelu w lokalne -Z silnika. */
