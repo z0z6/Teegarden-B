@@ -17,6 +17,9 @@ import { racePortrait, seedFrom } from '../data/race-portraits.js';
  *   ambush     Zasadzka                sygnał SOS to pułapka; Czujniki rasy dają szansę wykryć ją wcześniej
  *   pursuit    Ucieczka przed pościgiem łowcy ze sprintem, "Sieć" zagłusza fałdę, posiłki odcinają drogę
  *   wolfhunt   Łowy watahy             z watahą rozbij konwój, zanim frachtowiec skoczy
+ *   obrona     Obrona kopalni (krok 10+) kontraktowa kopalnia z rojem 16 dronów; trzy fale
+ *                                       napastników polują na drony i łupią skład. Wymaga
+ *                                       gospodarki (getEconomy) - w kroku 9 misja od razu się kończy.
  *
  * Wzorzec jak w encounters.js: czas symulacji (update(dt)), token unieważnia
  * zdarzenia poprzedniej misji, a świat widzi misję tylko przez NPC,
@@ -86,8 +89,16 @@ export const MISSIONS = {
     tip: 'Kleszcze (H) rozciągają eskortę. Atak na mój cel (G) skupia ogień watahy na frachtowcu.',
     threat: 3, tags: ['wataha', 'natarcie'], pack: 'auto',
   },
+  obrona: {
+    name: 'Obrona kopalni', desc: 'Kontraktowa kopalnia z rojem 16 dronów. Trzy fale napastników — drony nie mogą przerwać pracy.',
+    brief: 'Mamy kontrakt na dostawę metalu z pola macierzystego: dok, skład i szesnaście dronów, które nie mogą przerwać wydobycia. Wywiad donosi o trzech falach napastników. Celują w drony i w skład, nie w nas — chyba że im przeszkodzimy.',
+    win: 'Przetrwaj trzy fale, nie tracąc więcej niż 8 dronów.',
+    lose: 'Rój rozbity (strata 9 dronów) albo rabusie wywożą ze składu 350 t metalu. Albo utrata statku.',
+    tip: 'Leć od razu do kopalni (znacznik). Platforma obronna z panelu P wiele zmienia — masz na nią 1500 kr z kontraktu i metal w składzie. Wataha w trybie Osłona (V) trzyma się przy tobie.',
+    threat: 4, tags: ['obrona', 'gospodarka'], pack: 'optional', needs: 'economy',
+  },
 };
-export const MISSION_ORDER = ['capture', 'blockade', 'waves', 'escort', 'ambush', 'pursuit', 'wolfhunt'];
+export const MISSION_ORDER = ['capture', 'blockade', 'waves', 'escort', 'ambush', 'pursuit', 'wolfhunt', 'obrona'];
 
 let ringTex = null;
 function ringTexture() {
@@ -113,6 +124,7 @@ function ringTexture() {
 export function createMissions({
   npcs, tactics, wolfpack = null, comms, dashboard, CREW, player, playerState,
   getStats, getSignature = () => 50, setSpeedCap, setWarpJam = () => {}, scene = null, rng = Math.random,
+  getEconomy = null, // krok 10+: gospodarka (misja "Obrona kopalni")
 }) {
   let token = 0;
   let cur = null;               // aktywna misja (obiekt z hookami)
@@ -121,6 +133,8 @@ export function createMissions({
   let jammers = [];
   let timers = [];
   let resultT = 0;
+  const cleanups = []; // sprzątanie po misji (np. tymczasowa kopalnia) - po wyniku albo przy przerwaniu
+  function runCleanups() { while (cleanups.length) { try { cleanups.pop()(); } catch (e) { console.error(e); } } }
   const handlers = { killed: [], retreat: [], left: [], disabled: [] };
 
   const alert = (key, crew, text, urgency = 'info', ttl = 4500) => dashboard.show(key, { crew, text, urgency, ttl });
@@ -180,6 +194,7 @@ export function createMissions({
   // cykl życia misji
   // ------------------------------------------------------------
   function cleanupWorld() {
+    runCleanups();
     for (const n of [...npcs.list]) if (n.tag !== 'pack') npcs.remove(n);
     clearMarkers();
     jammers = [];
@@ -245,6 +260,8 @@ export function createMissions({
       fail: (t) => end(false, t),
       say, alert, facingFrom,
       on: (type, fn) => handlers[type].push({ tk, fn }),
+      cleanup: (fn) => cleanups.push(fn),
+      economy: getEconomy?.() ?? null,
     };
     cur = BUILD[id](ctx) ?? {};
     cur.tk = tk;
@@ -270,7 +287,7 @@ export function createMissions({
   function update(dt) {
     if (resultT > 0) {
       resultT -= dt;
-      if (resultT <= 0 && state.status !== 'active') clearMarkers();
+      if (resultT <= 0 && state.status !== 'active') { clearMarkers(); runCleanups(); }
     }
     for (const t of [...timers]) {
       if (t.tk !== token) { timers.splice(timers.indexOf(t), 1); continue; }
@@ -467,6 +484,95 @@ export function createMissions({
           ctx.objective(`Odeprzyj atak: ${repelled.size}/${TOTAL}.`);
           ctx.detail(`Fala ${wave}/3 · w walce: ${[...mine].filter((n) => n.alive && n.mode !== 'flee').length}`);
           if (wave === 3 && repelled.size >= TOTAL) ctx.succeed('Wszystkie trzy fale odparte.', 10);
+        },
+      };
+    },
+
+
+    // ----------------------------------------------------------
+    // KROK 10+: obrona kontraktowej kopalni (gospodarka: economy.js)
+    obrona(ctx) {
+      const eco = ctx.economy;
+      if (!eco || !eco.systemId) {
+        ctx.objective('Ta misja wymaga warstwy ekonomicznej (krok 10 i nowsze).');
+        ctx.after(0.3, () => ctx.fail('W tym kroku nie ma gospodarki — uruchom misję z tablicy (krok 11).'));
+        return {};
+      }
+      const DRONES = 16, MAX_LOSS = 8, LOOT = 350, BONUS = 1500;
+      const home = eco.fieldDefs(eco.systemId)[0];
+      const c = new THREE.Vector3(home.center.x, home.center.y + 1100, home.center.z);
+      const toPlayer = player.position.clone().sub(c).setY(0).normalize();
+      const side = new THREE.Vector3().crossVectors(toPlayer, new THREE.Vector3(0, 1, 0)).normalize();
+      const dok = eco.placeReady('dok', c, { name: 'Dok kontraktowy' });
+      const mag = eco.placeReady('magazyn', c.clone().addScaledVector(side, 750), {
+        name: 'Skład kontraktowy', storage: { zelazo: 420, nikiel: 160, kobalt: 40, platyna: 8 },
+      });
+      const sw = eco.createSwarm(dok.id, { temp: true });
+      eco.setSwarm(sw.id, { evac: false, drop: mag.id });
+      eco.spawnDrones(sw.id, DRONES);
+      eco.state.credits += BONUS; // zaliczka z kontraktu: np. na platformę obronną
+      const ours = new Set([dok.id, mag.id]);
+      let stolen = 0;
+      const prevStolen = eco.hooks.stolen;
+      eco.hooks.stolen = (t, st) => { prevStolen?.(t, st); if (st && ours.has(st.id)) stolen += t; };
+      ctx.cleanup(() => { eco.hooks.stolen = prevStolen; eco.removeTemp(); });
+      ctx.marker('mine', c, 'Kopalnia kontraktowa', 'broń dronów i składu', '#ffd36b');
+
+      const sizes = [3, 4, 5];
+      const mine = new Set(), repelled = new Set();
+      let wave = 0, waveT = 0, waveNpcs = [], next = 35;
+      const prio = (ct) => (ct.kind === 'drone' ? 3 : ct.kind === 'station' ? 2.2 : 1);
+      function spawnWave(i) {
+        const a = [0.3, 2.4, 4.3][i] + rng() * 0.6;
+        const dir = toPlayer.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), a);
+        const center = c.clone().addScaledVector(dir, home.radius + 2600).add(new THREE.Vector3(0, (rng() - 0.5) * 600, 0));
+        const race = i === 2 ? pickRaceByRelation(playerState.raceId, 'hostile', rng) : ctx.enemyRace;
+        waveNpcs = [];
+        for (let k = 0; k < sizes[i]; k++) {
+          const heavy = i === 2 && k === sizes[i] - 1;
+          const p = center.clone().addScaledVector(side, (k - (sizes[i] - 1) / 2) * 260).add(new THREE.Vector3(0, (k % 2) * 140, 0));
+          const n = ctx.spawn({
+            raceId: race, factionKey: 'coalition', side: 'hostile', mode: 'tactical', position: p,
+            facing: ctx.facingFrom(p, c.clone().sub(p).normalize()), label: heavy ? 'ciężki napastnik' : 'napastnik',
+            ...(heavy ? { shipId: 'kryza-heliotropi-hawk-3', hull: 380, combatSpeed: 150, maxSpeed: 200 } : {}),
+            ai: { base: 'hunt', squad: ctx.S(`o${i}`), prio, anchor: c, leash: 9000 },
+          });
+          mine.add(n); waveNpcs.push(n);
+        }
+        wave = i + 1; waveT = 0;
+        ctx.alert(`m-obr${i}`, CREW.tactical, `Fala ${wave}/3: ${sizes[i]} × ${RACES[race].name}${i === 2 ? ' z ciężkim okrętem' : ''} — idą na drony!`, 'danger', 6000);
+      }
+      const count = (n) => { if (mine.has(n)) repelled.add(n); };
+      ctx.on('killed', count); ctx.on('retreat', count); ctx.on('left', count);
+      ctx.objective(`Dolecieć do kopalni i przygotować obronę (${next} s do pierwszej fali).`);
+      ctx.alert('m-obr', CREW.quartermaster ?? CREW.navigator, `Kontrakt: rój ${DRONES} dronów nie może przerwać wydobycia. Na konto wpłynęła zaliczka ${BONUS} kr — platforma obronna (panel P) się przyda.`, 'info', 9000);
+
+      return {
+        onTactic(e) { if (e.type === 'squad-retreat' && mine.has(e.npc)) ctx.say(e.npc, RACES[e.npc.raceId].voice.retreat); },
+        update(dt) {
+          const alive = sw.drones;
+          const lost = DRONES - alive;
+          if (lost > MAX_LOSS) { ctx.fail(`Rój rozbity: stracone drony ${lost}/${DRONES}.`); return; }
+          if (stolen >= LOOT) { ctx.fail(`Napastnicy wywieźli ze składu ${Math.round(stolen)} t metalu.`); return; }
+          if (wave === 0) {
+            next -= dt;
+            ctx.objective(`Pierwsza fala za ${Math.ceil(Math.max(0, next))} s — leć do kopalni.`);
+            if (next <= 0) spawnWave(0);
+          } else {
+            waveT += dt;
+            const inFight = waveNpcs.filter((n) => n.alive && n.mode !== 'flee' && npcs.list.includes(n)).length;
+            if (wave < 3 && ((inFight === 0 && waveT > 8) || waveT > 75)) spawnWave(wave);
+            const done = wave === 3 && [...mine].every((n) => repelled.has(n) || !n.alive || !npcs.list.includes(n));
+            if (done) {
+              const reward = 60 * alive;
+              eco.state.credits += reward;
+              ctx.succeed(`Kopalnia obroniona: ocalało ${alive}/${DRONES} dronów, skład stracił ${Math.round(stolen)} t. Premia z kontraktu: +${reward} kr.`, 12);
+              return;
+            }
+            ctx.objective(`Obrona kopalni: fala ${wave}/3.`);
+          }
+          ctx.progress(wave === 0 ? 0 : (wave - 1 + (waveT > 0 ? Math.min(1, repelled.size / [3, 7, 12][wave - 1]) : 0)) / 3);
+          ctx.detail(`drony ${alive}/${DRONES} (min. ${DRONES - MAX_LOSS}) · łup ${Math.round(stolen)}/${LOOT} t · w walce ${[...mine].filter((n) => n.alive && n.mode !== 'flee' && npcs.list.includes(n)).length}`);
         },
       };
     },
