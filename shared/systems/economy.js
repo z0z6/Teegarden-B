@@ -132,7 +132,9 @@ export function createEconomy({
   }
   function save() {
     if (!storage) return;
-    try { storage.setItem(saveKey, JSON.stringify(state)); } catch { /* prywatne okno / brak miejsca - gra działa dalej */ }
+    // obiekty tymczasowe (misja "Obrona kopalni") nie trafiają do zapisu
+    const replacer = (k, v) => (Array.isArray(v) && (k === 'stations' || k === 'swarms') ? v.filter((x) => !x.temp) : v);
+    try { storage.setItem(saveKey, JSON.stringify(state, replacer)); } catch { /* prywatne okno / brak miejsca - gra działa dalej */ }
   }
   function reset() {
     const sysId = rt?.sysId, spawn = rt?.spawn;
@@ -564,19 +566,64 @@ export function createEconomy({
   // ------------------------------------------------------------
   // ROJE I DRONY
   // ------------------------------------------------------------
-  function createSwarm(dockId) {
+  function createSwarm(dockId, { temp = false } = {}) {
     if (!rt) return null;
     const sys = sysState(rt.sysId);
     const dock = byId(rt.sysId, dockId);
     if (!dock || dock.type !== 'dok' || dock.status !== 'gotowa') { emit('swarm', 'Rój potrzebuje gotowego doku.', 'warning'); return null; }
     const used = new Set(Object.values(state.systems).flatMap((s) => s.swarms.map((w) => w.name)));
     const name = `Rój ${SWARM_NAMES.find((n) => !used.has(`Rój ${n}`)) ?? sys.nextId}`;
-    const sw = { id: `w${sys.nextId++}`, name, home: dock.id, drop: null, target: 'auto', prefer: null, mode: 'wydobycie', drones: 0, evac: true };
+    const sw = { id: `w${sys.nextId++}`, name, home: dock.id, drop: null, target: 'auto', prefer: null, mode: 'wydobycie', drones: 0, evac: true, ...(temp ? { temp: true } : {}) };
     sys.swarms.push(sw);
     bump();
     save();
     return sw;
   }
+  // ------------------------------------------------------------
+  // OBIEKTY TYMCZASOWE (misje): gotowe od ręki, bez kosztów, poza zapisem
+  // ------------------------------------------------------------
+  /** Stacja gotowa od razu, bez kosztów i sprawdzania miejsca (scenariusz misji). */
+  function placeReady(type, pos, { name = null, storage: stock = null, temp = true } = {}) {
+    if (!rt) return null;
+    const sys = sysState(rt.sysId);
+    const def = STATIONS[type];
+    const st = {
+      id: `s${sys.nextId++}`, type, name: name ?? def.name, pos: plain(v3(pos)), status: 'gotowa',
+      need: zeroMetals(), progress: 1, storage: { ...zeroMetals(), ...(stock ?? {}) }, queue: [], buildT: 0, hull: def.hull,
+      ...(temp ? { temp: true } : {}),
+    };
+    sys.stations.push(st);
+    addStationView(st);
+    attachStation(st);
+    bump();
+    return st;
+  }
+  /** `n` dronów roju od razu w doku (bez produkcji). */
+  function spawnDrones(swarmId, n) {
+    const sw = rt && swarmById(rt.sysId, swarmId);
+    if (!sw) return 0;
+    for (let i = 0; i < n; i++) { sw.drones++; rt.drones.push(newDrone(sw)); }
+    bump();
+    return n;
+  }
+  /** Usuwa wszystko, co tymczasowe: stacje, ich roje i drony. */
+  function removeTemp() {
+    if (!rt) return;
+    const sys = sysState(rt.sysId);
+    for (const sw of sys.swarms.filter((w) => w.temp)) {
+      for (const d of rt.drones.filter((x) => x.swarm === sw)) removeDrone(d);
+      sys.swarms.splice(sys.swarms.indexOf(sw), 1);
+    }
+    for (const st of sys.stations.filter((x) => x.temp)) {
+      const r = rt.stationRt.get(st.id);
+      if (r) { combat?.unregister(r.actor); rt.stationRt.delete(st.id); }
+      const v = rt.views.get(st.id);
+      if (v) { scene.remove(v.group); disposeObject(v.group); rt.views.delete(st.id); }
+      sys.stations.splice(sys.stations.indexOf(st), 1);
+    }
+    bump();
+  }
+
   function dockLoad(sysId, dockId) {
     const sys = sysState(sysId);
     const queued = byId(sysId, dockId)?.queue.length ?? 0;
@@ -1169,7 +1216,7 @@ export function createEconomy({
     hooks, resolveRaidOffline, systemIds: () => Object.keys(state.systems),
     stationsIn: (id) => stationsOf(id), swarmsIn: (id) => sysState(id)?.swarms ?? [],
     beltCenter: (id) => sysState(id)?.beltCenter ?? null,
-    fieldDefs, fieldAt, discoverField, scan, isDiscovered, asteroidsIn,
+    fieldDefs, fieldAt, discoverField, scan, isDiscovered, asteroidsIn, placeReady, spawnDrones, removeTemp,
     /** Koszt { credits, metale } z kredytów i puli metalu bieżącego układu (stocznia, krok 11). */
     canPayCost: (cost) => !!rt && canPay(rt.sysId, cost),
     payCost: (cost) => { if (rt) { pay(rt.sysId, cost); bump(); } },

@@ -275,6 +275,69 @@ console.log('\n8. Dominacja i zapis');
   ok(saved.strategy?.factions && saved.army && Object.keys(saved.strategy.fields).length === 25, 'strategia i armia są w zapisie gry');
 }
 
+// ------------------------------------------------------------
+console.log('\n9. Misja „Obrona kopalni”');
+{
+  const { createMissions } = await import('../shared/systems/missions.js');
+  const { CREW } = await import('../shared/systems/dashboard.js');
+  function mission(seed, opts = {}) {
+    const W = makeWorld(seed);
+    const log = [];
+    const comms = { say: (o) => log.push(o.text), open() {}, close() {}, isOpen: () => false };
+    const dashboard = { show: (k, o) => log.push(o.text) };
+    const playerState = { raceId: 'wybudzeni', cargo: 10, alive: true };
+    const player = { position: W.ship.position, quaternion: W.ship.quaternion, isAlive: () => true, getVelocity: (o) => o.set(0, 0, 0) };
+    W.ship.position.set(0, 3000, 42000);
+    const missions = createMissions({
+      npcs: W.npcs, tactics: null, comms, dashboard, CREW, player, playerState, getStats: () => ({ attrs: { sensors: 5 } }),
+      setSpeedCap() {}, setWarpJam() {}, scene: W.scene, rng: seededRng(seed), getEconomy: opts.noEco ? null : () => W.eco,
+    });
+    const step = (sec, dt = 1 / 10) => { for (let t = 0; t < sec; t += dt) { W.tick(dt, dt); missions.update(dt); } };
+    return { W, missions, log, step };
+  }
+  // bez gospodarki (krok 9): misja od razu się kończy z wyjaśnieniem
+  {
+    const M = mission(21, { noEco: true });
+    M.missions.start('obrona');
+    M.step(1);
+    ok(M.missions.state.status === 'fail' && /gospodark/.test(M.missions.state.result), `krok 9: „${M.missions.state.result}”`);
+  }
+  // przegrana: nikt nie broni
+  {
+    const M = mission(23);
+    const cr0 = M.W.eco.state.credits;
+    M.missions.start('obrona');
+    const temp = M.W.eco.stations().filter((s) => s.temp);
+    const sw = M.W.eco.swarms().find((w) => w.temp);
+    ok(temp.length === 2 && sw?.drones === 16 && sw.evac === false, `kopalnia kontraktowa: ${temp.map((s) => s.name).join(', ')}, rój ${sw?.drones} dronów bez ewakuacji`);
+    ok(M.W.eco.state.credits === cr0 + 1500, 'zaliczka z kontraktu: +1500 kr');
+    M.W.eco.save();
+    const saved = JSON.parse(M.W.memory.get('test'));
+    ok(!JSON.stringify(saved.systems).includes('"temp":true'), 'kopalnia kontraktowa nie trafia do zapisu gry');
+    M.step(34);
+    ok(M.W.npcs.byTag('mission').length === 0, 'przed pierwszą falą: czas na przygotowanie');
+    M.step(3);
+    ok(M.W.npcs.byTag('mission').length === 3, 'fala 1: trzech napastników');
+    M.step(300);
+    ok(M.missions.state.status === 'fail', `bez obrony misja przegrana: „${M.missions.state.result}”`);
+    M.step(11);
+    ok(M.W.eco.stations().every((s) => !s.temp) && M.W.eco.swarms().every((w) => !w.temp) && M.W.eco.runtime.drones.length === 0, 'po misji kopalnia kontraktowa znika');
+  }
+  // wygrana: platforma obronna i flota przy kopalni
+  {
+    const M = mission(25);
+    M.missions.start('obrona');
+    const home = M.W.eco.fieldDefs('teegarden')[0].center;
+    const c = new THREE.Vector3(home.x, home.y + 1100, home.z);
+    for (const [dx, dz] of [[400, 500], [-500, 400], [300, -550]]) M.W.ready(M.W.eco.placeStation('wieza', c.clone().add(new THREE.Vector3(dx, 0, dz))) ?? M.W.eco.placeReady('wieza', c.clone().add(new THREE.Vector3(dx, 0, dz)), { temp: false }));
+    M.W.ship.position.copy(c).add(new THREE.Vector3(0, 400, 0));
+    M.step(600);
+    const st = M.missions.state;
+    ok(st.status === 'success', `z trzema platformami kopalnia obroniona: „${st.result}”`);
+    console.log(`       ${st.detail ?? ''}`);
+  }
+}
+
 console.error = origErr;
 console.log(fails ? `\n${fails} niezaliczonych.` : '\nWszystko zaliczone.');
 process.exit(fails ? 1 : 0);

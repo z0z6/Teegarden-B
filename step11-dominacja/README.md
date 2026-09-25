@@ -122,6 +122,31 @@ w tym układzie kontra napastnicy. Piraci nadal się zdarzają, ale rzadziej.
 - **Miniatury okrętów** w stoczni: prawdziwe rendery modeli twojej rasy
   (`shared/ships/models/thumbs/`).
 
+## Misja „Obrona kopalni”
+
+Ósma misja na tablicy (`shared/systems/missions.js`, `obrona`). Łączy walkę
+z gospodarką. Przy polu macierzystym powstaje **kopalnia kontraktowa**: dok,
+skład z 636 t metalu i rój 16 dronów, który nie może się ewakuować (kontrakt
+dostaw). Na konto wpływa zaliczka 1500 kr, np. na platformę obronną. Po 35 s
+nadchodzą trzy fale napastników (3, 4 i 5 okrętów, w ostatniej ciężki), za
+każdym razem z innej strony. Polują na drony i łupią skład.
+
+- **Wygrana:** trzy fale odparte, strata najwyżej 8 dronów. Premia 60 kr za
+  każdego ocalałego drona i 12 ładunku.
+- **Przegrana:** 9 straconych dronów albo 350 t zrabowane ze składu (albo
+  utrata statku).
+
+Kopalnia kontraktowa jest **tymczasowa**. Stacje i rój mają znacznik `temp`,
+nie trafiają do zapisu kampanii (`economy.save` je pomija) i znikają
+10 s po wyniku albo przy przerwaniu misji (`economy.removeTemp`,
+`ctx.cleanup` w missions.js). Misja wymaga gospodarki (`getEconomy`), więc
+w kroku 9 kończy się od razu z wyjaśnieniem. Z tablicy uruchamia się
+w kroku 11. W trakcie misji naloty i ataki ras czekają.
+
+Test: `check.mjs`, sekcja 9. Obejmuje krok bez gospodarki, kopalnię poza
+zapisem, przygotowanie przed pierwszą falą, przegraną bez obrony, sprzątanie
+i wygraną z platformami obronnymi.
+
 ## Sterowanie (zmiany względem kroku 10)
 
 | Klawisz | Akcja |

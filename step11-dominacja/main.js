@@ -1335,6 +1335,7 @@ function updateWeaponHud() {
 const wolfpack = createWolfpack({ npcs, tactics, player: playerProxy, playerState, dashboard, CREW });
 const missions = createMissions({
   npcs, tactics, wolfpack, comms, dashboard, CREW, player: playerProxy, playerState, scene,
+  getEconomy: () => economy, // misja "Obrona kopalni" (gospodarka powstaje niżej - odczyt leniwy)
   getStats: () => playerStats,
   // sygnatura z karty rasy; boost i ogień ją podbijają (blokada: zasięg wykrycia pikiet)
   getSignature: () => RACES[playerState.raceId].ship.signature * (lastInput?.boost ? 1.6 : 1) * (fireInput.held ? 1.25 : 1),

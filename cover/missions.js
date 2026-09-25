@@ -357,6 +357,17 @@ const SCHEMA = {
     path('M70 124 C 120 30, 200 30, 238 76', 'a') + path('M70 156 C 150 200, 250 170, 256 108', 'a') + label(130, 40, 'kleszcze (H)') +
     gold(248, 92, 1.7, 'pulse') + foe(226, 72) + foe(276, 80) + foe(250, 124) + label(248, 150, 'frachtowiec + 3 eskorty', 'middle') +
     path('M262 84 L 362 36', 't') + ring(366, 34, 14, 't') + label(360, 64, 'nie może skoczyć', 'end'),
+  obrona: (() => {
+    const drones = [[176, 104], [188, 92], [214, 90], [226, 108], [204, 120], [170, 124], [232, 126], [196, 138]]
+      .map(([x, y]) => `<circle class="t" cx="${x}" cy="${y}" r="2.6"/>`).join('');
+    return `<circle cx="200" cy="112" r="26" fill="#6e737a" opacity="0.55"/><circle cx="200" cy="112" r="26" class="ring t"/>` + drones +
+      `<rect x="120" y="96" width="20" height="30" rx="4" class="a" opacity="0.85"/><rect x="258" y="100" width="26" height="14" rx="3" class="a" opacity="0.85"/>` +
+      label(118, 142, 'dok', 'start') + label(258, 130, 'skład', 'start') + label(200, 164, '16 dronów — bez ewakuacji', 'middle') +
+      foe(46, 60) + foe(34, 76) + foe(52, 88) + path('M60 74 C 110 80, 150 92, 172 102', 'h') + label(30, 108, 'fala 1') +
+      `<g class="ghost">${foe(356, 44)}${foe(372, 58)}${foe(348, 66)}${foe(366, 76)}</g>` + path('M348 62 C 300 70, 260 84, 228 100', 'h') + label(372, 96, 'fala 2', 'end') +
+      `<g class="ghost">${foe(330, 180)}${foe(346, 172)}${foe(360, 186)}${foe(318, 170)}${foe(344, 190)}</g>` + path('M330 176 C 290 160, 250 140, 226 124', 'h') + label(372, 196, 'fala 3 + ciężki', 'end') +
+      ship(96, 150, -40, 'p', 1.4) + label(60, 182, 'ty');
+  })(),
   [CAMPAIGN]: (() => {
     const hex = (x, y, r, c, o = 1) => `<polygon points="${[0, 1, 2, 3, 4, 5].map((k) => { const a = Math.PI / 6 + k * Math.PI / 3; return `${(x + Math.cos(a) * r).toFixed(1)},${(y + Math.sin(a) * r).toFixed(1)}`; }).join(' ')}" fill="${c}" fill-opacity="${0.18 * o}" stroke="${c}" stroke-opacity="${0.9 * o}" stroke-width="1.4"/>`;
     const F = [[70, 60, '#ffd36b'], [118, 100, '#ffd36b'], [176, 58, '#7fd1ff'], [230, 104, '#7fd1ff'], [286, 56, '#ff9d5c'], [336, 110, '#c39bff'], [150, 158, '#9fb3c6'], [262, 164, '#7ee08a']];

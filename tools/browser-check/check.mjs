@@ -80,9 +80,9 @@ console.log('\n2. Tablica misji');
 {
   const { page, errors } = await open('/missions.html?uklad=blizniaki');
   await page.waitForTimeout(1500);
-  ok(await page.locator('.m').count() === 9, 'kampania + 7 misji + wolny lot');
+  ok(await page.locator('.m').count() === 10, 'kampania + 8 misji + wolny lot');
   ok(await page.inputValue('#system') === 'blizniaki', 'układ z intro przeszedł w adresie');
-  for (const id of ['capture', 'blockade', 'waves', 'escort', 'ambush', 'pursuit', 'wolfhunt', 'wolny']) {
+  for (const id of ['kampania', 'capture', 'blockade', 'waves', 'escort', 'ambush', 'pursuit', 'wolfhunt', 'obrona', 'wolny']) {
     await page.click(`.m[data-id="${id}"]`);
     const n = await page.locator('#d-schema > *').count();
     const brief = await page.textContent('#d-brief');
