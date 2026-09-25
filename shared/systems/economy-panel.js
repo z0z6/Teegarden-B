@@ -1,5 +1,6 @@
 import { METALS, METAL_ORDER, STATIONS, STATION_ORDER, DRONE, ASTEROID_CLASSES, costText } from '../data/economy.js';
 import { remaining } from './asteroid-belt.js';
+import { metalIcon, stationIcon, droneIcon, creditsIcon } from '../ui/icons.js';
 
 /**
  * PANEL PRZEMYSŁU (krok 10, klawisz P): budowa stacji, stan stacji,
@@ -17,9 +18,16 @@ const fmtDist = (d) => (d >= 1000 ? `${(d / 1000).toFixed(1)} tys. j.` : `${Math
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sum = (o) => METAL_ORDER.reduce((a, m) => a + (o[m] || 0), 0);
 
-export function createEconomyPanel(root, { economy, raids = null, getShip, getSystemName, onClose }) {
+export function createEconomyPanel(root, {
+  economy, raids = null, getShip, getSystemName, onClose,
+  // krok 11: stocznia tylko tam, gdzie jest armia; dodatkowe zakładki (Flota)
+  stationTypes = STATION_ORDER.filter((t) => t !== 'stocznia'), extraTabs = [],
+}) {
   let builtVersion = -1;
   let open = false;
+  let tab = 'eco';
+  let extraVersion = -1;
+  const activeExtra = () => extraTabs.find((t) => t.id === tab) ?? null;
   let confirmReset = 0;
 
   root.addEventListener('mousedown', (e) => e.stopPropagation()); // klik w panel to nie strzał
@@ -38,15 +46,15 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
 
     const market = METAL_ORDER.map((m) => `
       <div class="ip-metal" style="--mc:${METALS[m].color}">
-        <b>${METALS[m].symbol}</b><span>${METALS[m].name}</span>
+        <span class="ip-mi">${metalIcon(m, 26)}</span><b>${METALS[m].symbol}</b><span>${METALS[m].name}</span>
         <em data-live="price-${m}"></em><small data-live="trend-${m}"></small>
         <span class="ip-sub">w układzie <b data-live="pool-${m}"></b> · w ładowni <b data-live="hold-${m}"></b></span>
       </div>`).join('');
 
-    const buildCards = STATION_ORDER.map((type) => {
+    const buildCards = stationTypes.map((type) => {
       const d = STATIONS[type];
       return `<div class="ip-card" style="--ac:${d.accent}">
-        <div class="ip-card-h"><b>${d.name}</b><span class="ip-tag">${d.short}</span></div>
+        <div class="ip-card-h"><span class="ip-ico">${stationIcon(type, 26, d.accent)}</span><b>${d.name}</b><span class="ip-tag">${d.short}</span></div>
         <p>${d.role}</p>
         <div class="ip-cost">${costText(d.cost)} · montaż ${d.buildTime} s${d.capacity ? ` · ${fmt(d.capacity)} t` : ''} · kadłub ${fmt(d.hull)}</div>
         <button class="ip-btn" data-act="place" data-type="${type}">Postaw przed dziobem</button>
@@ -58,7 +66,7 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
       const d = STATIONS[st.type];
       const own = swarms.filter((w) => w.home === st.id);
       return `<div class="ip-card ip-st" style="--ac:${d.accent}">
-        <div class="ip-card-h"><b>${esc(st.name)}</b><span class="ip-tag" data-live="st-${st.id}-status"></span></div>
+        <div class="ip-card-h"><span class="ip-ico">${stationIcon(st.type, 22, d.accent)}</span><b>${esc(st.name)}</b><span class="ip-tag" data-live="st-${st.id}-status"></span></div>
         ${d.capacity ? metalBar(st.storage, d.capacity, `st-${st.id}`) : ''}
         <span class="ip-hull"><i data-live="st-${st.id}-hull"></i></span>
         <div class="ip-sub" data-live="st-${st.id}-sub"></div>
@@ -78,7 +86,7 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
     const swarmRows = swarms.length ? swarms.map((w) => {
       const home = stations.find((s) => s.id === w.home);
       return `<div class="ip-card ip-sw">
-        <div class="ip-card-h"><b>${esc(w.name)}</b><span class="ip-tag ${w.mode === 'wydobycie' ? 'on' : ''}">${w.mode === 'wydobycie' ? 'wydobycie' : 'w doku'}</span></div>
+        <div class="ip-card-h"><span class="ip-ico">${droneIcon(22)}</span><b>${esc(w.name)}</b><span class="ip-tag ${w.mode === 'wydobycie' ? 'on' : ''}">${w.mode === 'wydobycie' ? 'wydobycie' : 'w doku'}</span></div>
         <div class="ip-sub">baza: ${esc(home?.name ?? '—')} · <b data-live="sw-${w.id}-n"></b></div>
         <div class="ip-states" data-live="sw-${w.id}-states"></div>
         <label>Złoże<select data-act="target" data-sw="${w.id}">${astOptions(w.target, home?.pos)}</select></label>
@@ -95,13 +103,23 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
       </div>`;
     }).join('') : `<p class="ip-empty">${docks.length ? 'Utwórz rój przy doku (kolumna „Stacje”).' : 'Roje wymagają doku roju. Dok to droga inwestycja: najpierw magazyn i stacja przeładunkowa, żeby zarobić na niego.'}</p>`;
 
-    root.innerHTML = `
+    const extra = activeExtra();
+    const tabs = extraTabs.length ? `<nav class="ip-tabs"><button data-act="tab" data-tab="eco" class="${tab === 'eco' ? 'on' : ''}">Gospodarka</button>${extraTabs.map((t) => `<button data-act="tab" data-tab="${t.id}" class="${tab === t.id ? 'on' : ''}">${t.label}</button>`).join('')}</nav>` : '';
+    const head = `
       <div class="ip-head">
-        <div><div class="ip-kicker">Przemysł · ${esc(getSystemName())}</div><div class="ip-credits"><span data-live="credits"></span> <small>kr</small></div></div>
+        <div><div class="ip-kicker">Przemysł · ${esc(getSystemName())}</div><div class="ip-credits">${creditsIcon(30)}<span data-live="credits"></span> <small>kr</small></div></div>
         <div class="ip-income" data-live="income"></div>
         <div class="ip-raid" data-live="raid"></div>
+        ${tabs}
         <button class="ip-close" data-act="close" aria-label="Zamknij">×</button>
-      </div>
+      </div>`;
+    if (extra) {
+      extraVersion = extra.version?.() ?? 0;
+      root.innerHTML = head + extra.render();
+      refresh();
+      return;
+    }
+    root.innerHTML = head + `
       <div class="ip-market">${market}</div>
       <div class="ip-cols">
         <section><h3>Budowa</h3>${buildCards}<p class="ip-note">Kredyty płacisz od razu, metal trafia na plac budowy: dowieź go sam (Y przy placu) albo holowniki przywiozą go z magazynów i doków. Dron: ${costText(DRONE.cost)}.</p></section>
@@ -120,6 +138,8 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
     if (!b || b.tagName === 'SELECT') return;
     const act = b.dataset.act;
     if (act === 'close') { setOpen(false); onClose?.(); }
+    else if (act === 'tab') { tab = b.dataset.tab; build(); }
+    else if (activeExtra()?.onAction) { activeExtra().onAction(act, b); build(); }
     else if (act === 'place') {
       const ship = getShip();
       economy.placeStation(b.dataset.type, ship.ahead);
@@ -139,6 +159,7 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
     }
   });
   root.addEventListener('change', (e) => {
+    if (activeExtra()?.onChange?.(e)) { build(); return; }
     const s = e.target.closest('select[data-act]');
     if (!s) return;
     const key = s.dataset.act;
@@ -165,7 +186,8 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
       set(`pool-${m}`, `${fmt(s.pool[m])} t`);
       set(`hold-${m}`, `${fmt(s.hold[m])} t`);
     }
-    for (const type of STATION_ORDER) {
+    activeExtra()?.refresh?.(root);
+    for (const type of stationTypes) {
       const chk = economy.canPlace(type, ship.ahead);
       set(`why-${type}`, chk.ok ? '' : chk.why);
       const btn = root.querySelector(`[data-act="place"][data-type="${type}"]`);
@@ -215,7 +237,9 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
   let acc = 0;
   function update(dt) {
     if (!open) return;
-    if (economy.version !== builtVersion && !root.contains(document.activeElement?.tagName === 'SELECT' ? document.activeElement : null)) build();
+    const ex = activeExtra();
+    const stale = ex ? (ex.version?.() ?? 0) !== extraVersion : economy.version !== builtVersion;
+    if (stale && !root.contains(document.activeElement?.tagName === 'SELECT' ? document.activeElement : null)) build();
     acc += dt;
     if (acc > 0.25) { acc = 0; refresh(); }
   }
@@ -224,5 +248,8 @@ export function createEconomyPanel(root, { economy, raids = null, getShip, getSy
     root.classList.toggle('visible', v);
     if (v) build();
   }
-  return { update, setOpen, toggle: () => setOpen(!open), get open() { return open; } };
+  return {
+    update, setOpen, toggle: () => setOpen(!open), get open() { return open; },
+    show(t) { tab = t; setOpen(true); },
+  };
 }

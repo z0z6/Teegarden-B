@@ -80,7 +80,7 @@ console.log('\n2. Tablica misji');
 {
   const { page, errors } = await open('/missions.html?uklad=blizniaki');
   await page.waitForTimeout(1500);
-  ok(await page.locator('.m').count() === 8, '7 misji + wolny lot');
+  ok(await page.locator('.m').count() === 9, 'kampania + 7 misji + wolny lot');
   ok(await page.inputValue('#system') === 'blizniaki', 'układ z intro przeszedł w adresie');
   for (const id of ['capture', 'blockade', 'waves', 'escort', 'ambush', 'pursuit', 'wolfhunt', 'wolny']) {
     await page.click(`.m[data-id="${id}"]`);
@@ -107,7 +107,7 @@ console.log('\n2. Tablica misji');
   ok(!overflow, 'telefon w pionie: bez przewijania w bok');
   await page.screenshot({ path: join(OUT, '2-board-phone.png'), fullPage: false });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await Promise.all([page.waitForURL(/step10-economy/, { waitUntil: 'domcontentloaded' }), page.keyboard.press('Enter')]);
+  await Promise.all([page.waitForURL(/step11-dominacja/, { waitUntil: 'domcontentloaded' }), page.keyboard.press('Enter')]);
   ok(true, 'Enter uruchamia grę');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await page.close();
@@ -116,7 +116,7 @@ console.log('\n2. Tablica misji');
 // ------------------------------------------------------------
 console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
 {
-  const { page, errors } = await open('/step10-economy/?misja=waves&statek=goniec-wybudzeni-hawk-7&trudnosc=trudna&wataha=1&uklad=teegarden&debug');
+  const { page, errors } = await open('/step11-dominacja/?misja=waves&statek=goniec-wybudzeni-hawk-7&trudnosc=trudna&wataha=1&uklad=teegarden&debug');
   await page.waitForFunction(() => window.__game?.missions?.active, null, { timeout: 60000 }).catch(() => {});
   const st = await page.evaluate(() => ({
     mission: __game.missions.state.id, active: __game.missions.active, pack: __game.wolfpack.active,
@@ -175,7 +175,7 @@ console.log('\n3. Gra: start z tablicy, audio, koniec misji, powrót');
   // N w trakcie misji: pierwsze N tylko ostrzega, drugie wraca na tablicę
   await page.keyboard.press('KeyN');
   await page.waitForTimeout(300);
-  ok(/step10-economy/.test(page.url()), 'pierwsze N w trakcie misji nie wychodzi (ostrzeżenie)');
+  ok(/step11-dominacja/.test(page.url()), 'pierwsze N w trakcie misji nie wychodzi (ostrzeżenie)');
   await Promise.all([page.waitForURL(/missions\.html/, { timeout: 8000, waitUntil: 'domcontentloaded' }), page.keyboard.press('KeyN')]);
   const back = new URL(page.url());
   ok(back.searchParams.get('misja') === 'capture' && back.searchParams.get('statek') === 'goniec-wybudzeni-hawk-7',
@@ -266,6 +266,79 @@ console.log('\n3b. Ekonomia (krok 10): kopanie, budowa, panel, roje, rabusie');
 }
 
 // ------------------------------------------------------------
+console.log('\n3c. Kampania (krok 11): pola, rasy, mapa strategiczna, dyplomacja, flota');
+{
+  const { page, errors } = await open('/missions.html');
+  await page.waitForTimeout(800);
+  ok(await page.getAttribute('.m.campaign', 'aria-selected') === 'true', 'tablica: kampania jest pierwsza i domyślna');
+  const url = await page.evaluate(() => window.__missions.gameUrl());
+  ok(/step11-dominacja/.test(url) && !/misja=/.test(url), `„Graj” prowadzi do kampanii: ${url}`);
+  await page.close();
+}
+{
+  const { page, errors } = await open('/step11-dominacja/?uklad=teegarden&debug');
+  await page.waitForFunction(() => window.__game?.playerState?.alive && window.__game.strategy, null, { timeout: 60000 });
+  const s0 = await page.evaluate(() => {
+    const g = __game; g.economy.reset(); g.strategy.ensure('teegarden');
+    return { fields: g.strategy.allFields.length, rivals: g.strategy.bySystem.get('teegarden').filter((f) => g.strategy.foreignOwner(f)).length };
+  });
+  ok(s0.fields === 25 && s0.rivals >= 1, `sektor: 25 pól, rywale w układzie startowym (${s0.rivals})`);
+  const disc = await page.evaluate(() => {
+    const g = __game, d = g.economy.fieldDefs('teegarden')[2];
+    g.shipGroup.position.set(d.center.x, d.center.y + 2000, d.center.z + 5000);
+    for (let i = 0; i < 30; i++) g.tick(1 / 30);
+    return g.economy.isDiscovered('teegarden', d.id);
+  });
+  ok(disc, 'podlot do sygnału odkrywa nowe pole');
+  await page.keyboard.press('KeyM');
+  await page.waitForTimeout(500);
+  ok(await page.isVisible('#strat-map .sm-svg'), 'M: mapa strategiczna z mapą układu');
+  ok(await page.locator('.sm-rank').count() === 7, 'ranking dominacji: gracz + 6 ras');
+  await page.click('[data-act="tab"][data-tab="dyplomacja"]');
+  await page.waitForTimeout(300);
+  ok(await page.locator('.sm-race .rp-portrait').count() === 6, 'dyplomacja: 6 kart ras z portretami');
+  await page.screenshot({ path: join(OUT, '3c-diplomacy.png') });
+  await page.keyboard.press('KeyM');
+  const war = await page.evaluate(() => {
+    const g = __game, S = g.strategy;
+    const fid = S.bySystem.get('teegarden').find((f) => S.foreignOwner(f));
+    const owner = S.foreignOwner(fid);
+    g.economy.discoverField(fid, { silent: true });
+    S.playerAction('war', owner);
+    for (let i = 0; i < 40; i++) g.tick(1 / 30);
+    const o = g.rival.outposts.get(fid);
+    const hostile = o?.stations.every((s) => s.actor.side === 'hostile');
+    for (const st of o?.stations ?? []) st.actor.takeDamage(1e6);
+    for (let i = 0; i < 40; i++) g.tick(1 / 30);
+    return { hostile, free: !S.foreignOwner(fid) };
+  });
+  ok(war.hostile && war.free, 'wojna: placówka rasy wroga, po rozbiciu pole wolne');
+  const fleet = await page.evaluate(() => {
+    const g = __game, E = g.economy, P = g.shipGroup.position.constructor;
+    E.state.credits = 99999;
+    const c = E.fieldDefs('teegarden')[0].center; const base = new P(c.x, c.y + 1500, c.z);
+    const ready = (st) => { for (const k in st.need) st.need[k] = 0; st.progress = 1; st.status = 'gotowa'; };
+    const y = E.placeStation('stocznia', base); ready(y);
+    const m = E.placeStation('magazyn', base.clone().add(new P(900, 0, 0))); ready(m);
+    Object.assign(m.storage, { zelazo: 1900, nikiel: 600, kobalt: 150, platyna: 30 });
+    for (let i = 0; i < 5; i++) g.tick(1 / 30);
+    g.army.order('eskorta');
+    for (let i = 0; i < 30 * 25; i++) g.tick(1 / 30);
+    return { ships: g.army.ships.length, npc: g.npcs.byTag('fleet').length };
+  });
+  ok(fleet.ships === 1 && fleet.npc === 1, 'stocznia: okręt zwodowany i w układzie jako NPC');
+  await page.keyboard.press('KeyP');
+  await page.waitForTimeout(300);
+  await page.click('[data-act="tab"][data-tab="flota"]');
+  await page.waitForTimeout(300);
+  ok(await page.locator('.fp-ship').count() === 1 && await page.locator('.fp-class img').count() === 3, 'panel P → Flota: okręt i trzy klasy z miniaturami');
+  await page.screenshot({ path: join(OUT, '3c-fleet.png') });
+  ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
+  await page.evaluate(() => __game.economy.reset());
+  await page.close();
+}
+
+// ------------------------------------------------------------
 console.log('\n4. Audio lab: każdy przycisk gra bez błędu');
 {
   const { page, errors } = await open('/tools/audio-lab/');
@@ -291,8 +364,8 @@ console.log('\n4. Audio lab: każdy przycisk gra bez błędu');
 }
 
 // ------------------------------------------------------------
-console.log('\n5. Kroki 5–9 po zmianach we wspólnych modułach (wczytanie, ogień, skok)');
-for (const step of ['step5-encounters', 'step6-warp', 'step7-weapons', 'step8-star-systems', 'step9-missions']) {
+console.log('\n5. Kroki 5–10 po zmianach we wspólnych modułach (wczytanie, ogień, skok)');
+for (const step of ['step5-encounters', 'step6-warp', 'step7-weapons', 'step8-star-systems', 'step9-missions', 'step10-economy']) {
   const { page, errors } = await open(`/${step}/`);
   await page.waitForTimeout(5000);
   await page.keyboard.down('KeyF'); await page.waitForTimeout(800); await page.keyboard.up('KeyF');

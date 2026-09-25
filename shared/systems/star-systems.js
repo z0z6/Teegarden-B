@@ -158,6 +158,23 @@ export const SYSTEMS = {
 };
 export const SYSTEM_ORDER = ['potrojny', 'teegarden', 'blizniaki', 'symbiotyczny', 'nadolbrzym'];
 
+
+/**
+ * Punkt startowy układu BEZ budowania sceny (krok 11: mapa strategiczna i
+ * pola surowcowe w układach, których gracz jeszcze nie odwiedził). Definicja
+ * układu jest uruchamiana na atrapie budowniczego - liczy się tylko
+ * spawnRadius, który build() zwraca. Ten sam wzór co w createStarSystem.
+ */
+export function spawnOf(id) {
+  const def = SYSTEMS[id];
+  const V = () => new THREE.Vector3();
+  const k = {
+    setG() {}, star() {}, planet() {}, belt() {}, tide() {}, accretion() {},
+    binary: (m1, m2, sep, baryPos) => ({ p1: baryPos.clone(), v1: V(), p2: baryPos.clone(), v2: V() }),
+  };
+  const spawnR = def.build(k).spawnRadius;
+  return { position: new THREE.Vector3(0, spawnR * 0.08, spawnR), lookAt: new THREE.Vector3() };
+}
 // ============================================================
 // BUDOWA UKŁADU
 // ============================================================

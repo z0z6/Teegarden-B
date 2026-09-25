@@ -47,8 +47,17 @@ export function createDashboard(container) {
       channels.set(key, entry);
     }
     entry.el.className = `crew-alert urgency-${urgency}`;
-    entry.el.querySelector('.crew-avatar').textContent = crew.initial;
-    entry.el.querySelector('.crew-avatar').style.background = crew.color;
+    // krok 11: rola może mieć portret (SVG z race-portraits.js) - ustawiany
+    // tylko przy zmianie, bo show() bywa wołane co klatkę (animacja portretu)
+    const av = entry.el.querySelector('.crew-avatar');
+    const avKey = crew.portrait ? crew.role + (crew.key ?? '') : crew.initial;
+    if (entry.avatarKey !== avKey) {
+      entry.avatarKey = avKey;
+      if (crew.portrait) { av.innerHTML = crew.portrait; av.classList.add('has-portrait'); }
+      else { av.textContent = crew.initial; av.classList.remove('has-portrait'); }
+    }
+    av.style.background = crew.color;
+    av.style.setProperty('--crew', crew.color);
     entry.el.querySelector('.crew-role').textContent = crew.role;
     entry.el.querySelector('.crew-text').textContent = text;
     entry.expiresAt = performance.now() + ttl;

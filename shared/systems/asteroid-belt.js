@@ -58,8 +58,13 @@ function makeNoise(rng) {
   };
 }
 
-function pickClass(r) {
+function pickClass(r, shares = null) {
   let acc = 0;
+  if (shares) {
+    const tot = Object.values(shares).reduce((a, b) => a + b, 0);
+    for (const [id, w] of Object.entries(shares)) { acc += w / tot; if (r < acc) return id; }
+    return 'S';
+  }
   for (const [id, c] of Object.entries(ASTEROID_CLASSES)) { acc += c.share; if (r < acc) return id; }
   return 'S';
 }
@@ -68,28 +73,36 @@ function pickClass(r) {
  * Dane pasa. `center` - środek pasa (THREE.Vector3 albo {x,y,z}).
  * @returns {{ seed, center, asteroids: Array }}
  */
-export function generateBelt(seed, center, { quality = 1 } = {}) {
+/**
+ * Opcje pola surowcowego (krok 11, wszystkie opcjonalne - bez nich pas jest
+ * identyczny jak w kroku 10): count, radius, shares (udział klas C/S/M),
+ * richness (mnożnik zasobów), idPrefix (unikalne id planetoid między polami),
+ * fieldId (do którego pola należy skała).
+ */
+export function generateBelt(seed, center, {
+  quality = 1, count: count0 = BELT.count, radius: beltR = BELT.radius, shares = null, richness = 1, idPrefix = '', fieldId = null,
+} = {}) {
   const rng = seededRng(seed);
-  const count = Math.max(8, Math.round(BELT.count * quality));
+  const count = Math.max(8, Math.round(count0 * quality));
   const asteroids = [];
   const c = new THREE.Vector3(center.x, center.y, center.z);
   for (let i = 0; i < count; i++) {
-    const cls = pickClass(rng());
+    const cls = pickClass(rng(), shares);
     // rozkład promieni: dużo małych, mało dużych (potęga)
     const radius = BELT.minR + (BELT.maxR - BELT.minR) * rng() ** 2.2;
     // spłaszczony dysk wokół środka pasa, bez nakładania się
     let pos;
     for (let tries = 0; tries < 30; tries++) {
-      const a = rng() * Math.PI * 2, d = BELT.radius * Math.sqrt(0.08 + 0.92 * rng());
+      const a = rng() * Math.PI * 2, d = beltR * Math.sqrt(0.08 + 0.92 * rng());
       pos = new THREE.Vector3(Math.cos(a) * d, (rng() - 0.5) * BELT.thickness, Math.sin(a) * d).add(c);
       if (asteroids.every((o) => o.position.distanceTo(pos) > (o.radius + radius) * 1.6)) break;
     }
     const k = ASTEROID_CLASSES[cls];
-    const total = Math.round(k.richness * (radius / 10) ** 2 * (0.8 + rng() * 0.4));
+    const total = Math.round(k.richness * (radius / 10) ** 2 * (0.8 + rng() * 0.4) * richness);
     const reserves = {};
     for (const m of METAL_ORDER) reserves[m] = Math.round(total * k.mix[m] * 10) / 10;
     asteroids.push({
-      id: `a${i}`, index: i, cls, radius, position: pos,
+      id: `${idPrefix}a${i}`, index: i, cls, radius, position: pos, fieldId,
       name: `${cls}-${String(100 + i * 7 + Math.floor(rng() * 7)).padStart(3, '0')}`,
       spinAxis: new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).normalize(),
       spinRate: (0.02 + rng() * 0.06) * (rng() < 0.5 ? -1 : 1) * (120 / radius) ** 0.5,
@@ -98,7 +111,7 @@ export function generateBelt(seed, center, { quality = 1 } = {}) {
       reserves, initial: { ...reserves }, total0: Object.values(reserves).reduce((a, b) => a + b, 0),
     });
   }
-  return { seed, center: c, asteroids };
+  return { seed, center: c, asteroids, radius: beltR };
 }
 
 export function remaining(ast) {

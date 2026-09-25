@@ -68,6 +68,12 @@
     .threat i { width: 6px; height: 10px; border-radius: 1px; background: rgba(255, 255, 255, 0.12); }
     .threat i.on { background: var(--foe); box-shadow: 0 0 6px rgba(255, 90, 77, 0.6); }
     .m.free { border-left-color: rgba(77, 214, 160, 0.35); margin-top: 0.4rem; }
+    /* krok 11: kampania - gra główna, na górze listy */
+    .m.campaign { margin-bottom: 0.5rem; padding-top: 0.8rem; padding-bottom: 0.8rem; border-left-color: rgba(255, 211, 107, 0.6);
+      background: linear-gradient(90deg, rgba(255, 211, 107, 0.14), rgba(6, 14, 24, 0.5) 70%); }
+    .m.campaign .n { color: var(--gold); font-size: 1.4rem; }
+    .m.campaign b { font-family: var(--display); font-weight: 800; font-size: 1.35rem; letter-spacing: 0.02em; }
+    .m.campaign[aria-selected="true"] { box-shadow: 0 10px 30px -18px rgba(255, 211, 107, 0.9); }
     .m.free[aria-selected="true"] { border-left-color: var(--friend); }
     :is(.m, .opt, .start, .back, select):focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
 
