@@ -17,7 +17,9 @@ import { createTargetLabels } from '../shared/systems/target-labels.js';
 import { RACES, raceForShip, shipForRace, deriveStats } from '../shared/data/races.js';
 import { setupAndroidLandscape } from '../shared/input/android-landscape.js';
 import { createWarpDrive, createPlayerWarp, WARP_SIGNATURES } from '../shared/systems/warp-drive.js';
-import { createWeapons, createPlayerArsenal, WEAPONS, WEAPON_ORDER, RACE_WEAPON } from '../shared/systems/weapons.js';
+import { createWeapons, createPlayerArsenal, WEAPONS, RACE_WEAPON } from '../shared/systems/weapons.js';
+import { combatRules, loadoutFor } from '../shared/systems/combat-rules.js';
+import { createFlares } from '../shared/systems/flares.js';
 import { createTactics, DIFFICULTY } from '../shared/systems/tactical-ai.js';
 import { createWolfpack, PACK_ORDERS } from '../shared/systems/wolfpack.js';
 import { createMissions, MISSIONS, MISSION_ORDER } from '../shared/systems/missions.js';
@@ -335,7 +337,12 @@ async function loadShip(index) {
   warp.setRace(playerWarpHandle, playerState.raceId); // sygnatura fałdy = rasa kapitana
   // KROK 7: Ciepło z karty rasy + mnożnik Taktyki; na start - broń rasowa
   arsenal.setRace(playerState.raceId, RACES[playerState.raceId].ship.thermal, playerStats.damageMult);
-  arsenal.select(RACE_WEAPON[playerState.raceId] ?? 'pulse');
+  // KROK 9 (combat-rules.js): uzbrojenie rasy + zasady poziomu trudności
+  const diffKey = DIFFICULTY[urlDifficulty] ? urlDifficulty : 'normalna';
+  arsenal.configure(loadoutFor(playerState.raceId, diffKey), combatRules(diffKey));
+  arsenal.select(arsenal.state.order.includes(RACE_WEAPON[playerState.raceId]) ? RACE_WEAPON[playerState.raceId] : arsenal.state.order[0]);
+  flares.configure(combatRules(diffKey));
+  buildWeaponBar();
   playerStats = deriveStats(playerState.raceId);
   playerState.maxHull = playerStats.hull;
   playerState.hull = playerStats.hull;
@@ -842,6 +849,8 @@ function respawn() {
   deathEl.classList.remove('visible');
   combat.clear();
   weapons.clear();
+  arsenal.refill(); // pełny zapas rakiet, flar i zimne działka
+  flares.refill();
   // krok 9: śmierć kończy misję; odrodzenie = ta sama misja od nowa (i wataha, jeśli była)
   const again = lastMissionAtDeath;
   const hadPack = wolfpack.active;
@@ -858,9 +867,11 @@ function respawn() {
 // KROK 7: ARSENAŁ GRACZA
 // ============================================================
 // F / LPM / OGIEŃ (dotyk) - spust (trzymany). Q/E albo kółko myszy - zmiana
-// broni, 5 - wybór bezpośredni po kolei (przycisk BROŃ na dotyku). Rakiety i
-// torpedy same NAMIERZAJĄ cel w stożku przed dziobem (0,7 s); bez namiaru
-// lecą prosto. Każdy strzał grzeje statek (pojemność = ship.thermal rasy).
+// broni, 5 - wybór bezpośredni po kolei (przycisk BROŃ na dotyku).
+// KROK 9 (combat-rules.js): każda rasa ma własny zestaw broni; działka grzeją
+// się (zależnie od poziomu trudności), rakiety/miny/impulsy mają zapas.
+// Sokół i torpeda czekają na namiar (0,7 s), Grot i Salwa łapią cel przed
+// dziobem od ręki. Flary wylatują same, gdy leci na nas wroga rakieta.
 const fireInput = { held: false };
 const arsenal = createPlayerArsenal({
   weapons,
@@ -879,12 +890,33 @@ arsenal.on('cooled', () => dashboard.show('heat', {
 arsenal.on('locked', (t) => dashboard.show('lock', {
   crew: CREW.tactical, urgency: 'info', ttl: 1600, text: `Namierzono: ${t.callsign}.`,
 }));
-arsenal.on('lost', () => dashboard.show('lock', {
-  crew: CREW.tactical, urgency: 'warning', ttl: 1800, text: 'Grot zgubił cel.',
+arsenal.on('lost', ({ weapon }) => dashboard.show('lock', {
+  crew: CREW.tactical, urgency: 'warning', ttl: 1800, text: `${WEAPONS[weapon]?.short ?? 'Rakieta'} zgubił cel.`,
 }));
 arsenal.on('salvo', ({ hits, total }) => dashboard.show('lock', {
   crew: CREW.tactical, urgency: hits ? 'info' : 'warning', ttl: 2000,
-  text: hits ? `Trójząb: ${hits} z ${total} w celu.` : 'Trójząb: salwa chybiona.',
+  text: hits ? `Salwa: ${hits} z ${total} w celu.` : 'Salwa chybiona.',
+}));
+arsenal.on('empty', (id) => dashboard.show('ammo', {
+  crew: CREW.tactical, urgency: 'warning', ttl: 2200, text: `${WEAPONS[id].short}: zapas wyczerpany. Zmień broń (Q/E).`,
+}));
+arsenal.on('emp', ({ jammed = 0, broken = 0 }) => dashboard.show('ammo', {
+  crew: CREW.tactical, urgency: 'info', ttl: 2400,
+  text: jammed || broken ? `Impuls: zagłuszone działa ${jammed}, zerwany namiar ${broken} rakiet.` : 'Impuls w próżnię - nikogo w stożku.',
+}));
+
+// FLARY: wylatują same, gdy leci na nas wroga rakieta (zapas i skuteczność
+// zależą od poziomu trudności, combat-rules.js)
+const flares = createFlares({
+  combat, weapons, ship: shipGroup, getVelocity: playerProxy.getVelocity,
+  isActive: () => playerState.alive && !playerWarp.ghost,
+});
+flares.on('burst', ({ fooled, total, left }) => dashboard.show('flare', {
+  crew: CREW.tactical, urgency: fooled === total ? 'info' : 'danger', ttl: 2000,
+  text: `Rakieta na nas! Flary: ${fooled === total ? 'zmylona' : total > 1 ? `zmylone ${fooled} z ${total}` : 'nie dała się zmylić'}. Zostało ${left}.`,
+}));
+flares.on('empty', () => dashboard.show('flare', {
+  crew: CREW.tactical, urgency: 'danger', ttl: 3000, text: 'Brak flar! Rakiety trzeba zgubić manewrem.',
 }));
 
 window.addEventListener('keydown', (e) => {
@@ -925,6 +957,7 @@ const hullEls = {
 function updateStory(delta) {
   // w fałdzie nie strzelamy (statek jest "poza przestrzenią")
   arsenal.update(delta, fireInput.held, playerState.alive && !!flightProfile && !playerWarp.ghost);
+  flares.update(delta);
 
   npcs.update(delta);
   combat.update(delta);
@@ -1183,30 +1216,49 @@ const weaponBar = document.getElementById('weapon-bar');
 const heatEls = { bar: document.getElementById('tm-heat-bar'), text: document.getElementById('tm-heat-text') };
 const lockEl = document.getElementById('lock-reticle');
 const touchWeaponBtn = document.getElementById('touch-weapon');
-const slotEls = {};
-WEAPON_ORDER.forEach((id, i) => {
-  const el = document.createElement('button');
-  el.className = 'wslot';
-  el.style.setProperty('--wc', `#${WEAPONS[id].color.toString(16).padStart(6, '0')}`);
-  el.innerHTML = `<span class="wname">${WEAPONS[id].name}</span><span class="wdesc">${WEAPONS[id].desc}</span>`;
-  el.addEventListener('mousedown', (e) => e.stopPropagation()); // klik w pasek to nie strzał
-  el.addEventListener('click', () => arsenal.select(id));
-  weaponBar.appendChild(el);
-  slotEls[id] = el;
-});
+const flareEl = document.getElementById('tm-flares');
+let slotEls = {};
+/** Pasek broni z zestawu rasy (krok 9) - budowany przy wczytaniu statku. */
+function buildWeaponBar() {
+  weaponBar.replaceChildren();
+  slotEls = {};
+  for (const id of arsenal.state.order) {
+    const el = document.createElement('button');
+    el.className = 'wslot';
+    el.style.setProperty('--wc', `#${WEAPONS[id].color.toString(16).padStart(6, '0')}`);
+    el.innerHTML = '<span class="wname"></span><span class="wdesc"></span><span class="wammo"></span>';
+    el.querySelector('.wname').textContent = WEAPONS[id].name;
+    el.querySelector('.wdesc').textContent = WEAPONS[id].desc;
+    el.addEventListener('mousedown', (e) => e.stopPropagation()); // klik w pasek to nie strzał
+    el.addEventListener('click', () => arsenal.select(id));
+    weaponBar.appendChild(el);
+    slotEls[id] = el;
+  }
+  hudKey = '';
+}
 let hudKey = '';
 const _lockV = new THREE.Vector3();
 function updateWeaponHud() {
   const st = arsenal.state;
-  const key = `${st.weapon}|${st.raceId}|${st.overheated}`;
+  const ammoKey = st.ammo ? Object.values(st.ammo).join(',') : '';
+  const key = `${st.weapon}|${st.raceId}|${st.overheated}|${ammoKey}|${flares.state.count}`;
   if (key !== hudKey) {
     hudKey = key;
-    for (const id of WEAPON_ORDER) {
-      slotEls[id].classList.toggle('active', id === st.weapon);
-      slotEls[id].classList.toggle('special', arsenal.isSpecial(id));
+    for (const id of Object.keys(slotEls)) {
+      const el = slotEls[id];
+      el.classList.toggle('active', id === st.weapon);
+      el.classList.toggle('special', arsenal.isSpecial(id));
+      const n = st.ammo?.[id];
+      el.querySelector('.wammo').textContent = n == null ? '' : `${n}`;
+      el.classList.toggle('empty', n === 0);
     }
     weaponBar.classList.toggle('overheated', st.overheated);
-    if (touchWeaponBtn) touchWeaponBtn.textContent = WEAPONS[st.weapon].short.toUpperCase();
+    const n = st.ammo?.[st.weapon];
+    if (touchWeaponBtn) touchWeaponBtn.textContent = WEAPONS[st.weapon].short.toUpperCase() + (n == null ? '' : ` ${n}`);
+    if (flareEl) {
+      flareEl.textContent = `${flares.state.count} / ${flares.state.max}`;
+      flareEl.classList.toggle('low', flares.state.count <= 2);
+    }
   }
   heatEls.bar.style.width = `${st.heat.toFixed(1)}%`;
   heatEls.bar.classList.toggle('hot', st.heat > 70 || st.overheated);
@@ -1321,6 +1373,8 @@ function startMission(id) {
   if (!playerState.alive || !flightProfile || playerWarp.active) return;
   paradeQueue = [];
   encounters.reset();
+  arsenal.refill();
+  flares.refill();
   missions.start(id);
 }
 

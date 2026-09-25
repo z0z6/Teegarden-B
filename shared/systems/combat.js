@@ -316,6 +316,37 @@ export function createCombat(scene) {
    * aktora bliżej niż 3 promienie (+ promień wybuchu). Zwraca null albo
    * { tca, guided, aoe, dir, from }. Tylko odczyt - nic w walce nie zmienia.
    */
+  /**
+   * KROK 9 (flary): wszystkie wrogie pociski, których głowica trzyma TEN cel
+   * (referencja wektora pozycji) i które dolecą w ciągu `horizon` s.
+   * Zwraca [{ bolt, tca }] - flary mogą przekierować `bolt.homing.target`.
+   */
+  function threats(position, side, horizon = 1.5) {
+    const out = [];
+    for (const b of bolts) {
+      if (!isEnemy(b.side, side) || !b.homing || b.homing.lost || b.homing.target?.position !== position) continue;
+      _toActor.copy(position).sub(b.mesh.position);
+      const dist = _toActor.length();
+      const closing = Math.max(b.vel.dot(_toActor) / Math.max(dist, 1e-6), b.speed * 0.5, 1);
+      const tca = dist / closing;
+      if (tca <= horizon) out.push({ bolt: b, tca });
+    }
+    return out;
+  }
+
+  /** KROK 9 (impuls zakłócający): wrogie pociski naprowadzane w promieniu tracą cel. */
+  function breakGuidance(center, radius, side) {
+    let n = 0;
+    for (const b of bolts) {
+      if (!isEnemy(b.side, side) || !b.homing || b.homing.lost) continue;
+      if (b.mesh.position.distanceTo(center) > radius) continue;
+      b.homing.lost = 'jam';
+      b.homing.onLost?.(b, 'jam');
+      n++;
+    }
+    return n;
+  }
+
   function incoming(position, radius, side, horizon = 3) {
     let best = null;
     for (const b of bolts) {
@@ -348,7 +379,7 @@ export function createCombat(scene) {
   }
 
   return {
-    register, unregister, fire, flash, update, clear, raycast, explode, incoming,
+    register, unregister, fire, flash, update, clear, raycast, explode, incoming, threats, breakGuidance,
     on(type, fn) { listeners[type].push(fn); },
     get boltCount() { return bolts.length; },
   };

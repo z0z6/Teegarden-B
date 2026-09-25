@@ -40,9 +40,20 @@ export const WEAPONS = {
     desc: 'szybkie bolty, uniwersalne',
     cooldown: 0.22, heat: 3, damage: 14, speed: 1500, life: 2, assistDeg: 12,
   },
+  // KROK 9 (combat-rules.js): działka Wybudzonych - fotonowe i fazowe
+  photon: {
+    name: 'Działko fotonowe', short: 'Foton', color: 0xfff1a8,
+    desc: 'wolniejsze, mocne, pocisk prawie natychmiastowy',
+    cooldown: 0.5, heat: 7, damage: 34, speed: 3200, life: 1.2, assistDeg: 8, size: 1.8, gunHeatMult: 1.4,
+  },
+  phase: {
+    name: 'Działko fazowe', short: 'Faza', color: 0xd18bff,
+    desc: 'serie po 3 z rozrzutem, zabójcze z bliska',
+    cooldown: 0.42, heat: 8, damage: 13, count: 3, spreadDeg: 2.6, speed: 1300, life: 0.75, assistDeg: 14, size: 1.2, gunHeatMult: 1.8,
+  },
   missile: {
-    name: 'Rój rakiet', short: 'Rakiety', color: 0xff7a45,
-    desc: 'para rakiet, wymaga namierzenia',
+    name: 'Rakieta Sokół', short: 'Sokół', color: 0xff7a45,
+    desc: 'samonaprowadzająca: namierz i zapomnij',
     cooldown: 1.5, heat: 10, damage: 30, aoeRadius: 60, aoeDamage: 16,
     speed: 180, accel: 950, maxSpeed: 1150, turnRate: 3.0, life: 4.5,
     lockTime: 0.7, lockRange: 3200, lockConeDeg: 18, keepConeDeg: 32, guided: true,
@@ -58,9 +69,10 @@ export const WEAPONS = {
     guided: true,
   },
   salvo: {
-    name: 'Salwa Trójząb', short: 'Trójząb', color: 0xc08bff,
-    desc: 'trzy szybkie torpedy; dochodzą zwykle 1-2',
-    cooldown: 2.4, heat: 18, count: 3, fanDeg: 9, damage: 38, aoeRadius: 50, aoeDamage: 16, proximity: 40,
+    name: 'Salwa Rój', short: 'Salwa', color: 0xc08bff,
+    desc: 'pięć rakiet w zwartej grupie',
+    // pięć rakiet obok siebie (krzyż + środek, `cluster` j. odstępu), prawie równoległych
+    cooldown: 2.4, heat: 18, count: 5, fanDeg: 1.2, cluster: 5, damage: 26, aoeRadius: 45, aoeDamage: 12, proximity: 40,
     speed: 350, accel: 1200, maxSpeed: 1300, turnRate: 2.0, life: 3.2, delay: 0.2,
     seeker: { seekerConeDeg: 26, lossPerSec: 0.7, lossPerRad: 0.3, lostDeflectDeg: 16, commitRange: 180 },
     // ŁĄCZE SALWY: torpedy dzielą jedno łącze naprowadzania. Dopóki żadna nie
@@ -68,7 +80,7 @@ export const WEAPONS = {
     // dostaje lepszy namiar (x0,5), po drugiej ostatnia prawie go nie traci
     // (x0,1). Dzięki temu salwa zwykle kończy się 1-2 trafieniami, a rzadko
     // "wszystko albo nic", jak przy trzech niezależnych rzutach.
-    link: [1.4, 0.5, 0.1],
+    link: [1.4, 0.8, 0.5, 0.3, 0.1],
     guided: true,
   },
   torpedo: {
@@ -76,6 +88,18 @@ export const WEAPONS = {
     desc: 'wolna, implozja w promieniu 300 j.',
     cooldown: 3.5, heat: 24, aoeRadius: 300, aoeDamage: 115, proximity: 110,
     speed: 140, accel: 260, maxSpeed: 650, turnRate: 0.9, life: 7, guided: true,
+  },
+  // KROK 9: broń do tyłu i broń obronna
+  mine: {
+    name: 'Mina Kolczatka', short: 'Kolczatka', color: 0xff5a4d,
+    desc: 'zrzut za rufę; wybucha przy wrogu',
+    cooldown: 0.9, heat: 0, damage: 40, aoeRadius: 130, aoeDamage: 70, proximity: 120,
+    armTime: 1.0, drift: 30, life: 30,
+  },
+  emp: {
+    name: 'Impuls zakłócający', short: 'Impuls Z', color: 0x7fd1ff,
+    desc: 'zrywa namiar wrogich rakiet, ucisza działa na 2,5 s',
+    cooldown: 4, heat: 0, range: 1500, coneDeg: 40, jamSec: 2.5, breakRadius: 1300,
   },
 };
 export const WEAPON_ORDER = ['pulse', 'missile', 'dart', 'salvo', 'torpedo'];
@@ -444,12 +468,76 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
    *                     up (dla salwy: oś wachlarza), onResult(hit, lostWhy) - raz na KAŻDĄ torpedę
    *                     Grota/Trójzęba (hit: czy doszła; lostWhy: null albo powód zgubienia)
    */
-  function fire(id, { origin, dir, side, shooter = null, target = null, damageMult = 1, color = null, baseSpeed = 0, npc = null, right = null, up = null, onResult = null }) {
+  /**
+   * LOS POCISKU (krok 9, combat-rules.js): rakieta gracza z celem ma z góry
+   * rozstrzygnięte, czy trafi. Trafiająca: bez losowego gubienia celu,
+   * zwrotniejsza (nadąży za unikami), z zapalnikiem zbliżeniowym. Chybiająca:
+   * gubi cel w połowie drogi i zbacza (to samo "szarpnięcie" co przy zwykłym
+   * zgubieniu). Dzięki temu procent trafień zależy od poziomu trudności,
+   * a nie od przypadku. Zwraca opakowanie onUpdate albo null.
+   */
+  function applyFate(fate, opts, lostSpeed) {
+    const h = opts.homing;
+    if (!fate || !h) return null;
+    for (const k of ['seekerConeDeg', 'lossPerSec', 'lossPerRad', 'lostDeflectDeg']) delete h[k];
+    h.lossMult = 0;
+    if (fate.hit) {
+      h.turnRate *= 2.4;
+      opts.proximity = Math.max(opts.proximity ?? 0, 35);
+      return null;
+    }
+    const dist = h.target.position.distanceTo(opts.origin);
+    const lostAt = (h.delay ?? 0.1) + (dist / Math.max(lostSpeed, 1)) * rand(0.3, 0.6);
+    return (b) => {
+      if (b.homing.lost || b.age < lostAt) return;
+      b.homing.lost = 'fate';
+      _c.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).cross(b.vel).normalize();
+      b.vel.applyAxisAngle(_c, THREE.MathUtils.degToRad(rand(18, 30)));
+      b.mesh.quaternion.setFromUnitVectors(Z, _a.copy(b.vel).normalize());
+      b.homing.onLost?.(b, 'fate');
+    };
+  }
+  const chain = (f1, f2) => (f2 ? (b, dt) => { f1?.(b, dt); f2(b, dt); } : f1);
+
+  /**
+   * @param {object} o.fate   (krok 9) { hit } albo funkcja () => { hit } dla każdego pocisku osobno
+   * @param {Array}  o.targets (impuls zakłócający) wrodzy NPC w zasięgu
+   */
+  function fire(id, { origin, dir, side, shooter = null, target = null, damageMult = 1, color = null, baseSpeed = 0, npc = null, right = null, up = null, onResult = null, fate = null, targets = null }) {
     const W = WEAPONS[id];
     const P = npc ? NPC_PROFILE[id] : null;
     const col = color ?? W.color;
-    onFire?.(id, origin, side, npc);
-    if (id === 'pulse') {
+    const fateOf = () => (typeof fate === 'function' ? fate() : fate);
+    onFire?.(id === 'photon' || id === 'phase' ? 'pulse' : id === 'mine' ? 'missile' : id === 'emp' ? 'torpedo' : id, origin, side, npc);
+    if (id === 'photon') {
+      combat.fire({ origin, direction: dir, side, speed: W.speed, damage: W.damage * damageMult, color: col, life: W.life, hitScale: 2.4, size: W.size, shooter });
+      particles.burst(origin, 5, 90, col, 5, 0.18);
+    } else if (id === 'phase') {
+      let ax = up ?? _c.set(0, 1, 0);
+      for (let i = 0; i < W.count; i++) {
+        const d = dir.clone();
+        d.applyAxisAngle(_a.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(), THREE.MathUtils.degToRad(rand(0, W.spreadDeg)));
+        combat.fire({ origin: origin.clone().addScaledVector(d, i * 4), direction: d.normalize(), side, speed: W.speed * rand(0.95, 1.05), damage: W.damage * damageMult, color: col, life: W.life, hitScale: 2.2, size: W.size, shooter });
+      }
+      void ax;
+    } else if (id === 'mine') {
+      // zrzut za rufę: `dir` to kierunek LOTU statku, mina dryfuje do tyłu
+      const back = dir.clone().negate();
+      combat.fire({
+        origin, direction: back, side, speed: W.drift, damage: W.damage * damageMult,
+        aoe: { radius: W.aoeRadius, damage: W.aoeDamage * damageMult }, proximity: 0,
+        life: W.life, hitScale: 3, shooter, mesh: mineMesh(col),
+        onUpdate: (b, dt) => {
+          if (!b._armed && b.age >= W.armTime) { b._armed = true; b.proximity = W.proximity; particles.burst(b.mesh.position, 6, 40, col, 4, 0.3); }
+          b.mesh.rotation.x += dt * 1.3; b.mesh.rotation.y += dt * 0.9;
+          const blink = b._armed ? (Math.sin(b.age * 9) > 0.2 ? 1 : 0.25) : 0.15;
+          b.mesh.children[0].material.opacity = blink;
+        },
+        onEnd: (b, reason, p) => { if (reason !== 'expire') explosion(p, 70, col); else particles.burst(p, 8, 50, 0x777777, 5, 0.5); },
+      });
+    } else if (id === 'emp') {
+      return empWave(origin, dir, W, col, side, targets ?? []);
+    } else if (id === 'pulse') {
       combat.fire({
         origin, direction: dir, side, speed: W.speed, damage: (P?.damage ?? W.damage) * damageMult,
         color: col, life: npc ? 2.4 : W.life, hitScale: npc ? 2.2 : 2, shooter,
@@ -457,15 +545,16 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
     } else if (id === 'missile') {
       const d = dir.clone();
       if (right) d.addScaledVector(right, 0.35).normalize(); // wylot na boki, rakiety "zakręcają" do celu
-      combat.fire({
+      const o = {
         origin, direction: d, side, speed: baseSpeed + W.speed, accel: W.accel, maxSpeed: baseSpeed + W.maxSpeed,
         damage: (P?.damage ?? W.damage) * damageMult,
         aoe: { radius: W.aoeRadius, damage: (P?.aoeDamage ?? W.aoeDamage) * damageMult },
-        homing: target ? { target, turnRate: W.turnRate, delay: 0.12 } : null,
+        homing: target ? { target, turnRate: W.turnRate, delay: 0.12, onLost: () => onResult?.(false, 'fate') } : null,
         life: W.life, hitScale: 1.4, shooter, mesh: missileMesh(col),
-        onUpdate: missileTrail(col),
         onEnd: (b, reason, p) => { if (reason !== 'expire') explosion(p, 40, col); else particles.burst(p, 10, 80, 0x888888, 6, 0.6); },
-      });
+      };
+      o.onUpdate = chain(missileTrail(col), applyFate(fateOf(), o, (W.maxSpeed + baseSpeed) * 0.8));
+      combat.fire(o);
     } else if (id === 'dart' || id === 'salvo') {
       const n = W.count ?? 1;
       // wachlarz salwy w płaszczyźnie prostopadłej do `up` (domyślnie: dowolnej)
@@ -473,12 +562,17 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
       if (!axis) { axis = _c.set(0, 1, 0); if (Math.abs(dir.y) > 0.9) axis.set(1, 0, 0); }
       axis = axis.clone().normalize();
       const link = W.link ? { lost: 0, homings: [] } : null;
+      // zwarta grupa (salwa): krzyż + środek w płaszczyźnie prostopadłej do lotu
+      const sideAx = W.cluster ? new THREE.Vector3().crossVectors(dir, axis).normalize() : null;
+      const CROSS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]];
       for (let i = 0; i < n; i++) {
         const ang = n === 1 ? 0 : (i - (n - 1) / 2) * THREE.MathUtils.degToRad(W.fanDeg) + rand(-0.02, 0.02);
         const d = dir.clone().applyAxisAngle(axis, ang).normalize();
         const res = { lost: null };
-        const bolt = combat.fire({
-          origin: origin.clone().addScaledVector(d, i * 2), direction: d, side,
+        const o0 = origin.clone().addScaledVector(d, i * 2);
+        if (sideAx) { const [cx, cy] = CROSS[i % CROSS.length]; o0.addScaledVector(sideAx, cx * W.cluster).addScaledVector(axis, cy * W.cluster); }
+        const opts = {
+          origin: o0, direction: d, side,
           speed: baseSpeed + W.speed, accel: W.accel, maxSpeed: baseSpeed + W.maxSpeed,
           damage: (P?.damage ?? W.damage) * damageMult,
           aoe: { radius: W.aoeRadius, damage: (P?.aoeDamage ?? W.aoeDamage) * damageMult },
@@ -495,8 +589,7 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
               }
             },
           } : null,
-          life: W.life, hitScale: 1.4, shooter, mesh: dartMesh(col, id === 'salvo' ? 0.75 : 1),
-          onUpdate: seekerTrail(col, id === 'salvo' ? 0.016 : 0.01),
+          life: W.life, hitScale: 1.4, shooter, mesh: dartMesh(col, id === 'salvo' ? 0.7 : 1),
           onEnd: (b, reason, p) => {
             const hi = link ? link.homings.indexOf(b.homing) : -1;
             if (hi >= 0) link.homings.splice(hi, 1);
@@ -504,22 +597,108 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
             else particles.burst(p, 8, 70, 0x888888, 5, 0.5);
             onResult?.(reason !== 'expire', res.lost);
           },
-        });
-        if (link && bolt.homing) link.homings.push(bolt.homing);
+        };
+        opts.onUpdate = chain(seekerTrail(col, id === 'salvo' ? 0.02 : 0.01), applyFate(fateOf(), opts, (W.maxSpeed + baseSpeed) * 0.8));
+        const bolt = combat.fire(opts);
+        if (link && bolt.homing && !fate) link.homings.push(bolt.homing);
       }
       particles.burst(origin, 6, 120, col, 4, 0.2); // błysk wyrzutni
     } else if (id === 'torpedo') {
-      combat.fire({
+      const o = {
         origin, direction: dir, side, speed: baseSpeed + W.speed, accel: W.accel, maxSpeed: baseSpeed + W.maxSpeed,
         damage: 0,
         aoe: { radius: W.aoeRadius, damage: (P?.aoeDamage ?? W.aoeDamage) * damageMult, onExpire: true },
         proximity: W.proximity,
         homing: target ? { target, turnRate: W.turnRate, delay: 0.4 } : null,
         life: W.life, hitScale: 2, shooter, mesh: torpedoMesh(col),
-        onUpdate: torpedoTrail(col),
         onEnd: (b, reason, p) => implosion(p, W.aoeRadius * 0.55, col),
-      });
+      };
+      o.onUpdate = chain(torpedoTrail(col), applyFate(fateOf(), o, (W.maxSpeed + baseSpeed) * 0.6));
+      combat.fire(o);
     }
+  }
+
+  // ---------------- krok 9: mina, impuls zakłócający, flary ----------------
+  const mineGeo = new THREE.IcosahedronGeometry(3.2, 0);
+  const spikeGeo = new THREE.ConeGeometry(0.7, 3.2, 5);
+  function mineMesh(color) {
+    const g = new THREE.Mesh(mineGeo, new THREE.MeshBasicMaterial({ color: 0x30343c }));
+    const light = glowSprite(color, 0.03, 0.15);
+    g.add(light); // children[0] = migające światło (uzbrojona = miga szybko)
+    for (const v of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      const sp = new THREE.Mesh(spikeGeo, g.material);
+      const n = new THREE.Vector3(...v);
+      sp.position.copy(n).multiplyScalar(3.6);
+      sp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
+      g.add(sp);
+    }
+    return g;
+  }
+
+  /**
+   * Impuls zakłócający: fala w stożku przed dziobem. Wrodzy NPC w stożku
+   * milkną na `jamSec` (npcFire zwraca im tylko krótką pauzę), a wrogie
+   * pociski naprowadzane w promieniu `breakRadius` tracą namiar.
+   */
+  function empWave(origin, dir, W, col, side, targets) {
+    const cosMax = Math.cos(THREE.MathUtils.degToRad(W.coneDeg));
+    let jammed = 0;
+    for (const n of targets) {
+      if (!n.alive || n.hidden) continue;
+      _a.copy(n.group.position).sub(origin);
+      const d = _a.length();
+      if (d > W.range || _a.normalize().dot(dir) < cosMax) continue;
+      n.jammedUntil = time + W.jamSec;
+      jammed++;
+      particles.burst(n.group.position, 24, 160, col, 6, 0.6);
+    }
+    const broken = combat.breakGuidance?.(origin, W.breakRadius, side) ?? 0;
+    // fala: kilka pierścieni iskier rozchodzących się stożkiem
+    for (let ring = 0; ring < 4; ring++) {
+      for (let i = 0; i < 26; i++) {
+        _b.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize();
+        _a.copy(dir).addScaledVector(_b, Math.tan(THREE.MathUtils.degToRad(W.coneDeg)) * rand(0.3, 1)).normalize();
+        particles.emit(origin, _a.multiplyScalar(W.range * (0.9 + ring * 0.12)), ring ? col : 0xffffff, 7 - ring, 0.9, 1);
+      }
+    }
+    combat.flash(origin, 60, col, 0.35);
+    onBlast?.('implosion', origin, 120);
+    return { jammed, broken };
+  }
+
+  /**
+   * Flary gracza: `n` jasnych wabików wyrzuconych na boki i do tyłu.
+   * Zwraca cele-wabiki { position, velocity, isAlive } - pocisk przekierowany
+   * na wabika goni go zamiast statku.
+   */
+  function flareBurst(origin, shipVel, fwd, n = 3) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const spr = glowSprite(i % 2 ? 0xffd08a : 0xffffff, 0.05, 1);
+      spr.position.copy(origin);
+      scene.add(spr);
+      const vel = shipVel.clone().multiplyScalar(0.35)
+        .addScaledVector(fwd, -rand(80, 160))
+        .add(_a.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize().multiplyScalar(rand(160, 260)));
+      const f = { position: spr.position, velocity: vel, age: 0, life: 2.6, isAlive: () => f.age < f.life };
+      let acc = 0;
+      effects.push({
+        age: 0, duration: f.life,
+        step: (k) => {
+          const dt = k * f.life - f.age;
+          f.age = k * f.life;
+          vel.multiplyScalar(Math.max(0, 1 - 0.9 * dt));
+          spr.position.addScaledVector(vel, dt);
+          spr.material.opacity = 1 - k * k;
+          acc += dt;
+          while (acc > 0.03) { acc -= 0.03; particles.emit(spr.position, _b.set(rand(-8, 8), rand(-8, 8), rand(-8, 8)), 0xffb060, 5, 0.6, 1.5); }
+        },
+        done: () => { scene.remove(spr); spr.material.dispose(); },
+      });
+      out.push(f);
+    }
+    particles.burst(origin, 14, 150, 0xffffff, 4, 0.3);
+    return out;
   }
 
   // ---------------- NPC ----------------
@@ -530,6 +709,10 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
   function npcFire(npc, { weaponId, targetPos, targetVel, targetRef, dist, alignCos, color }) {
     const P = NPC_PROFILE[weaponId];
     if (!P || dist > P.range || alignCos < P.align) return null;
+    if (npc.jammedUntil > time) { // impuls zakłócający: tylko iskry z luf
+      if (Math.random() < 0.3) particles.burst(npc.group.position, 4, 60, 0x7fd1ff, 3, 0.25);
+      return 0.35;
+    }
     const pos = npc.group.position;
     const fwd = _c.set(0, 0, -1).applyQuaternion(npc.group.quaternion).clone();
     const origin = pos.clone().addScaledVector(fwd, npc.radius * 1.1 + 6);
@@ -563,7 +746,7 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
 
   function clear() {}
 
-  return { fire, npcFire, update, clear, particles, get time() { return time; } };
+  return { fire, npcFire, flareBurst, update, clear, particles, get time() { return time; } };
 }
 
 // ============================================================
@@ -595,10 +778,16 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
     damageMult: 1,
     lock: { target: null, progress: 0, locked: false },
     firing: false,
+    // KROK 9 (configure): uzbrojenie rasy, zapas, zasady poziomu trudności.
+    // null = tryb starszych kroków (wszystkie bronie, grzeje każda, bez limitu).
+    order: WEAPON_ORDER,
+    ammo: null,     // { id: ile zostało }
+    maxAmmo: null,
+    rules: null,
   };
   let side = 1;
   // lost: Grot gracza zgubił cel; salvo: wynik salwy Trójzęba { hits, total }
-  const listeners = { overheat: [], cooled: [], locked: [], switched: [], lost: [], salvo: [] };
+  const listeners = { overheat: [], cooled: [], locked: [], switched: [], lost: [], salvo: [], empty: [], emp: [] };
   const emit = (t, p) => listeners[t].forEach((fn) => fn(p));
 
   const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -613,16 +802,56 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
   const special = () => RACE_WEAPON[state.raceId];
   // grzanie skalowane pojemnością cieplną rasy (60 = wzorzec) i specjalnością (-30%)
   const heatScale = (id) => (60 / state.thermal) * (id === special() ? 0.7 : 1);
+  const GUN = { pulse: 1, photon: 1, phase: 1 };
+
+  /**
+   * KROK 9: uzbrojenie rasy i zasady poziomu trudności (combat-rules.js).
+   * @param {{order: string[], ammo: object}} loadout
+   * @param {object} rules  hitChance, gunOverheatSec, ...
+   */
+  function configure(loadout, rules) {
+    state.order = loadout.order.filter((id) => WEAPONS[id]);
+    state.maxAmmo = { ...loadout.ammo };
+    state.rules = rules;
+    refill();
+    if (!state.order.includes(state.weapon)) { state.weapon = state.order[0]; emit('switched', state.weapon); }
+  }
+  /** Pełny zapas i zimne działka (start misji, odrodzenie). */
+  function refill() {
+    if (state.maxAmmo) state.ammo = { ...state.maxAmmo };
+    state.heat = 0;
+    state.overheated = false;
+  }
+  /**
+   * Ciepło strzału. Tryb kroku 9: grzeją tylko działka, tak że ciągły ogień
+   * przegrzewa po `gunOverheatSec` s (łatwy: wcale). Rasa o większym
+   * `thermal` wytrzymuje proporcjonalnie dłużej; foton/faza - krócej.
+   */
+  function shotHeat(id, W) {
+    const R = state.rules;
+    if (!R) return W.heat * heatScale(id);
+    if (!GUN[id] || !R.gunOverheatSec) return 0;
+    const cool = 20 * (state.thermal / 60);
+    const secs = R.gunOverheatSec * (state.thermal / 60) / (W.gunHeatMult ?? 1);
+    return (100 / secs + cool) * W.cooldown;
+  }
+  const hasAmmo = (id) => !state.ammo || state.ammo[id] == null || state.ammo[id] > 0;
 
   function select(id) {
-    if (!WEAPONS[id] || id === state.weapon) return;
+    if (!WEAPONS[id] || id === state.weapon || !state.order.includes(id)) return;
     state.weapon = id;
     state.cooldown = Math.max(state.cooldown, 0.25); // przezbrojenie trwa chwilę
     emit('switched', id);
   }
   function cycle(step) {
-    const i = WEAPON_ORDER.indexOf(state.weapon);
-    select(WEAPON_ORDER[(i + step + WEAPON_ORDER.length) % WEAPON_ORDER.length]);
+    const order = state.order;
+    let i = order.indexOf(state.weapon);
+    // pomijamy bronie z pustym zapasem (chyba że wszystkie puste)
+    for (let k = 0; k < order.length; k++) {
+      i = (i + step + order.length) % order.length;
+      if (hasAmmo(order[i])) break;
+    }
+    select(order[i]);
   }
 
   function addHeat(amount) {
@@ -652,6 +881,7 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
     const W = WEAPONS.missile;
     const L = state.lock;
     if (!WEAPONS[state.weapon].guided) { L.target = null; L.progress = 0; L.locked = false; return; }
+    const lockSpeed = state.rules && (state.weapon === 'dart' || state.weapon === 'salvo') ? 4 : 1; // Grot i Salwa: "tam, gdzie celujesz" - namiar prawie od razu
     const inCone = (n, deg) => {
       if (!n.alive || n.hidden) return -2;
       _d.copy(n.group.position).sub(ship.position);
@@ -669,7 +899,7 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
       L.locked = false;
     }
     if (L.target) {
-      L.progress = Math.min(1, L.progress + dt / W.lockTime);
+      L.progress = Math.min(1, L.progress + (dt * lockSpeed) / W.lockTime);
       if (L.progress >= 1 && !L.locked) { L.locked = true; emit('locked', L.target); }
     }
   }
@@ -700,11 +930,35 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
     const origin = ship.position.clone().addScaledVector(_f, radius * 1.1 + 6);
 
     if (state.cooldown > 0) return;
+    if (!hasAmmo(id)) {
+      state.cooldown = 0.4;
+      emit('empty', id);
+      return;
+    }
     state.firing = true;
     const lockT = state.lock.locked ? state.lock.target : null;
     const targetRef = lockT ? { position: lockT.group.position, velocity: lockT.velocity, isAlive: () => lockT.alive && !lockT.hidden } : null;
+    // krok 9: los każdej rakiety z celem rozstrzyga się przy starcie (poziom trudności)
+    const hitChance = state.rules?.hitChance;
+    const fate = hitChance != null && targetRef ? () => ({ hit: Math.random() < hitChance }) : null;
+    if (state.ammo && state.ammo[id] != null) state.ammo[id]--;
 
-    if (id === 'missile') {
+    if (state.rules && id === 'missile') {
+      // Sokół: jedna rakieta na strzał, na przemian z burt
+      const s = (side *= -1);
+      const o = origin.clone().addScaledVector(_r, s * Math.max(3, radius * 0.25));
+      weapons.fire('missile', {
+        origin: o, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, target: targetRef,
+        damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()), right: _r.clone().multiplyScalar(s),
+        fate, onResult: (hit, why) => { if (!hit && why) emit('lost', { weapon: id, why }); },
+      });
+    } else if (id === 'mine') {
+      const back = ship.position.clone().addScaledVector(_f, -(radius * 1.2 + 8));
+      weapons.fire('mine', { origin: back, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, damageMult: state.damageMult });
+    } else if (id === 'emp') {
+      const res = weapons.fire('emp', { origin, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, targets: getTargets() });
+      emit('emp', res ?? {});
+    } else if (id === 'missile') {
       // salwa dwóch rakiet z obu burt
       for (const s of [-1, 1]) {
         const o = origin.clone().addScaledVector(_r, s * Math.max(3, radius * 0.25));
@@ -725,26 +979,26 @@ export function createPlayerArsenal({ weapons, ship, getRadius, getSpeed, getTar
       weapons.fire(id, {
         origin, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, target: targetRef,
         damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()),
-        up: new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion), onResult,
+        up: new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion), onResult, fate,
       });
     } else if (id === 'torpedo') {
       weapons.fire('torpedo', {
         origin, dir: _f.clone(), side: 'player', shooter: PLAYER_SHOOTER, target: targetRef,
-        damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()),
+        damageMult: state.damageMult, baseSpeed: Math.max(0, getSpeed()), fate,
       });
     } else {
       const o = origin.clone().addScaledVector(_r, (side *= -1) * Math.max(3, radius * 0.15));
       weapons.fire(id, {
         origin: o, dir: assistedDir(o, W.assistDeg, W.speed), side: 'player', shooter: PLAYER_SHOOTER,
-        damageMult: state.damageMult,
+        damageMult: state.damageMult, up: new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion),
       });
     }
     state.cooldown = W.cooldown;
-    addHeat(W.heat * heatScale(id));
+    addHeat(shotHeat(id, W));
   }
 
   return {
-    update, select, cycle, setRace, state,
+    update, select, cycle, setRace, configure, refill, state,
     isSpecial: (id) => id === special(),
     on(t, fn) { listeners[t].push(fn); },
   };

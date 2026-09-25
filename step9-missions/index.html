@@ -248,6 +248,13 @@
     }
     .wname { display: block; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .wdesc { display: block; font-size: 10px; opacity: 0.65; line-height: 1.25; margin-top: 1px; }
+    /* krok 9: zapas rakiet/min/impulsów w rogu slotu; pusty slot przygaszony */
+    .wammo { position: absolute; right: 7px; bottom: 5px; font-size: 13px; font-weight: 700; color: var(--wc); }
+    .wammo:empty { display: none; }
+    .wslot.empty { opacity: 0.3; }
+    .wslot.empty .wammo { color: #ff4d4d; }
+    #tm-flares.low { color: #ff4d4d; }
+    @media (max-width: 1250px) { .wdesc { display: none; } .wslot { width: 96px; } }
     #weapon-bar.overheated .wslot.active { border-left-color: #ff4d4d; animation: crew-pulse 0.6s ease-in-out infinite; }
     #tm-heat-bar { height: 100%; width: 0; background: #ffb13d; border-radius: 3px; transition: background 0.2s; }
     #tm-heat-bar.hot { background: #ff4d4d; }
@@ -505,8 +512,9 @@
     <div class="tm-row"><span>Kadłub</span><span id="tm-hull-text">—</span></div>
     <div class="tm-bar hull"><div id="tm-hull-bar"></div></div>
     <div class="tm-row"><span>Ładunek</span><span id="tm-cargo">—</span></div>
-    <div class="tm-row"><span>Ciepło</span><span id="tm-heat-text">0%</span></div>
+    <div class="tm-row"><span>Ciepło działek</span><span id="tm-heat-text">0%</span></div>
     <div class="tm-bar hull"><div id="tm-heat-bar"></div></div>
+    <div class="tm-row"><span>Flary</span><span id="tm-flares">—</span></div>
   </div>
   <div id="targets"></div>
   <div id="comms"></div>
