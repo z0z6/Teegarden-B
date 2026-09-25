@@ -36,6 +36,10 @@ export const SHIP_RACE = {
   'kryza-heliotropi-trade-17': 'heliotropi',
   'kryza-heliotropi-coalition-29': 'heliotropi',
   'kryza-heliotropi-hawk-44': 'heliotropi',
+  'kamerton-rezonanci-hawk-5': 'rezonanci',
+  'kamerton-rezonanci-trade-12': 'rezonanci',
+  'kamerton-rezonanci-coalition-23': 'rezonanci',
+  'kamerton-rezonanci-hawk-61': 'rezonanci',
 };
 
 export const RACES = {

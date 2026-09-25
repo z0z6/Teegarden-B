@@ -89,6 +89,30 @@ export const SHIPS = [
     file: '../shared/ships/models/kryza-heliotropi-hawk-44-lod0.glb',
     bowAxis: '+Z',
   },
+  {
+    id: 'kamerton-rezonanci-hawk-5',
+    name: 'Kamerton — Szczyt Okna',
+    file: '../shared/ships/models/kamerton-rezonanci-hawk-5-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'kamerton-rezonanci-trade-12',
+    name: 'Kamerton — Kworum Pośrednie',
+    file: '../shared/ships/models/kamerton-rezonanci-trade-12-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'kamerton-rezonanci-coalition-23',
+    name: 'Kamerton — Przesypiający',
+    file: '../shared/ships/models/kamerton-rezonanci-coalition-23-lod0.glb',
+    bowAxis: '+Z',
+  },
+  {
+    id: 'kamerton-rezonanci-hawk-61',
+    name: 'Kamerton — Czysty Ton',
+    file: '../shared/ships/models/kamerton-rezonanci-hawk-61-lod0.glb',
+    bowAxis: '+Z',
+  },
 ];
 
 /** Obrót wokół Y (radiany), który ustawia dziób modelu w lokalne -Z silnika. */
