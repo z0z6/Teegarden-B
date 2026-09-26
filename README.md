@@ -20,7 +20,7 @@ Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu s
 
 Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tranzytującą planetą b tymi samymi shaderami co gra; wybrany układ zapamiętuje w przeglądarce i przekazuje do gry jako `?uklad=`. Czcionki (Big Shoulders Display, Manrope — OFL 1.1, licencje w `cover/fonts/`) są hostowane lokalnie. Bez WebGL okładka pokazuje statyczne tło.
 
-**Wizerunki ras** (`shared/data/race-portraits.js`, obrazy w `shared/data/portraits/`): portrety przedstawicieli siedmiu ras w animowanym kadrze ekranu komunikatora. Komunikator pokazuje portret rozmówcy we wszystkich krokach od 5. Ten sam NPC ma zawsze ten sam wizerunek, osobniki różnią się kadrem, odbiciem i odcieniem, a stronnictwo dodaje nalot koloru i znak w rogu (grot, romb, pierścień). Pięć obrazów to grafiki autora; Rezonantów i Pieśniarzy wygenerowano w tym samym stylu na podstawie opisów ras. Dawne proceduralne szkice SVG (`raceSketch`) zostały jako zapas. Podgląd wszystkich: `tools/race-gallery/`.
+**Wizerunki ras** (`shared/data/race-portraits.js`, obrazy w `shared/data/portraits/`): portrety przedstawicieli siedmiu ras w animowanym kadrze ekranu komunikatora. Komunikator pokazuje portret rozmówcy we wszystkich krokach od 5. Ten sam NPC ma zawsze ten sam wizerunek, osobniki różnią się kadrem, odbiciem i odcieniem, a stronnictwo dodaje nalot koloru i znak w rogu (grot, romb, pierścień). Pięć obrazów to grafiki autora; Szczepionych i Pieśniarzy wygenerowano w tym samym stylu na podstawie opisów ras. Dawne proceduralne szkice SVG (`raceSketch`) zostały jako zapas. Podgląd wszystkich: `tools/race-gallery/`.
 
 ## Kroki
 
