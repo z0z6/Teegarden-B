@@ -21,7 +21,7 @@ let chromium, threeDir;
 try { ({ chromium } = req('playwright')); } catch { console.log('Brak playwright - pomijam (npm i playwright).'); process.exit(0); }
 try { threeDir = dirname(dirname(req.resolve('three'))); } catch { console.log('Brak three w node_modules - pomijam.'); process.exit(0); }
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.css': 'text/css' };
 const server = createServer(async (rq, rs) => {
   let p = decodeURIComponent(new URL(rq.url, 'http://x').pathname);
   if (p.endsWith('/')) p += 'index.html';

@@ -114,8 +114,8 @@ w tym układzie kontra napastnicy. Piraci nadal się zdarzają, ale rzadziej.
     flotą i akcjami (wojna, pokój, pakt, sojusz, dar 1000 kr, haracz).
   - Karta Kronika: wieści z sektora z portretami ras.
 - **Portrety.** Załoga ma twarze twojej rasy (różne osobniki na różne
-  role), a rozmówcy z innych ras mają portrety swojego stronnictwa. Wszystko
-  to proceduralne SVG z `race-portraits.js`.
+  role), a rozmówcy z innych ras mają portrety swojego stronnictwa. Obrazy
+  ras z `shared/data/portraits/` w kadrze SVG z `race-portraits.js`.
 - **Ikony** (`shared/ui/icons.js`): metale jako sztabka i kryształy,
   sylwetki stacji, okręty trzech klas, dron, kredyty, pole, symbole
   dyplomacji. Są wektorowe, generowane w kodzie.

@@ -1,7 +1,13 @@
 /**
- * WIZERUNKI RAS - proceduralne portrety (SVG) przedstawicieli siedmiu ras.
+ * WIZERUNKI RAS - portrety przedstawicieli siedmiu ras.
  *
- * Karty ras nie opisują wyglądu, więc wizerunki są wyprowadzone z tego,
+ * racePortrait() pokazuje obraz rasy (shared/data/portraits/) w kadrze
+ * ekranu komunikatora; osobniki różnią się kadrem i odcieniem, stronnictwo
+ * dodaje nalot koloru i znak w rogu. Szczegóły przy PHOTO niżej.
+ *
+ * raceSketch() to pierwsze, proceduralne wizerunki (SVG) - zostają jako
+ * zapas i jako opis koncepcji ras, z którego korzystają modele statków.
+ * Karty ras nie opisują wyglądu, więc szkice są wyprowadzone z tego,
  * co o rasach wiadomo z ich kart (nazwa, stronnictwa, zasób, sposób mówienia):
  *
  *   Wybudzeni   humanoidy "dopiero co przebudzone": ciężkie, półprzymknięte
@@ -22,12 +28,12 @@
  *               zależy od stronnictwa: Czerwone Maski - czerwona, Prawdziwe
  *               Skóry - bez maski, Dziedzice - złota.
  *
- * Każdy osobnik jest trochę inny (ziarno `seed`: odcień, znaki, liczba
+ * W szkicach każdy osobnik jest trochę inny (ziarno `seed`: odcień, znaki, liczba
  * płatków/piór, układ guzków), a stronnictwo zmienia wizerunek tam, gdzie
  * wynika to z jego nazwy. Portrety są delikatnie animowane (mruganie, fale,
  * pulsowanie), animacja wyłącza się przy prefers-reduced-motion.
  *
- * Bez plików graficznych - tak jak gwiazdy i planety w grze.
+ * Szkice są bez plików graficznych - tak jak gwiazdy i planety w grze.
  */
 
 let uidCounter = 0;
@@ -324,7 +330,89 @@ const STYLE = `
 `;
 
 /**
- * Portret przedstawiciela rasy jako tekst SVG.
+ * Obrazy ras (shared/data/portraits/<rasa>.jpg). Pięć przysłał autor gry,
+ * Rezonantów i Pieśniarzy wygenerowano w tym samym stylu na podstawie opisów
+ * z DRAW (kryształ z komorą rezonansową; ptasia głowa, czworo oczu, worek
+ * krtaniowy). Adres liczony od tego modułu, więc działa z każdego kroku.
+ */
+const PHOTO = Object.fromEntries(
+  ['wybudzeni', 'rezonanci', 'piesniarze', 'szczepieni', 'wykonawcy', 'heliotropi', 'swietlisci']
+    .map((r) => [r, new URL(`./portraits/${r}.jpg`, import.meta.url).href]),
+);
+
+/**
+ * Stronnictwo na obrazie: przyciemniony nalot koloru i znak w rogu kadru
+ * (jastrzębie - grot, handel - romb, koalicja - pierścień).
+ */
+const FACTION_LOOK = {
+  hawk: { tint: '#ff4a3a', tintA: 0.2, emblem: (c) => `<path d="M104 7 L113 20 L104 16 L95 20 Z" fill="${c}"/>` },
+  trade: { tint: null, tintA: 0, emblem: (c) => `<path d="M104 6 L111 13 L104 20 L97 13 Z" fill="${c}"/>` },
+  coalition: { tint: '#7fa8ff', tintA: 0.16, emblem: (c) => `<circle cx="104" cy="13" r="5.5" fill="none" stroke="${c}" stroke-width="2.4"/>` },
+};
+
+// animacje obrazów (dołączane z każdym portretem, jak STYLE)
+const PHOTO_STYLE = `
+.rp-portrait .rp-breathe { transform-box: view-box; transform-origin: 60px 60px; animation: rp-breathe 7s ease-in-out infinite alternate; }
+.rp-portrait .rp-sweep { animation: rp-sweep 4.8s linear infinite; }
+@keyframes rp-breathe { from { transform: scale(1); } to { transform: scale(1.035); } }
+@keyframes rp-sweep { from { transform: translateY(-30px); } to { transform: translateY(150px); } }
+@media (prefers-reduced-motion: reduce) { .rp-portrait * { animation: none !important; } }
+`;
+
+/**
+ * Portret przedstawiciela rasy jako tekst SVG (obraz rasy w kadrze
+ * "ekranu komunikatora"). Każdy osobnik (seed) jest trochę inny: odbicie,
+ * kadr, odcień i jasność; stronnictwo dodaje nalot koloru i znak.
+ * @param {string} raceId   klucz z RACES (races.js)
+ * @param {object} [o]
+ * @param {number} [o.seed=0]            ten sam seed = ten sam osobnik
+ * @param {string} [o.faction='trade']   hawk | trade | coalition (klucze stronnictw z races.js)
+ * @param {string} [o.color]             kolor rasy (domyślnie z tabeli poniżej)
+ * @param {number} [o.size=64]           rozmiar w pikselach
+ * @param {boolean} [o.frame=true]       tło "ekranu komunikatora" (skanlinie, winieta, znak stronnictwa)
+ */
+export function racePortrait(raceId, { seed = 0, faction = 'trade', color, size = 64, frame = true } = {}) {
+  const href = PHOTO[raceId];
+  if (!href) return raceSketch(raceId, { seed, faction, color, size, frame });
+  const c = color ?? RACE_COLOR[raceId] ?? '#9fd8ff';
+  const id = `rp${++uidCounter}`;
+  const r = rng(seed + raceId.length * 17.3);
+  // osobnik: seed 0 i 1 to "wzorcowy" kadr, pozostałe się różnią
+  const plain = seed === 0 || seed === 1;
+  const flip = !plain && r() < 0.5;
+  const zoom = plain ? 1 : 1.08 + r() * 0.1; // >= 1.08, żeby przesunięcie nie odsłoniło brzegu
+  const dx = plain ? 0 : (r() - 0.5) * 8, dy = plain ? 0 : (r() - 0.5) * 6;
+  const hue = plain ? 0 : Math.round((r() - 0.5) * 28);
+  const light = plain ? 1 : 0.9 + r() * 0.16;
+  const look = FACTION_LOOK[faction] ?? FACTION_LOOK.trade;
+  const place = `translate(${60 + dx} ${60 + dy}) scale(${flip ? -zoom : zoom} ${zoom}) translate(-60 -60)`;
+  const filter = `<filter id="${id}-f" color-interpolation-filters="sRGB">
+      <feColorMatrix type="hueRotate" values="${hue}"/>
+      <feComponentTransfer><feFuncR type="linear" slope="${light.toFixed(3)}"/><feFuncG type="linear" slope="${light.toFixed(3)}"/><feFuncB type="linear" slope="${light.toFixed(3)}"/></feComponentTransfer>
+    </filter>`;
+  const defs = `<defs>${filter}
+      <clipPath id="${id}-clip"><rect width="120" height="120"/></clipPath>
+      <pattern id="${id}-scan" width="3" height="3" patternUnits="userSpaceOnUse"><rect width="3" height="1" fill="#000" opacity="0.22"/></pattern>
+      <radialGradient id="${id}-vig" cx="0.5" cy="0.45" r="0.75"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.7"/></radialGradient>
+      <linearGradient id="${id}-sw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity="0"/><stop offset="0.5" stop-color="${c}" stop-opacity="0.16"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient>
+    </defs>`;
+  const tint = look.tint ? `<rect width="120" height="120" fill="${look.tint}" opacity="${look.tintA}" style="mix-blend-mode:color"/>` : '';
+  const overlay = frame ? `
+    <rect width="120" height="120" fill="url(#${id}-scan)"/>
+    <rect class="rp-sweep" y="0" width="120" height="26" fill="url(#${id}-sw)"/>
+    <rect width="120" height="120" fill="url(#${id}-vig)"/>
+    <g opacity="0.9">${look.emblem(c)}</g>
+    <rect x="0.75" y="0.75" width="118.5" height="118.5" fill="none" stroke="${c}" stroke-opacity="0.35" stroke-width="1.5"/>` : '';
+  return `<svg class="rp-portrait" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="${size}" height="${size}" role="img" aria-label="${RACE_LABEL[raceId] ?? raceId}">
+    <style>${PHOTO_STYLE}</style>${defs}
+    <rect width="120" height="120" fill="#05080e"/>
+    <g clip-path="url(#${id}-clip)"><g class="rp-breathe"><image href="${href}" width="120" height="120" preserveAspectRatio="xMidYMid slice" transform="${place}" filter="url(#${id}-f)"/></g>${tint}</g>${overlay}</svg>`;
+}
+
+/**
+ * Szkic przedstawiciela rasy jako proceduralne SVG (pierwsze wizerunki ras,
+ * zanim powstały obrazy z shared/data/portraits/). Zostaje jako zapas dla
+ * rasy bez obrazu i jako podgląd koncepcji w tools/race-gallery/.
  * @param {string} raceId   klucz z RACES (races.js)
  * @param {object} [o]
  * @param {number} [o.seed=0]            ten sam seed = ten sam osobnik
@@ -333,7 +421,7 @@ const STYLE = `
  * @param {number} [o.size=64]           rozmiar w pikselach
  * @param {boolean} [o.frame=true]       tło "ekranu komunikatora" (skanlinie, winieta)
  */
-export function racePortrait(raceId, { seed = 0, faction = 'trade', color, size = 64, frame = true } = {}) {
+export function raceSketch(raceId, { seed = 0, faction = 'trade', color, size = 64, frame = true } = {}) {
   const draw = DRAW[raceId] ?? DRAW.wybudzeni;
   const c = color ?? RACE_COLOR[raceId] ?? '#9fd8ff';
   const id = `rp${++uidCounter}`;

@@ -8,7 +8,7 @@
     body { margin: 0; padding: 20px 24px 40px; background: #05080e; color: #d9f3ff; font-family: 'Segoe UI', system-ui, sans-serif; }
     h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
     .lead { margin: 0 0 18px; max-width: 70ch; font-size: 13px; line-height: 1.5; opacity: 0.7; }
-    .race { display: grid; grid-template-columns: 180px repeat(3, auto) 1fr; gap: 14px; align-items: start; padding: 14px 0; border-top: 1px solid rgba(159, 216, 255, 0.12); }
+    .race { display: grid; grid-template-columns: 180px repeat(3, auto) 1fr auto; gap: 14px; align-items: start; padding: 14px 0; border-top: 1px solid rgba(159, 216, 255, 0.12); }
     .race h2 { margin: 0; font-size: 16px; }
     .race p { margin: 4px 0 0; font-size: 12px; line-height: 1.45; opacity: 0.7; }
     figure { margin: 0; text-align: center; }
@@ -22,19 +22,19 @@
 </head>
 <body>
   <h1>Wizerunki ras</h1>
-  <p class="lead">Portrety przedstawicieli siedmiu ras w trzech stronnictwach, plus kilku losowych osobników. Te same portrety pokazuje komunikator w grze. Generator: <code>shared/data/race-portraits.js</code>.</p>
+  <p class="lead">Portrety przedstawicieli siedmiu ras w trzech stronnictwach (nalot koloru i znak w rogu: grot, romb, pierścień), plus kilku losowych osobników (kadr, odbicie, odcień). Te same portrety pokazuje komunikator w grze. Obrazy: <code>shared/data/portraits/</code>, kadr: <code>shared/data/race-portraits.js</code>. Ostatnia kolumna to dawny szkic proceduralny.</p>
   <div id="list"></div>
   <script type="module">
-    import { racePortrait, PORTRAIT_RACES } from '../../shared/data/race-portraits.js';
+    import { racePortrait, raceSketch, PORTRAIT_RACES } from '../../shared/data/race-portraits.js';
     import { RACES } from '../../shared/data/races.js';
     const NOTES = {
-      wybudzeni: 'Ciężkie powieki dopiero co przebudzonych, numer ewidencyjny na czole. „Bez Numeru” ma bliznę po wypalonym kodzie.',
-      rezonanci: 'Kryształ z komorą rezonansową zamiast ust. „Szczyt Okna” nosi koronę, „Przesypiający” mają przygaszone oczy.',
-      piesniarze: 'Grzebień piór, czworo oczu, worek krtaniowy do śpiewu. „Szpony” mają czerwone końce piór, „Kukułki” — cętki.',
-      szczepieni: 'Szwy przeszczepów, świecące guzki kolonii, maska filtrująca, oko-skaner. „Izba Kwarantanny” nosi przezroczysty hełm.',
-      wykonawcy: 'Płyta twarzowa z wierszami klauzul i skanujący wizjer. „Rewizjoniści” skreślają klauzule.',
-      heliotropi: 'Gadzia twarz w kryzie płatków. „Żar” — płatki rozżarzone, „Chłodni” — blade, „Hibernatorzy” — złożone.',
-      swietlisci: 'Bioluminescencyjne wzory pod skórą. Maska zależy od stronnictwa: czerwona, brak albo złota.',
+      wybudzeni: 'Humanoidy „dopiero co przebudzone”: blada skóra, ściągnięte włosy, dwa świetliki nad głową i znaki na obojczykach.',
+      rezonanci: 'Istota z kryształu, komora rezonansowa zamiast ust, rozchodzące się fale. Obraz wygenerowany w stylu pozostałych.',
+      piesniarze: 'Ptasia głowa w grzebieniu piór, czworo oczu i świecący worek krtaniowy do śpiewu. Obraz wygenerowany w stylu pozostałych.',
+      szczepieni: 'Owad z ula: zielono-czarny pancerz, wielkie oczy, czułki, kolce na barkach.',
+      wykonawcy: 'Android w szaroniebieskim kombinezonie, ludzka twarz i nieruchome spojrzenie maszyny.',
+      heliotropi: 'Złota, gadzia skóra nagrzana słońcem, bezwłosa czaszka i bursztynowe oczy.',
+      swietlisci: 'Turkusowa, półprzezroczysta skóra, kocie uszy, spojrzenie drapieżnika.',
     };
     const list = document.getElementById('list');
     for (const id of PORTRAIT_RACES) {
@@ -46,6 +46,7 @@
         html += `<figure>${racePortrait(id, { seed: 1, faction: f, size: 132, color: race.color })}<figcaption>${race.factions[f]}</figcaption></figure>`;
       }
       html += `<div class="variants">${[2, 3, 4, 5, 6, 7].map((s) => racePortrait(id, { seed: s * 13.7, faction: 'trade', size: 60, color: race.color })).join('')}</div>`;
+      html += `<figure>${raceSketch(id, { seed: 1, faction: 'trade', size: 90, color: race.color })}<figcaption>szkic</figcaption></figure>`;
       row.innerHTML = html;
       list.appendChild(row);
     }
