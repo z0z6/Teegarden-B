@@ -5,6 +5,7 @@ import { createPlanetVisual } from '../shared/systems/planet-surface.js';
 import { SYSTEMS, SYSTEM_ORDER } from '../shared/systems/star-systems.js';
 import { getAudio } from '../shared/audio/audio.js';
 import { mountAudioControls } from '../shared/audio/audio-controls.js';
+import { SHIPS } from '../shared/ships/fleet.js';
 
 /**
  * OKŁADKA GRY: żywa Gwiazda Teegardena (ten sam shader co w grze -
@@ -38,11 +39,19 @@ const caption = document.getElementById('caption');
 const list = document.getElementById('system-list');
 const panel = document.getElementById('systems');
 const chooseBtn = document.getElementById('choose');
+const board = document.getElementById('board');
+function lastShip() {
+  try { const s = JSON.parse(localStorage.getItem('teegarden-b:misje') || '{}').ship; if (SHIPS.some((x) => x.id === s)) return s; } catch { /* bez zapisu */ }
+  return SHIPS[0].id;
+}
 
 function applySelection(id, { preview = true } = {}) {
   selected = id;
   try { localStorage.setItem(STORE_KEY, id); } catch { /* bez zapisu */ }
-  play.href = `./missions.html?uklad=${id}`; // krok 9: najpierw tablica misji
+  // krok 12: "Graj" = od razu mostek siedziby w wybranym układzie (rasa = statek
+  // wybrany ostatnio na tablicy misji, domyślnie pierwszy z floty)
+  play.href = `./step12-dowodztwo/?uklad=${id}&statek=${lastShip()}`;
+  board.href = `./missions.html?uklad=${id}`;
   playSystem.textContent = SYSTEMS[id].name;
   caption.textContent = id === 'teegarden' ? CAPTION_DEFAULT : SYSTEMS[id].desc;
   list.querySelectorAll('.system').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === id)));

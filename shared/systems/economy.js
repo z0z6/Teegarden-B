@@ -113,6 +113,8 @@ export function createEconomy({
   }
   const bump = () => { structVersion++; };
   const hooks = {}; // raids.js: droneLost(d), stolen(tons, st)
+  // krok 12: zasilanie (command.js) - mnożnik tempa pracy stacji 0..1
+  const eff = (sysId, st) => hooks.efficiency?.(sysId, st) ?? 1;
 
   // ------------------------------------------------------------
   // ZAPIS
@@ -264,7 +266,7 @@ export function createEconomy({
     if (!scene || !rt) return;
     const model = buildStationModel(st.type, STATIONS[st.type].accent);
     model.group.position.copy(v3(st.pos));
-    model.group.rotation.y = (hashString(st.id + st.type) % 628) / 100;
+    model.group.rotation.y = st.yaw ?? (hashString(st.id + st.type) % 628) / 100; // krok 12: siedziba zwrócona do pasa
     setStationProgress(model, st.progress, st.status === 'gotowa');
     scene.add(model.group);
     rt.views.set(st.id, model);
@@ -334,8 +336,10 @@ export function createEconomy({
   const freeSpace = (st) => STATIONS[st.type].capacity - sumMetals(st.storage);
   /** Stacje, z których holowniki biorą metal (magazyny najpierw, potem doki). */
   function poolStations(sysId) {
-    return stationsOf(sysId).filter((s) => s.status === 'gotowa' && (s.type === 'magazyn' || s.type === 'dok'))
-      .sort((a, b) => (a.type === 'magazyn' ? 0 : 1) - (b.type === 'magazyn' ? 0 : 1));
+    // krok 12: skład siedziby rasy też jest pulą (po magazynach, przed dokami)
+    const rank = { magazyn: 0, siedziba: 1, dok: 2 };
+    return stationsOf(sysId).filter((s) => s.status === 'gotowa' && s.type in rank)
+      .sort((a, b) => rank[a.type] - rank[b.type]);
   }
   function poolTotals(sysId) {
     const t = zeroMetals();
@@ -444,6 +448,35 @@ export function createEconomy({
     emit('build', `Plac budowy: ${st.name}. Potrzeba: ${needTxt}. Dowieź metal (Y) albo poczekaj na holowniki z magazynów.`, 'info');
     save();
     return st;
+  }
+
+  /**
+   * Krok 12: wolne miejsce na stację typu `type` w pobliżu `near` (bez
+   * latania statkiem - budowa z mostka). Kolejne pierścienie wokół punktu,
+   * najpierw w płaszczyźnie poziomej. Zwraca pozycję albo null.
+   */
+  function findSpot(type, near, { from = 700, to = 4200, step = 280 } = {}) {
+    if (!rt) return null;
+    const c = v3(near), p = new THREE.Vector3();
+    const credits = state.credits;
+    state.credits = Infinity; // tu pytamy tylko o miejsce, nie o pieniądze
+    try {
+      for (let r = from; r <= to; r += step) {
+        const n = Math.max(8, Math.round((Math.PI * 2 * r) / 500));
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + r * 0.013;
+          p.set(c.x + Math.cos(a) * r, c.y + Math.sin(a * 3) * 120, c.z + Math.sin(a) * r);
+          if (canPlace(type, p).ok) return p.clone();
+        }
+      }
+    } finally { state.credits = credits; }
+    return null;
+  }
+  /** Plac budowy w wolnym miejscu przy `near` (koszt jak placeStation). */
+  function placeNear(type, near, opts) {
+    const p = findSpot(type, near, opts);
+    if (!p) { emit('build-fail', 'Brak wolnego miejsca na stację w pobliżu.', 'warning'); return null; }
+    return placeStation(type, p);
   }
 
   /** Najbliższa stacja w zasięgu dokowania (od powierzchni). */
@@ -583,14 +616,14 @@ export function createEconomy({
   // OBIEKTY TYMCZASOWE (misje): gotowe od ręki, bez kosztów, poza zapisem
   // ------------------------------------------------------------
   /** Stacja gotowa od razu, bez kosztów i sprawdzania miejsca (scenariusz misji). */
-  function placeReady(type, pos, { name = null, storage: stock = null, temp = true } = {}) {
+  function placeReady(type, pos, { name = null, storage: stock = null, temp = true, yaw = null } = {}) {
     if (!rt) return null;
     const sys = sysState(rt.sysId);
     const def = STATIONS[type];
     const st = {
       id: `s${sys.nextId++}`, type, name: name ?? def.name, pos: plain(v3(pos)), status: 'gotowa',
       need: zeroMetals(), progress: 1, storage: { ...zeroMetals(), ...(stock ?? {}) }, queue: [], buildT: 0, hull: def.hull,
-      ...(temp ? { temp: true } : {}),
+      ...(temp ? { temp: true } : {}), ...(yaw != null ? { yaw } : {}),
     };
     sys.stations.push(st);
     addStationView(st);
@@ -919,7 +952,7 @@ export function createEconomy({
         }
         r.target = t;
       }
-      r.fireCd -= dt;
+      r.fireCd -= dt * eff(rt.sysId, st);
       if (!t) continue;
       const dist = t.group.position.distanceTo(pos);
       _aim.copy(t.group.position).addScaledVector(t.velocity, dist / def.boltSpeed);
@@ -1010,7 +1043,7 @@ export function createEconomy({
         }
         if (sumMetals(st.need) <= 1e-6) { st.need = zeroMetals(); bump(); }
       } else {
-        st.progress = Math.min(1, st.progress + dt / STATIONS[st.type].buildTime);
+        st.progress = Math.min(1, st.progress + dt * eff(sysId, st) / STATIONS[st.type].buildTime);
         if (st.progress >= 1) {
           st.status = 'gotowa';
           bump();
@@ -1031,7 +1064,7 @@ export function createEconomy({
         pay(sysId, DRONE.cost);
         st.buildT = DRONE.buildTime;
       }
-      st.buildT -= dt;
+      st.buildT -= dt * eff(sysId, st);
       if (st.buildT <= 0) {
         st.buildT = 0;
         const swId = st.queue.shift();
@@ -1049,7 +1082,7 @@ export function createEconomy({
     // 3) sprzedaż z buforów stacji przeładunkowych
     for (const st of sys.stations) {
       if (st.type !== 'przeladunek' || st.status !== 'gotowa') continue;
-      let budget = STATIONS.przeladunek.throughput * dt;
+      let budget = STATIONS.przeladunek.throughput * dt * eff(sysId, st);
       // najpierw najdroższe - frachtowiec zabiera to, co się najbardziej opłaca
       for (const m of [...METAL_ORDER].sort((a, b) => price(b) - price(a))) {
         const k = Math.min(budget, st.storage[m]);
@@ -1217,8 +1250,12 @@ export function createEconomy({
     stationsIn: (id) => stationsOf(id), swarmsIn: (id) => sysState(id)?.swarms ?? [],
     beltCenter: (id) => sysState(id)?.beltCenter ?? null,
     fieldDefs, fieldAt, discoverField, scan, isDiscovered, asteroidsIn, placeReady, spawnDrones, removeTemp,
+    // krok 12 (command.js): budowa z mostka, wydobycie wypraw, skład siedziby
+    findSpot, placeNear, extract, remaining, depleted, deposit, emit,
+    poolOf: (sysId) => poolStations(sysId), stationById: (sysId, id) => byId(sysId, id),
     /** Koszt { credits, metale } z kredytów i puli metalu bieżącego układu (stocznia, krok 11). */
     canPayCost: (cost) => !!rt && canPay(rt.sysId, cost),
+    canPayIn: (sysId, cost) => canPay(sysId, cost), payIn: (sysId, cost) => { pay(sysId, cost); bump(); },
     payCost: (cost) => { if (rt) { pay(rt.sysId, cost); bump(); } },
     stationsNear: (sysId, pos, r) => stationsOf(sysId).filter((s) => Math.hypot(s.pos.x - pos.x, s.pos.y - pos.y, s.pos.z - pos.z) < r),
     enterSystem, leaveSystem, update, save, reset,

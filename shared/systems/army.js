@@ -25,7 +25,9 @@ import { PLAYER } from './strategy.js';
  * Stan (economy.state.army) jest w zapisie gry; kadłuby okrętów też.
  */
 
-export function createArmy({ economy, strategy, npcs, playerRace, player, onEvent = () => {}, rng = Math.random, modelFor = null }) {
+export function createArmy({ economy, strategy, npcs, playerRace, player, onEvent = () => {}, rng = Math.random, modelFor = null,
+  // krok 12: ulepszenia floty (command.js) - mnożniki siły ognia i wytrzymałości
+  mods = () => ({ power: 1, hull: 1 }) }) {
   const spawned = new Map(); // shipId -> npc
   let upkeepAcc = 0, siegeAcc = 0, syncT = 0;
 
@@ -52,12 +54,12 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
   // ------------------------------------------------------------
   const shipsIn = (sysId) => state().ships.filter((s) => s.sysId === sysId);
   function power(sysId = null) {
-    return state().ships.filter((s) => !sysId || s.sysId === sysId).reduce((a, s) => a + WARSHIPS[s.cls].power * (s.hull / WARSHIPS[s.cls].hull), 0);
+    return state().ships.filter((s) => !sysId || s.sysId === sysId).reduce((a, s) => a + WARSHIPS[s.cls].power * (s.hull / WARSHIPS[s.cls].hull), 0) * mods().power;
   }
   /** Obrona pola gracza: okręty z rozkazem obrony tego pola + połowa pozostałych w układzie. */
   function fieldDefense(fid) {
     const sysId = strategy.systemOf(fid);
-    return shipsIn(sysId).reduce((a, s) => a + WARSHIPS[s.cls].power * (s.order === 'obrona' && s.field === fid ? 1 : 0.5), 0);
+    return shipsIn(sysId).reduce((a, s) => a + WARSHIPS[s.cls].power * (s.order === 'obrona' && s.field === fid ? 1 : 0.5), 0) * mods().power;
   }
 
   // ------------------------------------------------------------
@@ -103,10 +105,10 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     const pos = at.clone().add(new THREE.Vector3((rng() - 0.5) * 600, (rng() - 0.5) * 200, (rng() - 0.5) * 600));
     const npc = npcs.spawn({
       raceId: playerRace(), factionKey: 'hawk', side: 'ally', position: pos, arrival: 'none', shipId: s.model ?? undefined,
-      mode: 'tactical', hull: def.hull, label: `${def.name} · ${s.order}`, tag: 'fleet', callsign: s.callsign,
+      mode: 'tactical', hull: def.hull * mods().hull, label: `${def.name} · ${s.order}`, tag: 'fleet', callsign: s.callsign,
       maxSpeed: 700 * def.speed, combatSpeed: 300 * def.speed, ai: aiFor(s), noFlee: true,
     });
-    npc.hull = s.hull;
+    npc.hull = s.hull * mods().hull; // stan zapisu w jednostkach bazowych, NPC z ulepszonym kadłubem
     npc.fleetShip = s;
     spawned.set(s.id, npc);
     return npc;
@@ -117,7 +119,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
       const npc = spawned.get(s.id);
       if (s.sysId === here && !npc) spawnShip(s);
       if (s.sysId !== here && npc) { npcs.remove(npc); spawned.delete(s.id); }
-      if (npc) s.hull = Math.max(1, npc.hull);
+      if (npc) s.hull = Math.max(1, npc.hull / mods().hull);
     }
   }
   npcs.on('killed', (npc) => {
@@ -133,7 +135,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
   /** Przed skokiem: eskorta leci z graczem, reszta zostaje (zaocznie). */
   function beforeJump(toSys) {
     for (const s of state().ships) if (s.order === 'eskorta') s.sysId = toSys;
-    for (const [id, npc] of spawned) { if (npc.alive) { const s = npc.fleetShip; s.hull = Math.max(1, npc.hull); } npcs.remove(npc); spawned.delete(id); }
+    for (const [id, npc] of spawned) { if (npc.alive) { const s = npc.fleetShip; s.hull = Math.max(1, npc.hull / mods().hull); } npcs.remove(npc); spawned.delete(id); }
   }
 
   // ------------------------------------------------------------
@@ -167,7 +169,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
       if (s.hull < max && economy.stationsIn(s.sysId).some((x) => x.type === 'stocznia' && x.status === 'gotowa')) {
         s.hull = Math.min(max, s.hull + max * 0.01 * dt);
         const npc = spawned.get(s.id);
-        if (npc) npc.hull = Math.max(npc.hull, s.hull);
+        if (npc) npc.hull = Math.max(npc.hull, s.hull * mods().hull);
       }
     }
     syncT -= dt;
@@ -190,7 +192,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
       for (const s of ships) { s.order = 'obrona'; }
       return;
     }
-    const atk = ships.reduce((a, s) => a + WARSHIPS[s.cls].power * (s.hull / WARSHIPS[s.cls].hull), 0) * (0.8 + rng() * 0.4);
+    const atk = ships.reduce((a, s) => a + WARSHIPS[s.cls].power * (s.hull / WARSHIPS[s.cls].hull), 0) * mods().power * (0.8 + rng() * 0.4);
     const dfn = strategy.fieldDefense(fid) * (0.8 + rng() * 0.4);
     // straty obu stron proporcjonalne do siły przeciwnika
     let dmg = dfn * 90;

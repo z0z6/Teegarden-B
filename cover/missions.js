@@ -27,12 +27,12 @@ const FREE = 'wolny';
 const CAMPAIGN = 'kampania'; // krok 11: gra główna - gospodarka, ekspansja, dyplomacja, podbój
 const ORDER = [CAMPAIGN, ...MISSION_ORDER, FREE];
 const CAMPAIGN_DEF = {
-  name: 'Dominacja — kampania', desc: 'Gra główna: zbieraj, rozbudowuj, zbrój się i przejmuj przestrzeń surowcową sektora.', threat: 3,
+  name: 'Dominacja — kampania', desc: 'Gra główna z mostka siedziby: wyprawy dronów, huta, nauka, flota i walka o przestrzeń surowcową sektora.', threat: 3,
   tags: ['gospodarka', 'ekspansja', 'dyplomacja', 'podbój'], pack: 'optional',
   brief: 'Sześć ras dzieli między siebie 25 pól surowcowych w pięciu układach. Kopiesz, stawiasz magazyny i doki, wypuszczasz roje dronów, sprzedajesz metal i budujesz flotę. Rasy robią to samo — a kto dzieli z kimś układ, ten z nim rywalizuje: żądania, pakty, sojusze i wojny o najbogatsze pola.',
   win: 'Kontroluj połowę wartości wszystkich pól sektora.',
   lose: 'Nie ma przegranej — ale nieobronione kopalnie rasy złupią, a wolne pola zajmą przed tobą.',
-  tip: 'Na starcie rasy nie atakują przez 10 minut. Postaw magazyn przy polu macierzystym, potem dok i przeładunek. Sygnały „nieznane złoże” prowadzą do nowych pól; mapa strategiczna to M.',
+  tip: 'Zaczynasz na mostku siedziby: wyślij zwiadowców, potem górników na zbadaną skałę. Rasy nie atakują przez 10 minut. Tab — za stery myśliwca i z powrotem.',
 };
 const FREE_DEF = {
   name: 'Wolny lot', desc: 'Bez zadania: układ, sceny demo (7/8/9) i wataha na żądanie (L).', threat: 0, tags: ['swobodnie'], pack: 'optional',
@@ -265,8 +265,8 @@ function gameUrl() {
   const p = new URLSearchParams({ uklad: state.system, trudnosc: state.diff, statek: state.ship });
   if (state.mission !== FREE && state.mission !== CAMPAIGN) p.set('misja', state.mission);
   if (state.pack || def(state.mission).pack === 'auto') p.set('wataha', '1');
-  // kampania i misje: krok 11 (najnowszy); wolny lot: piaskownica gospodarki z kroku 10
-  return state.mission === FREE ? `./step10-economy/?${p}` : `./step11-dominacja/?${p}`;
+  // kampania: krok 12 (mostek siedziby); misje: krok 12 od razu w locie; wolny lot: piaskownica z kroku 10
+  return state.mission === FREE ? `./step10-economy/?${p}` : `./step12-dowodztwo/?${p}`;
 }
 
 let leaving = false;
