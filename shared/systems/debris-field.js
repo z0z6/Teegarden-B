@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applySurfaceDetail } from './surface-detail.js';
 
 /**
  * Gruz i meteoryty: prawdziwe obiekty fizyczne (dryfują ze stałą
@@ -57,6 +58,9 @@ export function createDebrisField(scene, center, {
 
   const debrisMat = new THREE.MeshStandardMaterial({ color: 0x6b6f75, roughness: 0.95, metalness: 0.05 });
   const meteorMat = new THREE.MeshStandardMaterial({ color: 0x8a5636, roughness: 0.85, metalness: 0.1, emissive: 0x2a0f00, emissiveIntensity: 0.4 });
+  // krok 12: gruz z reliefem i spękaniami (geometria w jednostkach świata: komórka wzoru ~20 j.)
+  applySurfaceDetail(debrisMat, 'rock', { scale: 1 / 16 });
+  applySurfaceDetail(meteorMat, 'rock', { scale: 1 / 30 });
 
   for (let i = 0; i < count; i++) {
     const isMeteor = Math.random() < meteorFraction;

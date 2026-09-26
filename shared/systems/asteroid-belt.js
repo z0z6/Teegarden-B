@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { ASTEROID_CLASSES, BELT, METAL_ORDER } from '../data/economy.js';
+import { applySurfaceDetail } from './surface-detail.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /**
  * PAS PLANETOID (krok 10): złoża metali dla warstwy ekonomicznej.
@@ -156,13 +158,18 @@ const _c = new THREE.Color();
 export function createAsteroidBelt(scene, data, { quality = 1 } = {}) {
   const group = new THREE.Group();
   group.name = 'asteroid-belt';
-  const detail = quality < 0.8 ? 2 : 3;
+  const detail = quality < 0.8 ? 4 : 7; // krok 12: gęstsza, WSPÓLNA siatka (gładki obrys pod relief z surface-detail.js)
 
   for (const ast of data.asteroids) {
     const k = ASTEROID_CLASSES[ast.cls];
     const shape = makeShape(ast);
     const veinNoise = makeNoise(seededRng(ast.shapeSeed ^ 0x5bd1e995));
-    const geo = new THREE.IcosahedronGeometry(1, detail);
+    // krok 12: IcosahedronGeometry ma osobne wierzchołki dla każdego trójkąta - normalne
+    // wychodziły płaskie ("low-poly"). Scalone wierzchołki = gładka powierzchnia.
+    const base = new THREE.IcosahedronGeometry(1, detail);
+    base.deleteAttribute('uv'); base.deleteAttribute('normal');
+    const geo = mergeVertices(base);
+    base.dispose();
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     const rock = new THREE.Color(k.rock), vein = new THREE.Color(k.vein);
@@ -181,8 +188,10 @@ export function createAsteroidBelt(scene, data, { quality = 1 } = {}) {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
     const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: ast.cls === 'M' ? 0.45 : 0.92, metalness: k.metalness, flatShading: detail < 3,
+      vertexColors: true, roughness: ast.cls === 'M' ? 0.45 : 0.92, metalness: k.metalness, flatShading: false,
     });
+    // krok 12: spękania, kratery, pył i relief liczone w shaderze (surface-detail.js)
+    applySurfaceDetail(mat, 'rock', { bump: ast.cls === 'M' ? 1.6 : 2.6 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(ast.position);
     mesh.scale.setScalar(ast.radius);

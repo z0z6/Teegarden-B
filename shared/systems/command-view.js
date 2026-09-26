@@ -8,7 +8,7 @@ import { VISIBLE_PHASES } from './command.js';
  * WIDOK Z MOSTKA (krok 12): kamera na mostku siedziby, drony wypraw w 3D
  * i okienko podglądu ("skrót" lotu), a do tego podgląd zdalny bitwy.
  *
- *  - MOSTEK: kamera tuż przed szybą wieży siedziby (command.js HQ.bridge),
+ *  - MOSTEK: kamera w głębi zatoki hangaru siedziby (command.js HQ.bridge),
  *    patrzy nad pokładem hangaru na pas. Delikatny ruch i paralaksa myszy.
  *    Na wejściu (intro) - najazd z zewnątrz stacji na mostek.
  *  - DRONY WYPRAW: szyk wokół środka grupy (command.pose), przy skale drony
@@ -34,10 +34,11 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
   const sparks = createSparks(scene, quality < 0.8 ? 200 : 500);
   const pipCam = new THREE.PerspectiveCamera(42, 16 / 9, 2, 500000);
   pipCam.layers.enable(GHOST_LAYER);
-  // światła siedziby: reflektory pokładu hangaru (bez nich z mostka widać czarną bryłę pod szybą)
-  const deckLight = new THREE.PointLight(0xffe6c0, 60000, 1400, 2);
+  // światła siedziby: lampy w zatoce hangaru (ciepła w głębi, chłodniejsza przy wylocie) i reflektor przed wylotem
+  const deckLight = new THREE.PointLight(0xffe6c0, 9000, 600, 2);
+  const bayLight = new THREE.PointLight(0xcfe6ff, 8000, 600, 2);
   const mouthLight = new THREE.PointLight(0x9fd8ff, 40000, 900, 2);
-  scene.add(deckLight, mouthLight);
+  scene.add(deckLight, bayLight, mouthLight);
   const colors = Object.fromEntries(Object.entries(DRONE_TYPES).map(([k, d]) => [k, new THREE.Color(d.color)]));
 
   // ------------------------------------------------------------
@@ -54,7 +55,7 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
     if (!f) return null;
     out.pos.copy(command.bridgePos());
     // patrz nad pokładem hangaru w stronę pasa, lekko w dół
-    _v.copy(out.pos).addScaledVector(f.fwd, 1000).addScaledVector(_Y, -115);
+    _v.copy(out.pos).addScaledVector(f.fwd, 1000).addScaledVector(_Y, -22); // przez wylot zatoki, lekko w dół (pas startowy)
     _m.lookAt(out.pos, _v, _Y);
     out.quat.setFromRotationMatrix(_m);
     return out;
@@ -204,7 +205,7 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
       const k = e.t;
       // kamera z boku przed wylotem, patrzy na hangar: drony wylatują na nią i mijają ją
       pipCam.position.copy(hang).addScaledVector(f.side, 430).addScaledVector(_Y, 95).addScaledVector(f.fwd, 560);
-      _look.copy(hang).addScaledVector(f.fwd, 60 + k * 90).addScaledVector(_Y, 30);
+      _look.copy(hang).addScaledVector(f.fwd, 170 + k * 120).addScaledVector(_Y, 30);
       const col = colors[e.type];
       for (let i = 0; i < e.n; i++) {
         const j = offsets(e)[i];
@@ -275,10 +276,11 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
     t += dt;
     const f = command.frame();
     const home = economy.systemId === command.state.home;
-    deckLight.visible = mouthLight.visible = !!f && home;
+    deckLight.visible = bayLight.visible = mouthLight.visible = !!f && home;
     if (f && home) {
-      deckLight.position.copy(command.local({ x: 0, y: 150, z: 240 }));
-      mouthLight.position.copy(command.local({ x: 0, y: 40, z: 360 }));
+      deckLight.position.copy(command.local({ x: 0, y: 112, z: 90 }));
+      bayLight.position.copy(command.local({ x: 0, y: 104, z: 250 }));
+      mouthLight.position.copy(command.local({ x: 0, y: 70, z: 400 }));
     }
     if (mode === 'mostek') updateBridge(dt);
     else if (mode === 'podglad' && spectate) updateSpectate(dt);

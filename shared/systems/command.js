@@ -115,6 +115,7 @@ export function createCommand({
   const local = (p) => { const f = frame(); return f ? v3(p).applyQuaternion(f.quat).add(f.pos) : null; };
   const hangarPos = () => local(HQ.hangar);
   const bridgePos = () => local(HQ.bridge);
+  const launchPos = () => local(HQ.launch);
 
   // ------------------------------------------------------------
   // ULEPSZENIA, NAUKA
@@ -738,7 +739,7 @@ export function createCommand({
 
   return {
     get state() { return S(); }, hooks,
-    found, hq, huta, inHome, frame, hangarPos, bridgePos, local,
+    found, hq, huta, inHome, frame, hangarPos, bridgePos, launchPos, local,
     // hangar i wyprawy
     buildDrones, droneTypeState, hangarCap, fleetCount, dispatch, recall, redirect, keepWorking, sendGuards, alarmAll,
     targets, targetInfo, pose, phaseDur, bestRock, surveyed, holdOf, speedOf,

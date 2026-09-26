@@ -22,8 +22,9 @@ export const HQ = {
   // huta i reaktor przed siedzibą, w kadrze z mostka (huta z prawej, niżej; reaktor z lewej, wyżej)
   hutaSide: 540, hutaAhead: 1900, hutaUp: -260,
   reaktorSide: -470, reaktorAhead: 1750, reaktorUp: 250,
-  hangar: { x: 0, y: 22, z: 300 },   // wylot hangaru (lokalnie w modelu siedziby, +Z = w stronę pasa)
-  bridge: { x: 0, y: 128, z: 130 },  // kamera mostka
+  hangar: { x: 0, y: 36, z: 150 },   // start dronów w zatoce hangaru (lokalnie w modelu siedziby, +Z = w stronę pasa)
+  bridge: { x: 0, y: 62, z: 30 },    // kamera: głąb zatoki hangaru, widok przez wylot (z = 318)
+  launch: { x: 0, y: 70, z: 440 },   // myśliwiec "Za sterami" - tuż za wylotem
   start: { zelazo: 260, nikiel: 70, kobalt: 8 }, // metal na start w składzie siedziby
   startDrones: { zwiadowca: 3, gornik: 6 },
 };
