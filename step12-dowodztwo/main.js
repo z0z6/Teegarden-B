@@ -42,6 +42,7 @@ import { createCommand } from '../shared/systems/command.js';
 import { createCommandView } from '../shared/systems/command-view.js';
 import { createCommandPanel } from '../shared/systems/command-panel.js';
 import { createDecisions } from '../shared/systems/decisions.js';
+import { setSurfaceQuality } from '../shared/systems/surface-detail.js';
 
 // ============================================================
 // KROK 12: DOWÓDZTWO - gra zaczyna się na MOSTKU SIEDZIBY rasy (tryb
@@ -167,6 +168,7 @@ const urlPack = URLQ.get('wataha') === '1';
 let mode = urlMission ? 'lot' : 'mostek';
 const initialSystem = SYSTEMS[urlSystem] ? urlSystem : 'potrojny';
 const QUALITY = matchMedia('(pointer: coarse)').matches ? 0.6 : 1; // telefony: mniej protuberancji i planetoid
+setSurfaceQuality(QUALITY); // krok 12: szczegół powierzchni (surface-detail.js) - mniej oktaw na telefonach
 let starSystem = createStarSystem(scene, initialSystem, { quality: QUALITY });
 
 // ============================================================
@@ -1938,7 +1940,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 function launchPose() {
   const f = command.frame();
   if (!f || !inHome()) return false;
-  shipGroup.position.copy(command.hangarPos()).addScaledVector(f.fwd, 90 + collisionRadius * 3);
+  shipGroup.position.copy(command.launchPos()).addScaledVector(f.fwd, collisionRadius * 3);
   _spawnM.lookAt(shipGroup.position, shipGroup.position.clone().add(f.fwd), UP);
   shipGroup.quaternion.setFromRotationMatrix(_spawnM);
   return true;

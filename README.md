@@ -98,7 +98,8 @@ shared/
     ├── command.js              dowództwo: siedziba, hangar, wyprawy, huta, zasilanie, nauka, ulepszenia (krok 12)
     ├── command-view.js         widok z mostka, drony wypraw, okienko podglądu, podgląd zdalny (krok 12)
     ├── command-panel.js        panel gracza na mostku (krok 12)
-    └── decisions.js            wyskakujące karty decyzji z czasem na odpowiedź (krok 12)
+    ├── decisions.js            wyskakujące karty decyzji z czasem na odpowiedź (krok 12)
+    └── surface-detail.js       realistyczne powierzchnie w shaderze: skały, poszycie stacji, kadłuby (krok 12)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).

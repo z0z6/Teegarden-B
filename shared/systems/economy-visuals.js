@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applySurfaceDetail } from './surface-detail.js';
 
 /**
  * WYGLĄD WARSTWY EKONOMICZNEJ (krok 10): stacje, drony, iskry, promień.
@@ -53,8 +54,9 @@ function glowPoints(max, opts) {
 // ------------------------------------------------------------
 // STACJE
 // ------------------------------------------------------------
-const hullMat = () => new THREE.MeshStandardMaterial({ color: 0x9aa4ae, metalness: 0.65, roughness: 0.45 });
-const darkMat = () => new THREE.MeshStandardMaterial({ color: 0x3a4250, metalness: 0.5, roughness: 0.6 });
+// krok 12: poszycie z płytami, nitami, zabrudzeniami i zaciekami (surface-detail.js)
+const hullMat = () => applySurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x9aa4ae, metalness: 0.65, roughness: 0.45 }), 'panel');
+const darkMat = () => applySurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x3a4250, metalness: 0.5, roughness: 0.6 }), 'panel');
 const lightMat = (hex) => new THREE.MeshBasicMaterial({ color: hex, toneMapped: false });
 
 /**
@@ -103,37 +105,57 @@ export function buildStationModel(type, accentHex) {
     beacon(0, 126, 0, 0xff5a4d);
     for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; beacon(Math.cos(a) * 46, -70, Math.sin(a) * 46, accentHex, group, i * 0.5); }
   } else if (type === 'siedziba') {
-    // krok 12: SIEDZIBA RASY. Lokalnie +Z = dziób (w stronę pasa). Z tyłu
-    // wieża mostka (kamera stoi tuż przed jej szybą, command.js HQ.bridge),
-    // pod nią pokład hangaru wysunięty do przodu z jasnym wylotem (HQ.hangar),
-    // niżej wielki pierścień mieszkalny, z boków skrzydła paneli.
-    add(mesh(new THREE.CylinderGeometry(64, 78, 300, 28), H, 0, -40, -40));
-    add(mesh(new THREE.CylinderGeometry(84, 84, 16, 28), A, 0, -120, -40)).userData.noScale = true;
-    add(mesh(new THREE.SphereGeometry(70, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), H, 0, 110, -40));
-    // pokład hangaru
-    add(mesh(new THREE.BoxGeometry(150, 44, 280), D, 0, 30, 150));
-    // pokład: ciemne płyty, jasne burty, pas startowy ze światłami prowadzącymi do wylotu
-    add(mesh(new THREE.BoxGeometry(170, 8, 300), new THREE.MeshStandardMaterial({ color: 0x2a3340, metalness: 0.7, roughness: 0.55 }), 0, 56, 160));
-    for (const x of [-80, 80]) add(mesh(new THREE.BoxGeometry(10, 64, 300), H, x, 28, 160));
-    for (let z = 30; z <= 290; z += 52) add(mesh(new THREE.BoxGeometry(166, 1, 2), D, 0, 60.6, z)).userData.noScale = true;
-    for (const x of [-26, 26]) add(mesh(new THREE.BoxGeometry(2, 1, 290), A, x, 60.8, 160)).userData.noScale = true;
-    for (let z = 40; z <= 290; z += 25) add(mesh(new THREE.BoxGeometry(6, 1.4, 6), lightMat(0x9fd8ff), 0, 61, z)).userData.noScale = true;
-    for (const x of [-64, 64]) {
-      add(mesh(new THREE.BoxGeometry(22, 14, 30), H, x, 67, 70));
-      add(mesh(new THREE.BoxGeometry(18, 2, 18), lightMat(0xffb13d), x, 74.5, 70)).userData.noScale = true;
+    // krok 12: SIEDZIBA RASY. Lokalnie +Z = dziób (w stronę pasa). Z przodu
+    // ZAMKNIĘTA ZATOKA HANGARU (x ±150, y 0..140, z -40..310): podłoga z pasem
+    // startowym, ściany, strop, żebra konstrukcji i lampy. Kamera mostka stoi
+    // w głębi zatoki (command.js HQ.bridge) i patrzy przez wylot na pas planetoid.
+    // Żadne dwie ścianki nie leżą w jednej płaszczyźnie (inaczej z-fighting:
+    // migotanie krawędzi); paski na podłodze wiszą nad nią, nie na niej.
+    add(mesh(new THREE.CylinderGeometry(64, 78, 300, 28), H, 0, -40, -80));
+    add(mesh(new THREE.CylinderGeometry(84, 84, 16, 28), A, 0, -120, -80)).userData.noScale = true;
+    const floorMat = applySurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x323b47, metalness: 0.55, roughness: 0.62 }), 'panel', { scale: 1 / 22 });
+    const wallMat = applySurfaceDetail(new THREE.MeshStandardMaterial({ color: 0x46505e, metalness: 0.6, roughness: 0.55 }), 'panel', { scale: 1 / 16 });
+    add(mesh(new THREE.BoxGeometry(330, 14, 360), floorMat, 0, -7, 135));          // podłoga (wierzch y=0)
+    add(mesh(new THREE.BoxGeometry(330, 16, 360), wallMat, 0, 148, 135));          // strop (spód y=140)
+    for (const x of [-1, 1]) add(mesh(new THREE.BoxGeometry(14, 140, 360), wallMat, x * 157, 70, 135)); // ściany (wnętrze x=±150)
+    add(mesh(new THREE.BoxGeometry(300, 140, 12), D, 0, 70, -46));                 // ściana tylna
+    // żebra: ramy co 50 j. (wystają do środka - głębia zatoki)
+    for (let z = 10; z <= 290; z += 50) {
+      for (const x of [-1, 1]) add(mesh(new THREE.BoxGeometry(10, 136, 9), D, x * 145, 70, z));
+      add(mesh(new THREE.BoxGeometry(290, 9, 9), D, 0, 135, z));
+      for (const x of [-1, 1]) add(mesh(new THREE.BoxGeometry(24, 6, 10), D, x * 136, 130, z)); // wsporniki narożne
     }
-    // wylot hangaru: świecąca rama i wnętrze
-    const mouth = add(mesh(new THREE.PlaneGeometry(120, 34), new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.55, toneMapped: false })), group);
-    mouth.position.set(0, 26, 301); mouth.userData.noScale = true;
-    for (const [w, h, x, y] of [[132, 4, 0, 45], [132, 4, 0, 7], [4, 42, -64, 26], [4, 42, 64, 26]]) add(mesh(new THREE.BoxGeometry(w, h, 6), A, x, y, 302)).userData.noScale = true;
-    for (let z = 40; z <= 290; z += 50) for (const x of [-86, 86]) beacon(x, 58, z, z > 260 ? 0x9fd8ff : 0xffd36b, group, z * 0.02);
-    // wieża mostka z pasem okien (szyba od strony +Z)
-    add(mesh(new THREE.BoxGeometry(110, 58, 90), H, 0, 128, 78));
-    add(mesh(new THREE.BoxGeometry(112, 10, 4), new THREE.MeshBasicMaterial({ color: 0xffe2a0, toneMapped: false }), 0, 132, 124)).userData.noScale = true;
-    add(mesh(new THREE.BoxGeometry(8, 90, 8), D, 0, 200, 60));
-    beacon(0, 248, 60, 0xff5a4d);
+    // lampy: pasy pod stropem i przy ścianach
+    for (const x of [-70, 70]) for (let z = 20; z <= 280; z += 50) add(mesh(new THREE.BoxGeometry(5, 2, 34), lightMat(0x9fb8d0), x, 129, z + 25)).userData.noScale = true;
+    for (const x of [-1, 1]) add(mesh(new THREE.BoxGeometry(2, 3, 300), lightMat(0xffd36b), x * 139, 16, 150)).userData.noScale = true;
+    // pas startowy: dwie linie, oś ze światłami prowadzącymi, znaki na progu
+    for (const x of [-46, 46]) add(mesh(new THREE.BoxGeometry(4, 0.8, 330), new THREE.MeshStandardMaterial({ color: 0xe8dcb0, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2 }), x, 1.1, 140)).userData.noScale = true;
+    for (let z = -20; z <= 300; z += 32) add(mesh(new THREE.BoxGeometry(7, 1.6, 7), lightMat(0x9fd8ff), 0, 1.6, z)).userData.noScale = true;
+    for (let i = 0; i < 6; i++) add(mesh(new THREE.BoxGeometry(10, 0.8, 26), new THREE.MeshStandardMaterial({ color: 0xffb13d, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2 }), -75 + i * 30, 1.1, 285)).userData.noScale = true;
+    // wyposażenie: kontenery, wózki, stojaki na drony przy ścianach
+    const crate = [0x7a4b2a, 0x2f5c7a, 0x5d6b38, 0x8a8f96];
+    for (let i = 0; i < 8; i++) {
+      const x = (i % 2 ? 1 : -1) * (118 - (i % 3) * 6), z = 30 + Math.floor(i / 2) * 64;
+      add(mesh(new THREE.BoxGeometry(34, 22 + (i % 3) * 8, 26), applySurfaceDetail(new THREE.MeshStandardMaterial({ color: crate[i % 4], metalness: 0.3, roughness: 0.7 }), 'panel', { scale: 1 / 7 }), x, 12 + (i % 3) * 4, z));
+    }
+    for (const x of [-1, 1]) for (let z = 40; z <= 240; z += 100) {
+      add(mesh(new THREE.BoxGeometry(6, 60, 6), D, x * 100, 30, z));
+      add(mesh(new THREE.BoxGeometry(30, 3, 12), H, x * 100, 58, z));
+      beacon(x * 100, 62, z, 0xffb13d, group, z * 0.03);
+    }
+    // wylot: świecąca rama i półprzezroczysta kurtyna pola siłowego (widoczna tylko z zewnątrz)
+    const mouth = add(mesh(new THREE.PlaneGeometry(300, 140), new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.16, toneMapped: false, depthWrite: false })), group);
+    mouth.position.set(0, 70, 318); mouth.userData.noScale = true;
+    for (const [w, h, x, y] of [[316, 6, 0, 143], [316, 6, 0, -3], [6, 146, -155, 70], [6, 146, 155, 70]]) add(mesh(new THREE.BoxGeometry(w, h, 8), A, x, y, 319)).userData.noScale = true;
+    for (let y = 20; y <= 120; y += 50) for (const x of [-1, 1]) beacon(x * 164, y, 318, y > 100 ? 0xff5a4d : 0x9fd8ff, group, y * 0.05);
+    // wieża mostka nad zatoką (z pasem okien), antena
+    add(mesh(new THREE.SphereGeometry(70, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), H, 0, 156, -80));
+    add(mesh(new THREE.BoxGeometry(120, 50, 90), H, 0, 181, 40));
+    add(mesh(new THREE.BoxGeometry(122, 9, 3), new THREE.MeshBasicMaterial({ color: 0xffe2a0, toneMapped: false }), 0, 186, 86.5)).userData.noScale = true;
+    add(mesh(new THREE.BoxGeometry(8, 90, 8), D, 0, 250, 20));
+    beacon(0, 298, 20, 0xff5a4d);
     // pierścień mieszkalny na szprychach
-    const ring = new THREE.Group(); ring.position.set(0, -60, -40); group.add(ring);
+    const ring = new THREE.Group(); ring.position.set(0, -70, -60); group.add(ring);
     spinners.push({ obj: ring, axis: new THREE.Vector3(0, 1, 0), speed: 0.05 });
     const torus = add(mesh(new THREE.TorusGeometry(250, 22, 14, 96), H), ring);
     torus.rotation.x = Math.PI / 2;

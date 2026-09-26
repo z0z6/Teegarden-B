@@ -2,9 +2,11 @@
 
 Od tego kroku gra zaczyna się **na mostku siedziby** twojej rasy, a nie
 w kokpicie. Na okładce wybierasz układ, klikasz „Graj” i po krótkim
-najeździe kamery siedzisz przed szybą mostka. Przed tobą leży pas
-planetoid pola macierzystego, po prawej pracuje huta, po lewej reaktor.
-Pod szybą jest pokład hangaru, z którego wylatują drony.
+najeździe kamery patrzysz **z głębi zatoki hangaru** siedziby: ściany
+z żebrami konstrukcji, lampy, kontenery, pas startowy ze światłami
+prowadzącymi, a przez wylot hangaru — pas planetoid pola macierzystego,
+po prawej huta, po lewej reaktor. Drony startują z zatoki i wylatują
+przez wylot.
 
 ```
 step12-dowodztwo/?uklad=teegarden&statek=goniec-wybudzeni-hawk-7
@@ -125,6 +127,26 @@ Zapis kampanii kroku 12 jest osobny od kroku 11
 (`teegarden-b.dowodztwo.v1.<rasa>`). Stan dowództwa (hangar, wyprawy,
 urobek, nauka, ulepszenia) jest częścią zapisu gospodarki
 (`economy.state.command`).
+
+## Powierzchnie bez tekstur (`shared/systems/surface-detail.js`)
+
+Realizm bez plików graficznych i bez szwów UV: szum liczony w shaderze
+z pozycji w układzie obiektu (patch `onBeforeCompile`).
+
+- **Planetoidy i gruz**: spękania, kratery, pył w zagłębieniach,
+  mineralne przebarwienia, zmienna szorstkość, relief z pochodnych
+  wysokości. Siatka planetoidy ma teraz scalone wierzchołki (wcześniej
+  każdy trójkąt miał własne i normalne wychodziły płaskie — „low-poly”).
+- **Stacje**: płyty poszycia ze szczelinami i nitami, zabrudzenia,
+  zacieki, zarysowania, przypalenia. Drobne wzory gasną z odległością
+  (`fwidth`), więc z daleka nie ma „śniegu”.
+- **Statki**: przybrudzenia, zadrapania i sadza, wpięte w shader fałdy
+  (`warp-drive.js`), więc wszystkie statki dzielą jeden program GPU.
+
+Koszt: kilka oktaw szumu na piksel tylko na tych obiektach, jeden program
+GPU na tryb. Na telefonach (`setSurfaceQuality`) jest mniej oktaw i nie ma
+nitów. Zatoka hangaru nie ma ścianek leżących w jednej płaszczyźnie
+(to one migały na krawędziach pasa), a linie pasa wiszą nad podłogą.
 
 ## Testy
 

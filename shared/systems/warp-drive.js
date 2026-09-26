@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RACES } from '../data/races.js';
+import { NOISE_GLSL, WEAR_VERT_PARS, WEAR_VERT_MAIN, WEAR_FRAG, sdDefines } from './surface-detail.js';
 
 /**
  * NAPĘD FAŁDOWY - efekt skoku ("warp") dla KAŻDEGO statku: gracza (4 modele)
@@ -177,20 +178,24 @@ if ( uWGlow + uWStretch > 0.0 ) {
 }
 `;
 
+const WEAR_SCALE = { value: 0.35 };
 function patchHullMaterial(src, U) {
   const m = src.clone();
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
+    shader.uniforms.uSdScale = WEAR_SCALE; // krok 12: ślady eksploatacji kadłuba (surface-detail.js)
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${HULL_VERT_PARS}`)
+      .replace('#include <common>', `#include <common>\n${HULL_VERT_PARS}${WEAR_VERT_PARS}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${WEAR_VERT_MAIN}`)
       .replace('#include <project_vertex>', HULL_PROJECT);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${HULL_FRAG_PARS}`)
+      .replace('#include <common>', `#include <common>\n${HULL_FRAG_PARS}${sdDefines()}varying vec3 vSdPos;\nvarying vec3 vSdNrm;\n${NOISE_GLSL}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${WEAR_FRAG}`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${HULL_CLIP}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${HULL_EMISSIVE}`);
   };
   // wszystkie statki dzielą ten sam program GPU (inne są tylko wartości uniformów)
-  m.customProgramCacheKey = () => 'warp-hull-v1';
+  m.customProgramCacheKey = () => `warp-hull-v2|${sdDefines().length}`;
   return m;
 }
 
