@@ -102,6 +102,97 @@ export function buildStationModel(type, accentHex) {
     add(mesh(new THREE.CylinderGeometry(1.2, 1.2, 70, 6), D, 0, 90, 0));
     beacon(0, 126, 0, 0xff5a4d);
     for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; beacon(Math.cos(a) * 46, -70, Math.sin(a) * 46, accentHex, group, i * 0.5); }
+  } else if (type === 'siedziba') {
+    // krok 12: SIEDZIBA RASY. Lokalnie +Z = dziób (w stronę pasa). Z tyłu
+    // wieża mostka (kamera stoi tuż przed jej szybą, command.js HQ.bridge),
+    // pod nią pokład hangaru wysunięty do przodu z jasnym wylotem (HQ.hangar),
+    // niżej wielki pierścień mieszkalny, z boków skrzydła paneli.
+    add(mesh(new THREE.CylinderGeometry(64, 78, 300, 28), H, 0, -40, -40));
+    add(mesh(new THREE.CylinderGeometry(84, 84, 16, 28), A, 0, -120, -40)).userData.noScale = true;
+    add(mesh(new THREE.SphereGeometry(70, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), H, 0, 110, -40));
+    // pokład hangaru
+    add(mesh(new THREE.BoxGeometry(150, 44, 280), D, 0, 30, 150));
+    // pokład: ciemne płyty, jasne burty, pas startowy ze światłami prowadzącymi do wylotu
+    add(mesh(new THREE.BoxGeometry(170, 8, 300), new THREE.MeshStandardMaterial({ color: 0x2a3340, metalness: 0.7, roughness: 0.55 }), 0, 56, 160));
+    for (const x of [-80, 80]) add(mesh(new THREE.BoxGeometry(10, 64, 300), H, x, 28, 160));
+    for (let z = 30; z <= 290; z += 52) add(mesh(new THREE.BoxGeometry(166, 1, 2), D, 0, 60.6, z)).userData.noScale = true;
+    for (const x of [-26, 26]) add(mesh(new THREE.BoxGeometry(2, 1, 290), A, x, 60.8, 160)).userData.noScale = true;
+    for (let z = 40; z <= 290; z += 25) add(mesh(new THREE.BoxGeometry(6, 1.4, 6), lightMat(0x9fd8ff), 0, 61, z)).userData.noScale = true;
+    for (const x of [-64, 64]) {
+      add(mesh(new THREE.BoxGeometry(22, 14, 30), H, x, 67, 70));
+      add(mesh(new THREE.BoxGeometry(18, 2, 18), lightMat(0xffb13d), x, 74.5, 70)).userData.noScale = true;
+    }
+    // wylot hangaru: świecąca rama i wnętrze
+    const mouth = add(mesh(new THREE.PlaneGeometry(120, 34), new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.55, toneMapped: false })), group);
+    mouth.position.set(0, 26, 301); mouth.userData.noScale = true;
+    for (const [w, h, x, y] of [[132, 4, 0, 45], [132, 4, 0, 7], [4, 42, -64, 26], [4, 42, 64, 26]]) add(mesh(new THREE.BoxGeometry(w, h, 6), A, x, y, 302)).userData.noScale = true;
+    for (let z = 40; z <= 290; z += 50) for (const x of [-86, 86]) beacon(x, 58, z, z > 260 ? 0x9fd8ff : 0xffd36b, group, z * 0.02);
+    // wieża mostka z pasem okien (szyba od strony +Z)
+    add(mesh(new THREE.BoxGeometry(110, 58, 90), H, 0, 128, 78));
+    add(mesh(new THREE.BoxGeometry(112, 10, 4), new THREE.MeshBasicMaterial({ color: 0xffe2a0, toneMapped: false }), 0, 132, 124)).userData.noScale = true;
+    add(mesh(new THREE.BoxGeometry(8, 90, 8), D, 0, 200, 60));
+    beacon(0, 248, 60, 0xff5a4d);
+    // pierścień mieszkalny na szprychach
+    const ring = new THREE.Group(); ring.position.set(0, -60, -40); group.add(ring);
+    spinners.push({ obj: ring, axis: new THREE.Vector3(0, 1, 0), speed: 0.05 });
+    const torus = add(mesh(new THREE.TorusGeometry(250, 22, 14, 96), H), ring);
+    torus.rotation.x = Math.PI / 2;
+    const band = add(mesh(new THREE.TorusGeometry(250, 22.6, 4, 96), A), ring);
+    band.rotation.x = Math.PI / 2; band.scale.set(1, 1, 0.1);
+    for (let i = 0; i < 6; i++) {
+      const sp = add(mesh(new THREE.BoxGeometry(500, 8, 8), D), ring);
+      sp.rotation.y = (i * Math.PI) / 6;
+    }
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; beacon(Math.cos(a) * 272, 0, Math.sin(a) * 272, i % 3 ? 0xffffff : accentHex, ring, i * 0.6); }
+    // skrzydła paneli i radiatory z tyłu
+    for (const side of [-1, 1]) {
+      add(mesh(new THREE.BoxGeometry(120, 6, 6), D, side * 130, 20, -120));
+      for (let k = 0; k < 2; k++) {
+        const panel = add(mesh(new THREE.BoxGeometry(150, 2, 70), new THREE.MeshStandardMaterial({ color: 0x1b3160, metalness: 0.6, roughness: 0.35, emissive: 0x0a1a3a, emissiveIntensity: 0.7 }), side * (230 + k * 160), 20, -120));
+        panel.rotation.x = 0.35;
+      }
+      const rad = add(mesh(new THREE.BoxGeometry(4, 130, 90), new THREE.MeshStandardMaterial({ color: 0x3a2020, emissive: 0xff5a2a, emissiveIntensity: 0.35, metalness: 0.3, roughness: 0.7 }), side * 70, -40, -200));
+      rad.rotation.y = side * 0.4;
+    }
+  } else if (type === 'huta') {
+    // krok 12: HUTA. Piec z żarzącymi się szczelinami, lej zasypowy u góry,
+    // kominy i rozgrzane radiatory.
+    const hot = new THREE.MeshBasicMaterial({ color: 0xff8a3a, toneMapped: false });
+    add(mesh(new THREE.CylinderGeometry(72, 86, 170, 24), D));
+    for (let y = -60; y <= 60; y += 30) add(mesh(new THREE.CylinderGeometry(87 - (y + 60) * 0.1, 87 - (y + 60) * 0.1, 4, 24, 1, true), hot, 0, y, 0)).userData.noScale = true;
+    add(mesh(new THREE.CylinderGeometry(96, 40, 70, 20, 1, true), H, 0, 120, 0));
+    add(mesh(new THREE.CylinderGeometry(94, 94, 3, 20, 1, true), A, 0, 154, 0)).userData.noScale = true;
+    for (const [x, z] of [[-58, -40], [52, -46], [0, 64]]) {
+      add(mesh(new THREE.CylinderGeometry(10, 14, 120, 10), H, x, 60, z));
+      add(mesh(new THREE.CylinderGeometry(10.5, 10.5, 6, 10), hot, x, 122, z)).userData.noScale = true;
+    }
+    for (const side of [-1, 1]) {
+      const rad = add(mesh(new THREE.BoxGeometry(150, 110, 4), new THREE.MeshStandardMaterial({ color: 0x4a2418, emissive: 0xff4a1a, emissiveIntensity: 0.55, metalness: 0.3, roughness: 0.6 }), side * 170, -10, 0));
+      rad.rotation.y = side * 0.25;
+      add(mesh(new THREE.BoxGeometry(60, 8, 8), D, side * 96, -10, 0));
+    }
+    add(mesh(new THREE.CylinderGeometry(50, 60, 30, 16), D, 0, -100, 0));
+    add(mesh(new THREE.TorusGeometry(56, 3, 6, 32), A, 0, -116, 0)).rotation.x = Math.PI / 2;
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; beacon(Math.cos(a) * 98, 156, Math.sin(a) * 98, accentHex, group, i * 0.5); }
+  } else if (type === 'reaktor') {
+    // krok 12: REAKTOR. Świecący rdzeń w klatce obracających się pierścieni,
+    // wieniec żeber chłodzących.
+    add(mesh(new THREE.SphereGeometry(40, 24, 16), new THREE.MeshBasicMaterial({ color: 0x9ff6ff, toneMapped: false })));
+    add(mesh(new THREE.SphereGeometry(52, 24, 16), new THREE.MeshStandardMaterial({ color: 0x2a7f95, emissive: 0x2ad6ff, emissiveIntensity: 0.5, transparent: true, opacity: 0.35, metalness: 0.2, roughness: 0.2, depthWrite: false })));
+    for (let i = 0; i < 3; i++) {
+      const g = new THREE.Group(); group.add(g);
+      g.rotation.set(i * 1.05, i * 0.7, 0);
+      spinners.push({ obj: g, axis: new THREE.Vector3(0, 1, 0), speed: 0.35 + i * 0.2 });
+      add(mesh(new THREE.TorusGeometry(70 + i * 9, 3.2, 8, 48), i === 1 ? A : H), g);
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const fin = add(mesh(new THREE.BoxGeometry(4, 120, 60), D, Math.cos(a) * 118, 0, Math.sin(a) * 118));
+      fin.rotation.y = -a;
+    }
+    add(mesh(new THREE.CylinderGeometry(126, 126, 6, 32, 1, true), H, 0, 62, 0));
+    add(mesh(new THREE.CylinderGeometry(126, 126, 6, 32, 1, true), H, 0, -62, 0));
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; beacon(Math.cos(a) * 128, 66, Math.sin(a) * 128, accentHex, group, i * 0.4); }
   } else if (type === 'magazyn') {
     // grzbiet i dwa wieńce zbiorników
     add(mesh(new THREE.BoxGeometry(22, 22, 230), D));
@@ -251,9 +342,9 @@ export const DRONE_STATE_COLOR = {
   ewakuacja: new THREE.Color('#e6c3ff'),  // alarm: ucieczka do doku
 };
 
-export function createDroneRenderer(scene, max = 600) {
+export function createDroneRenderer(scene, max = 600, { scale = 1 } = {}) {
   const body = new THREE.OctahedronGeometry(1, 0);
-  body.scale(2.8, 1.1, 4.4);
+  body.scale(2.8 * scale, 1.1 * scale, 4.4 * scale); // krok 12: scale > 1 - drony w ujęciach okienka podglądu
   const mat = new THREE.MeshStandardMaterial({ color: 0xe2e7ec, metalness: 0.35, roughness: 0.45, emissive: 0x3a5068, emissiveIntensity: 0.8 });
   const inst = new THREE.InstancedMesh(body, mat, max);
   inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -274,11 +365,11 @@ export function createDroneRenderer(scene, max = 600) {
       q.setFromUnitVectors(fwd, dir);
       m.compose(pos, q, s);
       inst.setMatrixAt(n, m);
-      tail.copy(dir).multiplyScalar(-4.6).add(pos);
+      tail.copy(dir).multiplyScalar(-4.6 * scale).add(pos);
       gp.setXYZ(n, tail.x, tail.y, tail.z);
       const c = color ?? DRONE_STATE_COLOR[state] ?? DRONE_STATE_COLOR.lot; // krok 11: drony ras w kolorze rasy
       gc.setXYZ(n, c.r * pulse, c.g * pulse, c.b * pulse);
-      gs.setX(n, state === 'wiercenie' ? 8 : 10);
+      gs.setX(n, (state === 'wiercenie' ? 8 : 10) * scale);
       n++;
     },
     end() {

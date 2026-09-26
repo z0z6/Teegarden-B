@@ -51,6 +51,9 @@ export function stationIcon(type, size = 20, color = '#9fd8ff') {
     dok: `<ellipse cx="16" cy="15" rx="13" ry="5" fill="none" stroke="${hull}" stroke-width="2.6"/><rect x="13" y="4" width="6" height="22" rx="2.5" fill="${hull}"/><ellipse cx="16" cy="26" rx="6" ry="2" fill="${color}"/><circle cx="16" cy="3.5" r="1.4" fill="#ff5a4d"/>`,
     wieza: `<path d="M7 26 L10 19 H22 L25 26 Z" fill="#566270"/><rect x="13" y="13" width="6" height="7" fill="${hull}"/><circle cx="16" cy="12" r="5" fill="${hull}"/><rect x="18" y="8.5" width="11" height="2" rx="1" fill="${hull}"/><rect x="18" y="12" width="11" height="2" rx="1" fill="${hull}"/><path d="M7 26 H25" stroke="${color}" stroke-width="1.6"/>`,
     stocznia: `<rect x="3" y="8" width="2.5" height="18" fill="#566270"/><rect x="26.5" y="8" width="2.5" height="18" fill="#566270"/><rect x="3" y="7" width="26" height="2.5" fill="#566270"/><path d="M9 22 C9 15 13 12 16 11 C19 12 23 15 23 22 Z" fill="none" stroke="${hull}" stroke-width="2"/><path d="M16 11 V22 M11 17 H21" stroke="${hull}" stroke-width="1.2"/><circle cx="16" cy="7" r="1.6" fill="${color}"/>`,
+    siedziba: `<ellipse cx="16" cy="20" rx="14" ry="4.5" fill="none" stroke="${hull}" stroke-width="2.4"/><rect x="11" y="6" width="10" height="16" rx="2" fill="${hull}"/><rect x="12" y="9" width="8" height="2" fill="${color}"/><rect x="14" y="22" width="4" height="6" fill="#566270"/><circle cx="16" cy="4" r="1.4" fill="#ff5a4d"/><path d="M3 20 H29" stroke="${color}" stroke-width="1" opacity=".6"/>`,
+    huta: `<path d="M9 27 L10 11 H22 L23 27 Z" fill="${hull}"/><path d="M8 11 L12 5 H20 L24 11 Z" fill="#566270"/><path d="M11 16 H21 M10.6 20 H21.4 M10.3 24 H21.7" stroke="#ff8a3a" stroke-width="1.6"/><rect x="24" y="4" width="3" height="12" fill="#566270"/><circle cx="25.5" cy="3" r="1.6" fill="#ff8a3a" opacity=".8"/>`,
+    reaktor: `<circle cx="16" cy="16" r="5.5" fill="#9ff6ff"/><circle cx="16" cy="16" r="8.5" fill="${color}" opacity=".25"/><ellipse cx="16" cy="16" rx="13" ry="4.5" fill="none" stroke="${hull}" stroke-width="1.8"/><ellipse cx="16" cy="16" rx="4.5" ry="13" fill="none" stroke="${hull}" stroke-width="1.8" transform="rotate(35 16 16)"/>`,
   };
   return wrap(size, defs + (shapes[type] ?? shapes.dok), `ico-station ico-${type}`);
 }
@@ -96,3 +99,37 @@ export function stanceIcon(stance, size = 18) {
   return wrap(size, shapes[stance] ?? shapes.pokoj, `ico-stance ico-${stance}`);
 }
 export const STANCE_LABEL = { wojna: 'wojna', pokoj: 'pokój', pakt: 'pakt o nieagresji', sojusz: 'sojusz' };
+
+// ------------------------------------------------------------
+// KROK 12: DOWÓDZTWO - typy dronów, energia, nauka, urobek
+// ------------------------------------------------------------
+export function droneTypeIcon(type, size = 22, color = '#9fd8ff') {
+  const g = nid('dg');
+  const defs = `<defs><linearGradient id="${g}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f4f8fb"/><stop offset="1" stop-color="#7c8896"/></linearGradient></defs>`;
+  const f = `url(#${g})`;
+  const shapes = {
+    zwiadowca: `<path d="M16 3 L21 17 L16 14 L11 17 Z" fill="${f}"/><circle cx="16" cy="23" r="6" fill="none" stroke="${color}" stroke-opacity=".5"/><circle cx="16" cy="23" r="2.4" fill="${color}"/><path d="M16 17 L16 20" stroke="${color}" stroke-width="1.4"/>`,
+    gornik: `<path d="M16 5 L24 13 L16 21 L8 13 Z" fill="${f}"/><path d="M16 21 L16 28" stroke="#566270" stroke-width="3"/><path d="M13 28 L16 31 L19 28" fill="${color}"/><circle cx="16" cy="13" r="2.2" fill="${color}"/>`,
+    holownik: `<rect x="6" y="9" width="20" height="13" rx="3" fill="${f}"/><rect x="9" y="12" width="14" height="7" rx="1.5" fill="#566270"/><path d="M11 15.5 H21" stroke="${color}" stroke-width="2"/><circle cx="9" cy="25" r="2.2" fill="${color}"/><circle cx="23" cy="25" r="2.2" fill="${color}"/>`,
+    straznik: `<path d="M16 3 L26 10 L22 26 H10 L6 10 Z" fill="${f}"/><path d="M16 8 V20" stroke="#566270" stroke-width="3"/><circle cx="16" cy="8" r="2.4" fill="${color}"/><path d="M10 26 L8 30 M22 26 L24 30" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`,
+  };
+  return wrap(size, defs + (shapes[type] ?? shapes.gornik), `ico-dtype ico-${type}`);
+}
+export function powerIcon(size = 18, color = '#6ff0ff') {
+  return wrap(size, `<path d="M18 2 L7 18 H15 L13 30 L25 12 H17 Z" fill="${color}"/><path d="M18 2 L7 18 H15" fill="#fff" fill-opacity=".35"/>`, 'ico-power');
+}
+export function oreIcon(size = 18) {
+  return wrap(size, `<path d="M4 24 L9 14 L15 16 L20 9 L28 15 L27 25 L16 28 Z" fill="#6c6358"/><path d="M9 14 L15 16 L13 23 L4 24 Z" fill="#8a7d6c"/><circle cx="19" cy="18" r="2" fill="#ffb13d"/><circle cx="23" cy="22" r="1.4" fill="#c3ccd6"/><circle cx="12" cy="20" r="1.2" fill="#6fd6b4"/>`, 'ico-ore');
+}
+export function scienceIcon(size = 18, color = '#c39bff') {
+  return wrap(size, `<path d="M12 3 H20 M13 3 V12 L6 25 C5 27 6 29 8 29 H24 C26 29 27 27 26 25 L19 12 V3" fill="none" stroke="#dfe6ee" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 21 H23 L25.5 26 C26 27.5 25 28 24 28 H8 C7 28 6 27.5 6.5 26 Z" fill="${color}"/><circle cx="14" cy="17" r="1.5" fill="${color}"/><circle cx="18" cy="14" r="1" fill="${color}"/>`, 'ico-science');
+}
+export function upgradeIcon(size = 18, color = '#ffd36b') {
+  return wrap(size, `<path d="M16 3 L27 14 H20 V29 H12 V14 H5 Z" fill="${color}" fill-opacity=".9"/><path d="M16 3 L27 14 H20" fill="#fff" fill-opacity=".3"/>`, 'ico-upgrade');
+}
+export function pilotIcon(size = 18, color = '#ff7a45') {
+  return wrap(size, `<path d="M16 3 L20 13 L29 18 L20 20 L16 29 L12 20 L3 18 L12 13 Z" fill="#e8eef5"/><circle cx="16" cy="16" r="3" fill="${color}"/>`, 'ico-pilot');
+}
+export function eyeIcon(size = 18, color = '#9fd8ff') {
+  return wrap(size, `<path d="M3 16 C8 8 24 8 29 16 C24 24 8 24 3 16 Z" fill="none" stroke="${color}" stroke-width="2"/><circle cx="16" cy="16" r="4.5" fill="${color}"/><circle cx="17.5" cy="14.5" r="1.4" fill="#fff"/>`, 'ico-eye');
+}

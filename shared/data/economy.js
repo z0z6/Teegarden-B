@@ -82,6 +82,22 @@ export const STATIONS = {
     role: 'Buduje okręty wojenne z metalu w układzie. Armia broni twoich pól i zdobywa cudze.',
     cost: { credits: 2400, zelazo: 260, nikiel: 90, kobalt: 20 }, buildTime: 50, capacity: 300, radius: 150, hull: 1100,
   },
+  // krok 12 (Dowództwo, shared/data/command.js): siedziba rasy, huta i reaktor
+  siedziba: {
+    name: 'Siedziba', short: 'HQ', accent: '#ffd36b',
+    role: 'Główna stacja rasy: mostek dowodzenia, hangar dronów, laboratoria i główny skład metalu. Zasila stacje w układzie.',
+    cost: { credits: 0 }, buildTime: 1, capacity: 6000, radius: 280, hull: 4000,
+  },
+  huta: {
+    name: 'Huta orbitalna', short: 'HUT', accent: '#ff9a4a',
+    role: 'Przetapia urobek z wypraw dronów na czysty metal. Tempo zależy od zasilania, odzysk metali — od nauki.',
+    cost: { credits: 1200, zelazo: 120, nikiel: 30 }, buildTime: 40, capacity: 0, radius: 170, hull: 1200,
+  },
+  reaktor: {
+    name: 'Reaktor', short: 'REA', accent: '#6ff0ff',
+    role: 'Moduł energetyczny. Zasila stacje układu; bez prądu stacje pracują wolniej.',
+    cost: { credits: 900, zelazo: 80, nikiel: 40, kobalt: 6 }, buildTime: 35, capacity: 0, radius: 110, hull: 700,
+  },
 };
 export const STATION_ORDER = ['magazyn', 'przeladunek', 'dok', 'wieza', 'stocznia'];
 

@@ -16,7 +16,7 @@ npx serve .
 python3 -m http.server 8080
 ```
 
-Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie). Przycisk „Graj” prowadzi na **tablicę misji** (`missions.html`: odprawa, wybór statku, trudności i watahy), a stamtąd do **kampanii „Dominacja”** (`step11-dominacja`) — gry głównej; misje z kroku 9 i piaskownica gospodarki są niżej na liście. Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
+Potem otwórz `http://localhost:3000/` — to **okładka gry** (wybór układu startowego, sterowanie). Przycisk „Graj” prowadzi od razu na **mostek siedziby** w wybranym układzie (`step12-dowodztwo`) — to gra główna. **Tablica misji** (`missions.html`: odprawa, wybór statku i rasy, trudności i watahy) jest pod linkiem „Misje i wybór statku”; misje z kroku 9 i piaskownica gospodarki są tam na liście. Dziennik budowy ze wszystkimi krokami jest w `dev.html`, a konkretny krok otworzysz np. pod `http://localhost:3000/step3-ships/`.
 
 Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tranzytującą planetą b tymi samymi shaderami co gra; wybrany układ zapamiętuje w przeglądarce i przekazuje do gry jako `?uklad=`. Czcionki (Big Shoulders Display, Manrope — OFL 1.1, licencje w `cover/fonts/`) są hostowane lokalnie. Bez WebGL okładka pokazuje statyczne tło.
 
@@ -36,6 +36,7 @@ Okładka (`index.html` + `cover/`) renderuje na żywo Gwiazdę Teegardena z tran
 | [`step8-star-systems`](./step8-star-systems) | **Układy gwiezdne**: 5 układów (m.in. prawdziwa Gwiazda Teegardena, para z dyskiem akrecyjnym, nadolbrzym), dużo większe gwiazdy, proceduralne powierzchnie gwiazd (granulacja, plazma, protuberancje, rozbłyski) i planet, skok międzygwiezdny |
 | [`step9-missions`](./step9-missions) | **Misje, taktyczne AI i audio**: 7 scenariuszy (przechwycenie, blokada, odparcie 10 wrogów, eskorta handlowca, zasadzka, pościg, łowy watahy) z osobną **tablicą misji** po okładce, **wataha** skrzydłowych rasy gracza z rozkazami, nowy mózg NPC (ocena ryzyka/nagrody, role w eskadrze, uniki, odwrót zamiast samobójstwa), poziomy trudności, **warstwa audio** (muzyka generatywna, fałda z głosem każdej rasy, ostrzeżenia, powiadomienia, walka) |
 | [`step10-economy`](./step10-economy) | **Ekonomia**: pas planetoid (klasy C/S/M) przy każdym układzie, promień wydobywczy i ładownia, **stacje orbitalne** (magazyn, stacja przeładunkowa z rynkiem, dok roju), holowniki między stacjami, **roje autonomicznych dronów górniczych** lądujących na obracających się skałach, **rabusie**: naloty na kopalnie (taktyczne AI poluje na drony i łupi stacje), ewakuacja rojów, platformy obronne, nagrody za zestrzelonych, symulacja zaoczna innych układów, zapis w przeglądarce |
+| [`step12-dowodztwo`](./step12-dowodztwo) | **Dowództwo — mostek siedziby**: gra zaczyna się na mostku siedziby rasy. **Wyprawy dronów** (zwiadowcy, górnicy, holowniki, strażnicy): wylot widać z mostka, przelot w skrócie w **okienku podglądu**. **Huta** przetapia urobek, **reaktory** zasilają stacje (ogniwa autonomiczne po badaniu), **nauka** odkrywa nowe metody wydobycia i typy dronów, **ulepszenia** dronów, huty, energii, floty i myśliwca. Decyzje w wyskakujących kartach (Tak / Nie / Zarządzaj → Odwołaj, Poślij, Przywołaj ochronę, Zaalarmuj pozostałych), przy ataku: **Poślij flotę** (podgląd zdalny) albo **Za stery** |
 | [`step11-dominacja`](./step11-dominacja) | **Dominacja — gra główna**: gospodarka jako główna płaszczyzna w duchu RTS-ów. 25 pól surowcowych w 5 układach odkrywanych czujnikami, **rasy jako gracze ekonomiczni** (ekspansja, rozbudowa placówek, floty), rywalizacja o pola prowadzi do żądań, paktów, sojuszy i **wojen**; placówki i roje ras widoczne w układzie, **stocznia i flota** gracza (obrona, podbój), **mapa strategiczna z dyplomacją** (M), portrety ras i ikony SVG, zwycięstwo przy 50% sektora |
 
 Każdy krok ma własny `README.md` z wyjaśnieniem *dlaczego* kod wygląda tak,
@@ -63,6 +64,7 @@ shared/
 ├── data/
 │   ├── races.js            rasy, stronnictwa, relacje, statystyki (jedno miejsce do strojenia)
 │   ├── economy.js          metale, klasy planetoid, stacje, drony, rynek (krok 10)
+│   ├── command.js          siedziba, typy dronów, zasilanie, huta, ulepszenia, nauka (krok 12)
 │   └── galaxy.js           znany wszechświat: 12 000 układów, domeny ras, rdzenie, koalicje
 └── systems/
     ├── triple-star-system.js   konkretny układ potrójny (masy, orbity, wizualizacja)
@@ -92,7 +94,11 @@ shared/
     ├── strategy.js             rasy jako gracze ekonomiczni, relacje, wojny, dyplomacja (krok 11)
     ├── rival-presence.js       placówki i roje ras w układzie gracza (krok 11)
     ├── army.js / army-panel.js stocznia i flota gracza (krok 11)
-    └── strategic-map.js        mapa strategiczna: sektor, dyplomacja, kronika (krok 11)
+    ├── strategic-map.js        mapa strategiczna: sektor, dyplomacja, kronika (krok 11)
+    ├── command.js              dowództwo: siedziba, hangar, wyprawy, huta, zasilanie, nauka, ulepszenia (krok 12)
+    ├── command-view.js         widok z mostka, drony wypraw, okienko podglądu, podgląd zdalny (krok 12)
+    ├── command-panel.js        panel gracza na mostku (krok 12)
+    └── decisions.js            wyskakujące karty decyzji z czasem na odpowiedź (krok 12)
 ```
 
 Szczegóły floty: [`shared/ships/README.md`](./shared/ships/README.md).
@@ -124,7 +130,7 @@ rasy. Test bez słuchania (render offline + pomiary): `node tools/audio-lab/chec
 
 Mysz — celowanie (pitch/yaw, względem środka ekranu, bez pointer lock).
 W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
-1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy. Krok 7 dodaje: Q/E lub kółko — zmiana broni. Krok 8 dodaje: U — skok międzygwiezdny, M — mapa. Krok 9 dodaje: N — powrót na tablicę misji, Enter — misja jeszcze raz, L — wataha, G/H/V/B — rozkazy watahy (cel, kleszcze, osłona, szyk), O — dźwięk.
+1-4 — zaokrętowanie (od step3-ships). Krok 5 dodaje: F/LPM — ogień, Z/X/C — komunikator, 7/8/9 — sceny, 0 — demo od nowa. Krok 6 dodaje: J — skok fałdowy, K — parada fałdy. Krok 7 dodaje: Q/E lub kółko — zmiana broni. Krok 8 dodaje: U — skok międzygwiezdny, M — mapa. Krok 9 dodaje: N — powrót na tablicę misji, Enter — misja jeszcze raz, L — wataha, G/H/V/B — rozkazy watahy (cel, kleszcze, osłona, szyk), O — dźwięk. Krok 12 odchudza klawiszologię: na mostku wszystko jest myszą, a Tab przełącza mostek i lot myśliwcem.
 
 **Android (kroki 3-5):** pierwsze dotknięcie włącza pełny ekran i blokadę poziomu; w pionie pokazuje się podpowiedź „Obróć telefon w poziom” (`shared/input/android-landscape.js`).
 

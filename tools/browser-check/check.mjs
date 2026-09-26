@@ -61,7 +61,8 @@ console.log('\n1. Okładka (intro)');
   const { page, errors } = await open('/index.html');
   await page.waitForTimeout(2500);
   const href = await page.getAttribute('#play', 'href');
-  ok(/^\.\/missions\.html\?uklad=/.test(href), `„Graj” prowadzi do tablicy misji (${href})`);
+  ok(/^\.\/step12-dowodztwo\/\?uklad=teegarden&statek=/.test(href), `„Graj” prowadzi na mostek siedziby w wybranym układzie (${href})`);
+  ok(/missions\.html\?uklad=/.test(await page.getAttribute('#board', 'href')), 'link „Misje i wybór statku” prowadzi na tablicę');
   ok(await page.locator('.au-btn').count() === 1, 'przycisk dźwięku jest');
   const locked = await page.getAttribute('.au', 'data-locked');
   ok(locked === 'true', 'przed gestem dźwięk czeka (wymóg przeglądarek)');
@@ -69,8 +70,8 @@ console.log('\n1. Okładka (intro)');
   await page.waitForTimeout(600);
   ok(await page.getAttribute('.au', 'data-locked') === 'false', 'po kliknięciu kontekst audio działa');
   await page.screenshot({ path: join(OUT, '1-intro.png') });
-  await Promise.all([page.waitForURL(/missions\.html/, { waitUntil: 'domcontentloaded' }), page.click('#play')]);
-  ok(true, 'klik „Graj” przechodzi na tablicę misji');
+  await Promise.all([page.waitForURL(/step12-dowodztwo/, { waitUntil: 'domcontentloaded' }), page.click('#play')]);
+  ok(true, 'klik „Graj” przechodzi na mostek (krok 12)');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await page.close();
 }
@@ -107,8 +108,8 @@ console.log('\n2. Tablica misji');
   ok(!overflow, 'telefon w pionie: bez przewijania w bok');
   await page.screenshot({ path: join(OUT, '2-board-phone.png'), fullPage: false });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await Promise.all([page.waitForURL(/step11-dominacja/, { waitUntil: 'domcontentloaded' }), page.keyboard.press('Enter')]);
-  ok(true, 'Enter uruchamia grę');
+  await Promise.all([page.waitForURL(/step12-dowodztwo\/.*misja=waves/, { waitUntil: 'domcontentloaded' }), page.keyboard.press('Enter')]);
+  ok(true, 'Enter uruchamia misję (krok 12, od razu w locie)');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await page.close();
 }
@@ -272,7 +273,7 @@ console.log('\n3c. Kampania (krok 11): pola, rasy, mapa strategiczna, dyplomacja
   await page.waitForTimeout(800);
   ok(await page.getAttribute('.m.campaign', 'aria-selected') === 'true', 'tablica: kampania jest pierwsza i domyślna');
   const url = await page.evaluate(() => window.__missions.gameUrl());
-  ok(/step11-dominacja/.test(url) && !/misja=/.test(url), `„Graj” prowadzi do kampanii: ${url}`);
+  ok(/step12-dowodztwo/.test(url) && !/misja=/.test(url), `„Graj” prowadzi do kampanii (mostek, krok 12): ${url}`);
   await page.close();
 }
 {
@@ -335,6 +336,57 @@ console.log('\n3c. Kampania (krok 11): pola, rasy, mapa strategiczna, dyplomacja
   await page.screenshot({ path: join(OUT, '3c-fleet.png') });
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.evaluate(() => __game.economy.reset());
+  await page.close();
+}
+
+// ------------------------------------------------------------
+console.log('\n3d. Dowództwo (krok 12): mostek, wyprawy, okienko, decyzje, tryby');
+{
+  const { page, errors } = await open('/step12-dowodztwo/?uklad=teegarden&debug');
+  await page.waitForFunction(() => window.__game?.command?.hq() && document.body.classList.contains('mode-mostek') && !document.body.classList.contains('intro'), null, { timeout: 90000 });
+  const s0 = await page.evaluate(() => ({
+    mode: __game.mode, hq: __game.command.hq().type, hudHidden: getComputedStyle(document.getElementById('telemetry')).display === 'none',
+    orders: document.querySelectorAll('.cp-order').length, tabs: document.querySelectorAll('.cp-tabs button').length, alive: __game.playerState.alive,
+  }));
+  ok(s0.mode === 'mostek' && s0.hq === 'siedziba' && s0.hudHidden, 'start na mostku siedziby, HUD lotu schowany');
+  ok(s0.orders === 4 && s0.tabs === 5, 'panel: 4 rozkazy wypraw, 5 zakładek (hangar, moduły, ulepszenia, nauka, flota)');
+  await page.click('.cp-order[data-type="zwiadowca"]');
+  ok(await page.locator('.cp-target').count() >= 4, 'wybór celu: nieznane złoża i niezbadane skały');
+  await page.click('.cp-send button.primary');
+  await page.waitForFunction(() => __game.command.expeditions().some((e) => e.phase === 'przelot'), null, { timeout: 60000 });
+  await page.waitForTimeout(700);
+  ok(await page.evaluate(() => document.getElementById('pip').classList.contains('open') && !!__game.commandView.cinematic), 'przelot: otwiera się okienko podglądu (skrót lotu)');
+  await page.screenshot({ path: join(OUT, '3d-pip.png') });
+  await page.evaluate(() => { for (let i = 0; i < 20 * 30 && !__game.decisions.items.some((d) => d.kind === 'survey'); i++) __game.tick(1 / 20); });
+  ok(await page.locator('.dc-k-survey').count() === 1, 'raport zwiadu w karcie decyzji');
+  await page.click('.dc-k-survey .dc-btn.primary');
+  ok(await page.evaluate(() => __game.command.expeditions().some((e) => e.type === 'gornik')), '„Tak” wysyła górników');
+  await page.evaluate(() => { for (let i = 0; i < 20 * 60 && !__game.decisions.items.some((d) => d.kind === 'return'); i++) __game.tick(1 / 20); });
+  ok(await page.locator('.dc-k-return .dc-btn[data-manage]').count() === 1, 'pełne ładownie: karta z „Zarządzaj”');
+  await page.click('.dc-k-return .dc-btn[data-manage]');
+  const sub = await page.locator('.dc-k-return .dc-sub button').allTextContents();
+  ok(['Odwołaj', 'Przywołaj ochronę', 'Zaalarmuj pozostałych'].every((t) => sub.includes(t)), `Zarządzaj: ${sub.join(', ')}`);
+  await page.click('.dc-k-return .dc-btn.primary');
+  const back = await page.evaluate(() => { for (let i = 0; i < 20 * 40 && __game.command.expeditions().length; i++) __game.tick(1 / 20); for (let i = 0; i < 20 * 30; i++) __game.tick(1 / 20); return { exps: __game.command.expeditions().length, fe: __game.command.hq().storage.zelazo, smelted: __game.command.state.stats.smelted.zelazo }; });
+  ok(back.exps === 0 && back.smelted > 5, `powrót, huta: +${Math.round(back.smelted)} t Fe`);
+  await page.click('.cp-tabs button[data-tab="nauka"]');
+  await page.click('.cp-tech button[data-act="research"]');
+  ok(await page.evaluate(() => !!__game.command.state.research), 'Nauka: badanie ruszyło');
+  await page.evaluate(() => __game.raids.trigger());
+  await page.waitForFunction(() => __game.decisions.items.some((d) => d.id === 'raid'), null, { timeout: 60000 });
+  await page.screenshot({ path: join(OUT, '3d-raid.png') });
+  await page.click('.dc-danger .dc-btn[data-act="watch"]');
+  ok(await page.evaluate(() => __game.mode === 'podglad' && getComputedStyle(document.getElementById('spectate-bar')).display !== 'none'), 'nalot → „Obserwuj”: podgląd zdalny');
+  await page.click('#spectate-pilot');
+  await page.waitForFunction(() => __game.mode === 'lot', null, { timeout: 20000 });
+  await page.waitForTimeout(600);
+  const fly = await page.evaluate(() => ({ vis: __game.shipGroup.visible, d: __game.shipGroup.position.distanceTo(__game.command.hangarPos()) }));
+  ok(fly.vis && fly.d < 1500, `„Za stery”: myśliwiec wylatuje z hangaru (${Math.round(fly.d)} j. od wylotu)`);
+  await page.screenshot({ path: join(OUT, '3d-flight.png') });
+  await page.keyboard.press('Tab');
+  await page.waitForFunction(() => __game.mode === 'mostek', null, { timeout: 20000 });
+  ok(await page.evaluate(() => !__game.shipGroup.visible), 'Tab: powrót na mostek, statek w hangarze');
+  ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.close();
 }
 
