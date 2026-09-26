@@ -331,8 +331,8 @@ const STYLE = `
 
 /**
  * Obrazy ras (shared/data/portraits/<rasa>.jpg). Pięć przysłał autor gry,
- * Rezonantów i Pieśniarzy wygenerowano w tym samym stylu na podstawie opisów
- * z DRAW (kryształ z komorą rezonansową; ptasia głowa, czworo oczu, worek
+ * Szczepionych i Pieśniarzy wygenerowano w tym samym stylu (kryształowa
+ * istota z komorą w miejscu ust; ptasia głowa, czworo oczu, worek
  * krtaniowy). Adres liczony od tego modułu, więc działa z każdego kroku.
  */
 const PHOTO = Object.fromEntries(
