@@ -1542,6 +1542,13 @@
     .pm-msg { margin: 2px 0 0; min-height: 1em; font-size: 12px; color: var(--friend); }
     .pm-msg.bad { color: #ffb0a6; }
     .pm-note { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-dim); }
+    /* krok 12c: poziom trudności w menu pauzy */
+    .pm-diff { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--panel-line); display: flex; flex-direction: column; gap: 6px; }
+    .pm-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+    .pm-seg button { padding: 8px 4px 7px; border-radius: 9px; cursor: pointer; font: 700 13px var(--body); color: var(--ink); background: rgba(255, 255, 255, 0.04); border: 1px solid var(--panel-line); line-height: 1.2; }
+    .pm-seg button small { display: block; margin-top: 2px; font: 400 10px var(--body); color: var(--ink-dim); }
+    .pm-seg button[aria-checked="true"] { background: rgba(255, 211, 107, 0.16); border-color: var(--gold); }
+    .pm-dnote { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-dim); }
     body.ui-compact .pm-box { padding: 14px; gap: 6px; }
     body.ui-compact .pm-title { font-size: 26px; margin-bottom: 4px; }
     body.ui-compact .pm-btn { padding: 9px 12px; font-size: 14px; }
@@ -1572,6 +1579,12 @@
     .op-log li.op-log-warning { border-left-color: var(--gold); }
     .op-log li.op-log-danger { border-left-color: var(--foe); }
     body.ui-compact .op-grid small, body.ui-compact .op-seg button small { display: none; }
+    /* krok 12c: naprawy */
+    .cp-rep { color: #9fd8ff; }
+    .cp-rep.go { color: var(--friend); }
+    .cp-rep.bad { color: #ff9a8a; }
+    .cp-repair { margin: 0 0 8px; align-items: center; }
+    .op-auto { margin-top: 6px; font-size: 11px; color: var(--ink-dim); }
     /* krok 12c: raport z potyczki w karcie decyzji */
     .dc-details { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0 0 9px; font-size: 11.5px; line-height: 1.4; }
     .dc-details dt { color: var(--ink-dim); white-space: nowrap; }
@@ -1693,6 +1706,11 @@
       <button class="pm-btn" data-act="save" type="button">Zapisz grę</button>
       <button class="pm-btn" data-act="load" type="button">Wczytaj grę…</button>
       <button class="pm-btn danger" data-act="quit" type="button">Porzuć grę</button>
+      <div class="pm-diff" role="radiogroup" aria-label="Poziom trudności">
+        <div class="pm-kicker">Poziom trudności</div>
+        <div class="pm-seg"></div>
+        <p class="pm-dnote"></p>
+      </div>
       <p class="pm-msg" aria-live="polite"></p>
       <p class="pm-note">Włączenie gry zaczyna nową kampanię. Poprzednia gra jest na liście „Wczytaj grę” jako „Ostatnia gra (autozapis)”.</p>
     </div>

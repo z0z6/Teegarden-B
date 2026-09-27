@@ -407,7 +407,9 @@ Test: `node step12-dowodztwo/check-military.mjs`. Sprawdza szyki, rajd
 zaoczny z raportem i powrotem, zdobycie pola, odwrót wg ROE, zwiad
 i wywiad, godzinę H oraz na żywo: jeża, łącze danych, wezwanie wsparcia
 i rajd w układzie gracza, a także raport z potyczki (werdykty, przypisanie
-zestrzeleń w prawdziwym nalocie rasy na siedzibę).
+zestrzeleń w prawdziwym nalocie rasy na siedzibę) i naprawy (naprawa polowa,
+pauza pod ostrzałem, remont przyspieszony i jego koszt, stacje, grupa „na naprawę” z daleka)
+oraz poziomy trudności (przełączanie bez kumulowania, symulacja wojny na trzech poziomach).
 
 
 ## Raport z potyczki i strefa obrony (krok 12c)
@@ -450,6 +452,75 @@ i reaktor stoją 5,5–7,4 tys. j. od środka pola, więc wróg łupiący stacje
 był **poza zasięgiem obrońców**. Teraz `army.defenseZone(fid)` obejmuje pas
 i stacje przy nim: szyk stoi między nimi, a smycz sięga najdalszej stacji
 z zapasem.
+
+
+## Naprawy (krok 12c)
+
+Okręty naprawiają się tylko przy zapleczu i tylko **poza walką**, czyli
+8 s po ostatnim trafieniu. Pod ostrzałem ekipy czekają, a lista okrętów
+pokazuje to na czerwono. Stawki są w `REPAIR` w `shared/data/military.js`.
+
+| Gdzie | Tempo | Koszt |
+|---|---|---|
+| **Stocznia** | 1% kadłuba/s | darmowo |
+| **Siedziba bez stoczni** (naprawa polowa) | 0,3%/s — fregata od 50% w ok. 3 min | darmowo |
+| **Remont przyspieszony** (przy stoczni albo siedzibie) | 5%/s — pełny kadłub w ok. 20 s | z góry: 1,1 kr + 0,07 t żelaza + 0,02 t niklu za punkt kadłuba |
+| Poza zapleczem (inne układy, fałda) | brak | — |
+
+Wcześniej okręty bez stoczni nigdy się nie naprawiały.
+
+**Stacje** odrastają same (1%/s, 10 s po trafieniu). **Remont stacji**
+(0,5 kr + 0,05 t Fe za punkt, +120 kr za wyłączoną) od razu przywraca do
+pracy splądrowaną stację albo przegrzaną wieżę i dokańcza kadłub w 8%/s.
+
+Gdzie są przyciski:
+
+- **Flota → Naprawy** (na górze zakładki): uszkodzone okręty z ceną *Remontu przyspieszonego* i uszkodzone stacje z *Napraw stacje*. W wierszu każdego okrętu: kadłub, miejsce i czas naprawy, „remont 12 s”, „pod ostrzałem” albo „bez zaplecza”.
+- **Operacje → karta grupy**: kadłuby grupy i stan naprawy oraz przycisk **Na naprawę**. W bazie oznacza płatny remont od razu. Z daleka grupa przerywa misję, wraca i remontuje się po przylocie. Przełącznik **Po misji: remont przyspieszony** zapewnia, że po każdym „daj rozkaz i zapomnij” grupa wraca w pełni sprawna.
+- **Raport z potyczki**: przycisk **Napraw (N kr)** z ceną, dla okrętów i stacji w układzie potyczki.
+
+Kadłub okrętu w układzie gracza jest brany na bieżąco z NPC, więc siła
+grupy, próg odwrotu wg ROE i raporty widzą obrażenia z walki od razu.
+
+
+## Poziomy trudności (krok 12c)
+
+Poziom wybierasz w tablicy misji (**Poziom trudności**). Zmienić go można
+w każdej chwili w **menu gry (Esc)**. Zapisuje się razem z kampanią, więc
+wczytana gra wraca na swoim poziomie, a *Nowa gra* startuje na tym samym.
+Klucze w adresie się nie zmieniły (`?trudnosc=latwa|normalna|trudna`).
+
+| | **Łatwy** — lekko i przyjemnie | **Średni** — ambitnie, ale do ogarnięcia | **Trudny** — ambitnie |
+|---|---|---|---|
+| Okres ochronny (rasy nie wypowiadają wojny) | 20 min | 10 min | 7 min |
+| Ataki ras | rzadkie (co ~4,3 min), siły ×0,7 | co ~2,5 min | częste (co ~1,9 min), siły ×1,25 |
+| Skłonność ras do wojny / pokoju | ×0,5 / ×1,8 | ×1 / ×1 | ×1,3 / ×0,6 |
+| Rasy: kredyty i okręty na start, dochód, limit floty | 2600 kr, 3, 42, 14 | 3500 kr, 4, 55, 24 | 4500 kr, 5, 66, 30 |
+| Obrona pól ras (rajdy, szturmy) | ×0,8 | ×1 | ×1,2 |
+| Naloty: zagrożenie, rabusie, kadłub, przerwa | ×0,55, 2–4, 90, 6,3 min | ×1, 2–6, 120, 4 min | ×1,3, 3–7, 150, 3 min |
+| Ostrzeżenie przed nalotem | 25 s | 15 s | 12 s |
+| Łup z magazynu / wyłączenie stacji | 25% / 15 s | 40% / 25 s | 50% / 35 s |
+| Kredyty gracza na start | 2500 | 1500 | 1200 |
+| Okręty: koszt / utrzymanie / budowa | ×0,8 / ×0,6 / ×0,75 | ×1 | ×1,15 / ×1,25 / ×1,1 |
+| Naprawy: tempo / koszt remontu / pauza po trafieniu | ×1,6 / ×0,6 / 6 s | ×1 / ×1 / 8 s | ×0,75 / ×1,3 / 10 s |
+| Walka myśliwcem | 1 wróg naraz, rakiety 95% | 2 naraz, 75% | 3 naraz, 50% |
+
+**Średni to dotychczasowy balans gry.** Wartości bazowe są w
+`shared/data/economy.js` i `military.js`.
+
+Wszystkie liczby stroisz w `shared/data/difficulty.js`.
+`shared/systems/difficulty.js` nakłada je na stałe gry w miejscu, zawsze od
+wartości bazowych, więc przełączanie poziomów się nie kumuluje. Mnożniki
+zachowań ras (`attackMul`, `defenseMul`, `warMul`, `peaceMul`) czyta
+`strategy.js` i dotyczą tylko stosunku ras do gracza. Między sobą rasy
+walczą tak samo na każdym poziomie.
+
+Symulacja 30 minut wojny ze wszystkimi rasami (test 11):
+
+| | Łatwy | Średni | Trudny |
+|---|---|---|---|
+| Ataki | 55 | 96 | 124 |
+| Wysłane okręty łącznie | 200 | 801 | 1122 |
 
 ## Płynność walki: rozgrzewka shaderów (`shared/systems/warmup.js`)
 

@@ -26,13 +26,16 @@ const { FORMATIONS, FORMATION_ORDER, OPS } = await import('../shared/data/milita
 const { buildBattleReport } = await import('../shared/systems/battle-report.js');
 const { createRaids } = await import('../shared/systems/raids.js');
 const { createWeapons } = await import('../shared/systems/weapons.js');
+const { applyDifficulty } = await import('../shared/systems/difficulty.js');
+const { STRATEGY, RAIDS, START } = await import('../shared/data/economy.js');
+const { REPAIR } = await import('../shared/data/military.js');
 
 let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? '  ok ' : ' FAIL'}  ${msg}`); if (!cond) fails++; };
 Math.random = seededRng(4242);
 
 /** Świat: gospodarka + siedziba w Teegarden, strategia, armia, taktyka, NPC, operacje. */
-function makeWorld({ seed = 3, live = false } = {}) {
+function makeWorld({ seed = 3, live = false, onAttack = null } = {}) {
   const memory = new Map();
   const storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k) => memory.delete(k) };
   const scene = new THREE.Scene();
@@ -44,7 +47,7 @@ function makeWorld({ seed = 3, live = false } = {}) {
   cmd.found();
   const homeField = eco.fieldDefs('teegarden')[0].id;
   const strategy = createStrategy({ economy: eco, playerRace: 'wybudzeni', systems: SYSTEM_ORDER, spawnOf, seed,
-    hooks: { playerFieldIds: () => [homeField], playerPower: () => army.power(), playerFieldDefense: (f) => 1 + army.fieldDefense(f), attackPlayer: () => {}, systemName: (x) => x } });
+    hooks: { playerFieldIds: () => [homeField], playerPower: () => army.power(), playerFieldDefense: (f) => 1 + army.fieldDefense(f), attackPlayer: (a) => onAttack?.(a), systemName: (x) => x } });
   strategy.ensure('teegarden');
   const events = [];
   const tactics = live ? createTactics({ combat, onEvent: (e) => { events.push(e); ops?.onTacticEvent(e); } }) : null;
@@ -317,6 +320,97 @@ console.log('\n9. Nalot rasy na siedzibę: flota broni, raport z przypisaniem ze
     const rep = buildBattleReport({ ...r, race: null });
     ok(['rozbity', 'przegoniony'].includes(rep.verdict), `werdykt: ${rep.title} — ${rep.text}`);
   }
+}
+
+// ------------------------------------------------------------
+console.log('\n10. Naprawy: siedziba, pauza pod ostrzałem, remont przyspieszony, stacje, grupa na naprawę');
+{
+  const W = makeWorld({ seed: 17 });
+  const [a, b] = W.addShips('fregata', 2);
+  W.tick(1.5); // sync: NPC w układzie
+  const A = W.army.byId(a), B = W.army.byId(b);
+  const hurt = (S, h) => { S.hull = h; const n = W.army.spawned.get(S.id); if (n) n.hull = h; }; // obrażenia trafiają w NPC
+  hurt(A, 210); hurt(B, 210); // 50%
+  const info = W.army.repairInfo(A);
+  ok(info.site === 'siedziba' && info.rate > 0 && info.damaged, `bez stoczni naprawia siedziba: ${info.rate * 100}%/s, ok. ${Math.ceil(info.eta / 60)} min`);
+  W.army.spawned.get(b).sinceHit = 0; // B pod ostrzałem
+  W.tick(20);
+  ok(A.hull > 230 && Math.abs(B.hull - 210) < 1, `naprawa polowa: A ${Math.round(A.hull)}, B (pod ostrzałem) ${Math.round(B.hull)} — ekipy czekają`);
+  W.army.spawned.get(b).sinceHit = 99;
+  W.eco.state.credits = 50;
+  const poor = W.army.rushRepair([a, b]);
+  ok(!poor.ok && /Brak środków/.test(poor.text), `bez kredytów: „${poor.text}”`);
+  W.eco.state.credits = 5000;
+  const cost = W.army.repairCost([a, b]);
+  const cr0 = W.eco.state.credits;
+  const r = W.army.rushRepair([a, b]);
+  ok(r.ok && W.eco.state.credits === cr0 - cost.credits && cost.zelazo > 0, `remont przyspieszony: ${r.text} (koszt ${cost.credits} kr, ${cost.zelazo} t Fe)`);
+  W.tick(25);
+  ok(A.hull === 420 && B.hull === 420 && !A.rush, 'po ok. 20 s obie fregaty w pełni sprawne');
+  const again = W.army.rushRepair([a]);
+  ok(!again.ok && /sprawna/.test(again.text), `sprawnych nie ma czego naprawiać: „${again.text}”`);
+  // okręt poza zapleczem
+  const [c] = W.addShips('eskorta', 1);
+  const C = W.army.byId(c); C.sysId = W.strategy.systemOf(W.foreignElsewhere()); C.hull = 60;
+  ok(!W.army.repairInfo(C).site && !W.army.rushRepair([c]).ok, 'poza zapleczem: brak naprawy, remont odmówiony');
+
+  // stacje: splądrowana huta wraca do pracy od razu
+  const huta = W.eco.stationsIn('teegarden').find((x) => x.type === 'huta');
+  huta.hull = 100; huta.immune = 60;
+  ok(W.eco.damagedStations('teegarden').includes(huta), 'huta na liście do naprawy');
+  const rs = W.eco.rushStationRepair('teegarden');
+  ok(rs.ok && huta.immune === 0 && huta.rush, `remont stacji: ${rs.text}`);
+  for (let i = 0; i < 80; i++) W.eco.update(0.25);
+  ok(!huta.rush && W.eco.damagedStations('teegarden').length === 0, `kadłub huty odbudowany (${Math.round(huta.hull)})`);
+
+  // grupa z daleka: "Na naprawę" = powrót i remont po przylocie
+  const fid = W.foreignElsewhere();
+  W.strategy.declareWar(PLAYER, W.strategy.foreignOwner(fid));
+  const g = W.ops.createGroup([a, b], { name: 'Kowal' }).group;
+  W.ops.assign(g.id, { kind: 'zdobycie', field: fid });
+  W.tick(g.transit.eta + 1);
+  for (const s of [A, B]) s.hull = 200;
+  const rr = W.ops.repair(g.id);
+  ok(rr.ok && g.phase === 'powrot' && g.repairOnReturn, `rozkaz z daleka: ${rr.text}`);
+  W.tick(g.transit.eta + 1);
+  ok(g.sysId === 'teegarden' && (A.rush || A.hull > 400), `po przylocie remont przyspieszony (${A.rush ? 'w toku' : 'gotowe'})`);
+  ok(W.radio.some((e) => /remont przyspieszony w toku/.test(e.text)), 'meldunek grupy o remoncie');
+  const set = W.ops.setAutoRush(g.id, true);
+  ok(set.ok && W.ops.groups().find((x) => x.id === g.id).autoRush, `auto-remont po misji: ${set.text}`);
+}
+
+// ------------------------------------------------------------
+console.log('\n11. Poziomy trudności: stałe gry i przebieg wojny z rasami');
+{
+  const base = { grace: STRATEGY.grace, raid: RAIDS.base, fr: WARSHIPS.fregata.cost.credits, yard: REPAIR.yardRate, start: START.credits };
+  applyDifficulty('latwa');
+  ok(STRATEGY.grace === 1200 && RAIDS.base < base.raid && WARSHIPS.fregata.cost.credits < base.fr && REPAIR.yardRate > base.yard && START.credits > base.start,
+    `łatwy: ochrona ${STRATEGY.grace / 60} min, fregata ${WARSHIPS.fregata.cost.credits} kr, stocznia ${(REPAIR.yardRate * 100).toFixed(1)}%/s, start ${START.credits} kr`);
+  applyDifficulty('trudna');
+  ok(STRATEGY.grace === 420 && RAIDS.base > base.raid && WARSHIPS.fregata.cost.credits > base.fr && RAIDS.raiderHull === 150,
+    `trudny: ochrona ${STRATEGY.grace / 60} min, fregata ${WARSHIPS.fregata.cost.credits} kr, rabuś ${RAIDS.raiderHull} kadłuba`);
+  applyDifficulty('trudna'); applyDifficulty('normalna');
+  ok(STRATEGY.grace === base.grace && RAIDS.base === base.raid && WARSHIPS.fregata.cost.credits === base.fr && REPAIR.yardRate === base.yard && STRATEGY.attackMul === 1,
+    'przełączanie w kółko wraca do wartości bazowych (bez kumulowania)');
+
+  // 30 min wojny ze wszystkimi rasami - ile ataków, jak silnych, ile propozycji pokoju
+  const sim = (key) => {
+    applyDifficulty(key);
+    const attacks = [];
+    const W = makeWorld({ seed: 21, onAttack: (a) => attacks.push(a.power) });
+    W.strategy.state.time = STRATEGY.grace + 1;
+    for (const f of Object.keys(W.strategy.state.factions)) W.strategy.declareWar(f, PLAYER);
+    for (let t = 0; t < 1800; t += 1) W.strategy.update(1);
+    const fid = W.foreignElsewhere();
+    return { n: attacks.length, power: attacks.reduce((a, b) => a + b, 0), def: fid ? W.strategy.fieldDefense(fid) : 0, credits: W.eco.state.credits };
+  };
+  const E = sim('latwa'), N = sim('normalna'), H = sim('trudna');
+  applyDifficulty('normalna');
+  const line = (x) => `${x.n} ataków, łącznie ${x.power} okr.`;
+  console.log(`       łatwy: ${line(E)} · średni: ${line(N)} · trudny: ${line(H)}`);
+  ok(E.power < N.power && N.power < H.power, 'łączna siła ataków rośnie z poziomem');
+  ok(E.n <= N.n && N.n <= H.n, 'ataki są częstsze na wyższym poziomie');
+  ok(E.credits > N.credits && N.credits > H.credits, `kredyty na start: ${E.credits} / ${N.credits} / ${H.credits}`);
 }
 
 console.log(fails ? `\n${fails} błędów.` : '\nWszystko działa.');

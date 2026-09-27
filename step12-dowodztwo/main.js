@@ -37,7 +37,9 @@ import { createArmyTab, warshipModel } from '../shared/systems/army-panel.js';
 import { createFleetOps } from '../shared/systems/fleet-ops.js';       // krok 12c: grupy bojowe i operacje
 import { createOpsTab } from '../shared/systems/fleet-ops-panel.js';
 import { createWarmup } from '../shared/systems/warmup.js';
-import { buildBattleReport } from '../shared/systems/battle-report.js'; // krok 12c: raport z potyczki           // krok 12c: rozgrzewka shaderów (bez przycięć przy ataku)
+import { buildBattleReport } from '../shared/systems/battle-report.js'; // krok 12c: raport z potyczki
+import { applyDifficulty, difficultyInfo } from '../shared/systems/difficulty.js'; // krok 12c: poziomy trudności kampanii
+import { DIFFICULTY_ORDER } from '../shared/data/difficulty.js';           // krok 12c: rozgrzewka shaderów (bez przycięć przy ataku)
 import { createStrategicMap } from '../shared/systems/strategic-map.js';
 import { racePortrait } from '../shared/data/race-portraits.js';
 import { STATION_ORDER } from '../shared/data/economy.js';
@@ -168,6 +170,9 @@ scene.add(new THREE.AmbientLight(0x223344, 0.25));
 const urlSystem = new URLSearchParams(location.search).get('uklad');
 // krok 9: parametry z tablicy misji (missions.html)
 const URLQ = new URLSearchParams(location.search);
+// krok 12c: POZIOM TRUDNOŚCI KAMPANII - z adresu (nowa gra z tablicy misji),
+// przy wczytaniu zapisu nadpisany poziomem zapisanym w kampanii (niżej)
+let campaignDiff = DIFFICULTY_ORDER.includes(URLQ.get('trudnosc')) ? URLQ.get('trudnosc') : 'normalna';
 const urlMission = MISSIONS[URLQ.get('misja')] ? URLQ.get('misja') : null;
 const urlShipIndex = Math.max(0, SHIPS.findIndex((s) => s.id === URLQ.get('statek')));
 const urlPack = URLQ.get('wataha') === '1';
@@ -395,7 +400,7 @@ async function loadShip(index) {
   // KROK 7: Ciepło z karty rasy + mnożnik Taktyki; na start - broń rasowa
   arsenal.setRace(playerState.raceId, RACES[playerState.raceId].ship.thermal, playerStats.damageMult);
   // KROK 9 (combat-rules.js): uzbrojenie rasy + zasady poziomu trudności
-  const diffKey = DIFFICULTY[urlDifficulty] ? urlDifficulty : 'normalna';
+  const diffKey = campaignDiff; // krok 12c: poziom kampanii (także z zapisu)
   arsenal.configure(loadoutFor(playerState.raceId, diffKey), combatRules(diffKey));
   arsenal.select(arsenal.state.order.includes(RACE_WEAPON[playerState.raceId]) ? RACE_WEAPON[playerState.raceId] : arsenal.state.order[0]);
   flares.configure(combatRules(diffKey));
@@ -849,7 +854,7 @@ const urlDifficulty = new URLSearchParams(location.search).get('trudnosc');
 let fleetOps = null;
 const tactics = createTactics({
   combat,
-  difficulty: DIFFICULTY[urlDifficulty] ? urlDifficulty : 'normalna',
+  difficulty: campaignDiff,
   onEvent: (e) => onTacticEvent(e),
 });
 const npcs = createNpcManager(scene, combat, playerProxy, {
@@ -1584,6 +1589,17 @@ function archiveAutosave() {
   try { safeStorage.removeItem(LIVE_KEY); } catch { /* jw. */ }
 }
 
+// krok 12c: wczytana kampania gra na swoim poziomie trudności (zapis), nowa -
+// na poziomie z tablicy misji. Poziom stroi stałe gry ZANIM powstanie stan
+// gospodarki (kredyty na start, koszty okrętów, naloty, rasy).
+if (RESUME) {
+  try {
+    const saved = JSON.parse(safeStorage?.getItem(LIVE_KEY) ?? 'null')?.difficulty;
+    if (DIFFICULTY_ORDER.includes(saved)) campaignDiff = saved;
+  } catch { /* stary albo uszkodzony zapis - poziom z adresu */ }
+  tactics.setDifficulty(campaignDiff);
+}
+applyDifficulty(campaignDiff);
 const economy = createEconomy({
   scene, storage: gameStorage, quality: QUALITY,
   fieldsFor: (id, sp) => generateFields(id, sp), saveKey: `teegarden-b.dowodztwo.v1.${PLAYER_RACE0}`, // krok 12: osobna kampania (z siedzibą)
@@ -1593,6 +1609,7 @@ const economy = createEconomy({
   }),
 });
 economy.enterSystem(starSystem.id, starSystem.spawn);
+economy.state.difficulty = campaignDiff; // krok 12c: poziom zapisuje się z kampanią
 
 // RABUSIE (shared/systems/raids.js): zagrożenie rośnie z liczbą dronów i
 // obrotem; nalot w układzie gracza = ostrzeżenie, potem prawdziwe wrogie NPC
@@ -1748,13 +1765,24 @@ function battleReportCard(r) {
   const target = race?.atWar ? strategy.fieldsOf(rid).sort((a, b) => (strategy.systemOf(b) === home) - (strategy.systemOf(a) === home))[0] : null;
   const choices = [{ label: 'Przyjąć', act: 'ok', primary: !rep.advantage }];
   if (rep.advantage && target) choices.push({ label: 'Kontratak →', act: 'counter', primary: true });
-  if (rep.weak || rep.lostShips.length) choices.push({ label: 'Buduj okręty', act: 'build' });
+  // krok 12c: naprawy po walce - okręty i stacje w układzie potyczki, cena na przycisku
+  const hurt = army.ships.filter((x) => x.sysId === r.sysId && army.repairInfo(x).damaged && army.repairInfo(x).site && !x.rush).map((x) => x.id);
+  const repCost = hurt.length ? army.repairCost(hurt).credits : 0;
+  const stCost = r.offline ? 0 : economy.damagedStations(r.sysId).length ? economy.stationRepairCost(r.sysId).credits : 0;
+  if (repCost + stCost > 0) choices.push({ label: `Napraw (${repCost + stCost} kr)`, act: 'repair' });
+  const manage = (rep.weak || rep.lostShips.length) ? [{ label: 'Buduj okręty', act: 'build' }] : [];
   decisions.ask({
     id: `battle-${r.sysId}-${Math.round(performance.now())}`, kind: 'battle', urgency: rep.tone,
     title: `Raport z potyczki: ${rep.title}`, text: rep.text, details: rep.rows,
     portrait: race ? portraitOf(rid, 3, 34, rulingFaction(rid)) : undefined,
-    choices, timeout: 30, defaultAct: 'ok',
+    choices, manage, timeout: 30, defaultAct: 'ok',
     onChoose: (act) => {
+      if (act === 'repair') {
+        const a = hurt.length ? army.rushRepair(hurt) : null;
+        const b = stCost ? economy.rushStationRepair(r.sysId) : null;
+        const parts = [a, b].filter(Boolean);
+        commandPanel.result({ ok: parts.some((x) => x.ok), text: parts.map((x) => x.text).join(' ') });
+      }
       if (act === 'counter' && target) {
         const lvl = strategy.state.fields[target]?.develop ?? 0;
         opsTab.preset({ kind: lvl <= 2 ? 'zdobycie' : 'uderzenie', field: target, strike: 'obrona' });
@@ -2093,7 +2121,7 @@ function captureSave() {
     home: command.state.home, homeName: sysName(command.state.home),
     ship: SHIPS[Math.max(0, currentShipIndex)].id,
     credits: Math.round(economy.state.credits), fleet: army.ships.length, share: Math.round(strategy.share(PLAYER) * 100),
-    time: Math.round(economy.state.time),
+    time: Math.round(economy.state.time), diff: campaignDiff,
   };
   const stamp = new Date().toLocaleString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   return { data: safeStorage?.getItem(LIVE_KEY) ?? null, meta, liveKey: LIVE_KEY, name: `${meta.raceName} · ${meta.homeName} · ${stamp}` };
@@ -2101,13 +2129,14 @@ function captureSave() {
 function gameUrl(meta, { resume = false } = {}) {
   const p = new URLSearchParams({ uklad: meta.home ?? initialSystem, statek: meta.ship ?? SHIPS[urlShipIndex].id });
   if (resume) p.set('wczytaj', '1');
+  p.set('trudnosc', meta.diff ?? campaignDiff); // krok 12c: nowa gra zostaje na tym samym poziomie
   if (URLQ.has('debug')) p.set('debug', ''); // testy: hak __game zostaje po przeładowaniu
   return `${location.pathname}?${p}`;
 }
 const savePanel = createSavePanel(document.getElementById('saves'), {
   slots: saveSlots,
   capture: captureSave,
-  describe: (m) => [m.raceName, m.homeName, m.credits != null ? `${m.credits.toLocaleString('pl-PL')} kr` : null, m.fleet != null ? `flota ${m.fleet}` : null, m.share != null ? `sektor ${m.share}%` : null, m.time != null ? fmtTime(m.time) : null].filter(Boolean).join(' · '),
+  describe: (m) => [m.raceName, m.homeName, m.diff ? difficultyInfo(m.diff).name.toLowerCase() : null, m.credits != null ? `${m.credits.toLocaleString('pl-PL')} kr` : null, m.fleet != null ? `flota ${m.fleet}` : null, m.share != null ? `sektor ${m.share}%` : null, m.time != null ? fmtTime(m.time) : null].filter(Boolean).join(' · '),
   onLoad: (slot) => {
     storageFrozen = true;
     if (!saveSlots.restore(slot.id)) { storageFrozen = false; commandPanel.toast('Nie udało się wczytać zapisu.', true); return; }
@@ -2139,7 +2168,20 @@ const pauseMenu = (() => {
   const quit = root.querySelector('[data-act="quit"]');
   let open = false, armed = 0;
   const say = (t, bad = false) => { msg.textContent = t; msg.classList.toggle('bad', bad); };
-  function show() { open = true; armed = 0; quit.textContent = 'Porzuć grę'; quit.classList.remove('armed'); say(''); root.classList.add('visible'); document.body.classList.add('paused'); root.querySelector('[data-act="resume"]').focus({ preventScroll: true }); }
+  // krok 12c: poziom trudności - zmiana działa od razu i zapisuje się z kampanią
+  const seg = root.querySelector('.pm-seg'), dnote = root.querySelector('.pm-dnote');
+  function renderDiff() {
+    seg.innerHTML = DIFFICULTY_ORDER.map((k) => { const d = difficultyInfo(k); return `<button type="button" role="radio" data-diff="${k}" aria-checked="${k === campaignDiff}">${d.name}<small>${d.tagline}</small></button>`; }).join('');
+    dnote.textContent = difficultyInfo(campaignDiff).desc;
+  }
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-diff]');
+    if (!b || b.dataset.diff === campaignDiff) return;
+    setCampaignDifficulty(b.dataset.diff);
+    renderDiff();
+    say(`Poziom: ${difficultyInfo(campaignDiff).name}. Zmiana działa od razu.`);
+  });
+  function show() { renderDiff(); open = true; armed = 0; quit.textContent = 'Porzuć grę'; quit.classList.remove('armed'); say(''); root.classList.add('visible'); document.body.classList.add('paused'); root.querySelector('[data-act="resume"]').focus({ preventScroll: true }); }
   function hide() { open = false; root.classList.remove('visible'); document.body.classList.remove('paused'); }
   root.addEventListener('click', (e) => {
     if (e.target === root) { hide(); return; }
@@ -2176,6 +2218,23 @@ window.addEventListener('keydown', (e) => {
   if (document.exitPointerLock && document.pointerLockElement) document.exitPointerLock();
   pauseMenu.show();
 });
+
+/**
+ * Krok 12c: zmiana poziomu trudności w trakcie kampanii: stałe gry (rasy,
+ * naloty, koszty, naprawy), mózg NPC i zasady walki myśliwcem.
+ */
+function setCampaignDifficulty(key) {
+  if (!DIFFICULTY_ORDER.includes(key)) return;
+  campaignDiff = key;
+  applyDifficulty(key);
+  tactics.setDifficulty(key);
+  flares.configure(combatRules(key));
+  arsenal.configure(loadoutFor(playerState.raceId, key), combatRules(key));
+  buildWeaponBar();
+  economy.state.difficulty = key;
+  economy.save();
+  commandPanel.invalidate?.(); // ceny okrętów i napraw
+}
 
 // cel z listy wyprawy (najechany albo wybrany) - pierścień nad skałą / złożem w widoku z mostka
 let hoverTarget = null;
@@ -2484,7 +2543,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     audio: getAudio(), gameAudio, goToBoard, replayMission, boardUrl, respawn, killPlayer, damagePlayer, engageWarp,
     economy, industryPanel, mining, holdCapacity, unloadNearby, shipAhead, raids,
     strategy, rival, army, stratMap, get waypoint() { return waypoint; },
-    command, commandView, commandPanel, decisions, tacMap, pauseMenu, saveSlots, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet, fleetOps, watchGroup, warmup, battleReportCard,
+    command, commandView, commandPanel, decisions, tacMap, pauseMenu, saveSlots, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet, fleetOps, watchGroup, warmup, battleReportCard, setCampaignDifficulty, get campaignDiff() { return campaignDiff; },
   };
 }
 
