@@ -334,6 +334,7 @@ export function createTacticalMap(root, { command, economy, getHostiles = () => 
   for (const ev of ['mousedown', 'keydown', 'wheel']) root.addEventListener(ev, (e) => e.stopPropagation());
   addEventListener('keydown', (e) => {
     if (!open || e.key !== 'Escape') return;
+    e.preventDefault(); // menu gry (Esc) - dopiero, gdy mapa zamknięta
     if (placing) { placing = false; refresh(); } else hide();
   });
   addEventListener('resize', () => { if (open) { applyView(); keys.static = null; } });

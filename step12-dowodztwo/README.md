@@ -93,10 +93,34 @@ Flota nie jest już schowana w piątej zakładce:
   rozkazy okrętów. Gdy nie ma stoczni, zakładka pokazuje przycisk
   *Postaw stocznię*.
 
+## Start gry i menu (Esc)
+
+**Włączenie gry zaczyna nową kampanię od stanu początkowego.** Autozapis
+nadal robi się co kilka sekund, ale przy starcie nie jest wczytywany. Trafia
+na listę zapisów jako **„Ostatnia gra — rasa (autozapis)”**, więc do
+poprzedniej sesji można wrócić przez *Wczytaj grę*. Każde włączenie gry
+nadpisuje ten wpis, a sesje krótsze niż 20 s się nie liczą. Do dalszej gry
+wraca się tylko przez wczytanie zapisu: strona przeładowuje się wtedy
+z `?wczytaj=1` i od razu usuwa ten parametr z adresu, więc odświeżenie
+strony znów zaczyna nową grę.
+
+**Esc** otwiera **menu gry**, a gra na ten czas staje (pauza):
+
+- **Wróć do gry** (albo Esc jeszcze raz),
+- **Zapisz grę** — od razu nowy zapis z nazwą (rasa, układ, data),
+- **Wczytaj grę…** — lista zapisów (poniżej),
+- **Porzuć grę** — po drugim kliknięciu („Na pewno?”) powrót na okładkę
+  bez zapisywania.
+
+Esc najpierw zamyka to, co jest otwarte: mapę taktyczną (albo stawianie
+wieży), panel przemysłu, mapę sektora, dziennik, okno zapisów. Dopiero
+kolejne Esc otwiera menu. Na mostku menu otwiera też przycisk **Menu**
+(górny pasek, na telefonie dolny), a w locie przycisk **☰** obok dziennika.
+
 ## Zapis i wczytanie gry (`shared/systems/save-slots.js`, `save-panel.js`)
 
-Autozapis działa jak dotąd: bieżący stan kampanii rasy zapisuje się co kilka
-sekund. Przycisk **Zapis** (górny pasek mostka, a na telefonie dolny pasek)
+Autozapis zapisuje bieżący stan kampanii rasy co kilka sekund (i trafia do
+„Ostatniej gry” przy następnym włączeniu). *Wczytaj grę…* w menu (Esc)
 otwiera okno z własnymi zapisami:
 
 - **Zapisz** tworzy nowy zapis z nazwą (domyślnie rasa, układ i data),
@@ -106,7 +130,8 @@ otwiera okno z własnymi zapisami:
 - **Nadpisz**, **Usuń**,
 - **Pobierz** i **Wczytaj z pliku…** działają na pliku `.json`, np. żeby
   przenieść kampanię z komputera na telefon,
-- **Nowa gra** zaczyna kampanię tej rasy od zera.
+- **Nowa gra** zaczyna kampanię tej rasy od zera (to samo robi każde
+  włączenie gry).
 
 Wczytanie, nadpisanie, usunięcie i nowa gra wymagają drugiego kliknięcia
 („Na pewno?”). Nie ma okien `confirm()`, bo na telefonie wyrzucają z pełnego
@@ -315,4 +340,5 @@ i giełdę.
 W przeglądarce: `node tools/browser-check/check.mjs`, sekcje „3d”, „3e”
 (garnizon, zapis → wczytanie z przeładowaniem, telefon 844×390) i „3f”
 (mapa taktyczna: stawianie i przeciąganie wieży, sektory, karta trasy,
-giełda).
+giełda) oraz „3g” (nowa gra przy starcie, „Ostatnia gra” na liście, menu
+Esc, pauza, porzucenie).

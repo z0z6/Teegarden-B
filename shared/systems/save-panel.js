@@ -113,7 +113,7 @@ export function createSavePanel(root, { slots, capture, describe = () => '', onL
     }
   });
   for (const ev of ['mousedown', 'pointerdown', 'keydown']) root.addEventListener(ev, (e) => e.stopPropagation());
-  root.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+  root.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); hide(); } });
 
   function show() {
     open = true;
