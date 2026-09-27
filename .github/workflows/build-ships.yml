@@ -17,34 +17,54 @@ on:
         type: boolean
         default: true
 
+# Najmniejsze uprawnienia na poziomie workflow; zapis tylko w jobie, który pushuje.
 permissions:
-  contents: write
+  contents: read
+
+# Dwa ręczne uruchomienia naraz nie pushują jednocześnie (drugi czeka).
+concurrency:
+  group: build-ships
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      # Akcje przypięte do SHA (tag można przesunąć, SHA nie). Komentarz = wersja.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
 
+      # Wersje przypięte: ten sam wejściowy kod daje te same .glb
       - name: Instalacja three + gltfpack
-        run: npm install --no-save --no-package-lock three@0.184.0 gltfpack
+        run: npm install --no-save --no-package-lock three@0.184.0 gltfpack@1.3.0
 
+      # BEZPIECZEŃSTWO: wejścia idą przez env, nie przez ${{ }} wklejane w skrypt
+      # (to byłoby wstrzyknięcie poleceń). ONLY dodatkowo sprawdzane wzorcem.
       - name: Generowanie statków
         shell: bash
+        env:
+          MODE: ${{ inputs.mode }}
+          LOD: ${{ inputs.lod }}
+          ONLY: ${{ inputs.only }}
         run: |
-          ARGS=""
-          [ "${{ inputs.mode }}" = "dry" ] && ARGS="$ARGS --dry"
-          [ "${{ inputs.mode }}" = "patch" ] && ARGS="$ARGS --patch"
-          [ "${{ inputs.lod }}" = "false" ] && ARGS="$ARGS --no-lod"
-          [ -n "${{ inputs.only }}" ] && ARGS="$ARGS --only ${{ inputs.only }}"
-          echo "node shared/ships/source/build-ships.mjs $ARGS"
-          node shared/ships/source/build-ships.mjs $ARGS | tee build-log.txt
+          set -euo pipefail
+          ARGS=()
+          [ "$MODE" = "dry" ] && ARGS+=(--dry)
+          [ "$MODE" = "patch" ] && ARGS+=(--patch)
+          [ "$LOD" = "false" ] && ARGS+=(--no-lod)
+          if [ -n "$ONLY" ]; then
+            if ! [[ "$ONLY" =~ ^[a-z0-9_,-]+$ ]]; then echo "::error::Pole 'only': tylko a-z, 0-9, _ - i przecinki"; exit 1; fi
+            ARGS+=(--only "$ONLY")
+          fi
+          echo "node shared/ships/source/build-ships.mjs ${ARGS[*]}"
+          node shared/ships/source/build-ships.mjs "${ARGS[@]}" | tee build-log.txt
           {
-            echo '## Build ships (${{ inputs.mode }})'
+            echo "## Build ships ($MODE)"
             echo '```'
             cat build-log.txt
             echo '```'
@@ -52,13 +72,16 @@ jobs:
 
       - name: Paczka modeli do pobrania
         if: inputs.mode != 'dry'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ships-models
           path: shared/ships/models/*.glb
 
       - name: Commit
         if: inputs.mode != 'dry'
+        env:
+          MODE: ${{ inputs.mode }}
+          ONLY: ${{ inputs.only }}
         run: |
           rm -f build-log.txt
           git config user.name "github-actions[bot]"
@@ -67,6 +90,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Brak zmian do zapisania."
           else
-            git commit -m "ships: build (${{ inputs.mode }}${{ inputs.only && format(', {0}', inputs.only) || '' }})"
+            git commit -m "ships: build (${MODE}${ONLY:+, $ONLY})"
             git push
           fi

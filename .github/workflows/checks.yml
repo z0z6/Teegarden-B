@@ -1,0 +1,42 @@
+name: Testy i kontrole
+
+# Przy każdym pushu i PR: testy logiki gry w Node oraz kontrole stron
+# (graf modułów, Content-Security-Policy, modulepreload). Gdy CSP albo
+# preload są nieaktualne, lokalnie wystarczy:
+#   node tools/csp.mjs && node tools/preload.mjs
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: three do testów w Node (ta sama wersja co vendor/)
+        run: npm install --no-save --no-package-lock three@0.184.0
+
+      - name: Kontrole stron
+        run: |
+          node tools/check-imports.mjs
+          node tools/csp.mjs --check
+          node tools/preload.mjs --check
+
+      - name: Testy logiki gry
+        run: |
+          set -e
+          for t in step12-dowodztwo/check.mjs step12-dowodztwo/check-military.mjs step12-dowodztwo/check-save.mjs \
+                   step11-dominacja/check.mjs step10-economy/check.mjs \
+                   step9-missions/check.mjs step9-missions/weapons-check.mjs tools/galaxy-map/check.mjs; do
+            echo "::group::$t"
+            node "$t"
+            echo "::endgroup::"
+          done
