@@ -2,6 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-v44nxaZdqH5gwcNI8Gnt0Smzo64U4V/N0qrVMzoVTio=' 'sha256-f3as5EixyZmpQsrkYeqTgnHERlqsN/IIDwo3mFvPRqM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Wizerunki ras — Teegarden-B</title>
   <style>
@@ -18,7 +19,11 @@
     .variants svg { border-radius: 8px; border: 1px solid rgba(159, 216, 255, 0.15); }
     @media (max-width: 800px) { .race { grid-template-columns: 1fr 1fr; } .race > div:first-child { grid-column: 1 / -1; } .variants { grid-column: 1 / -1; } }
   </style>
-  <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.184.0/build/three.module.js" } }</script>
+  <script type="importmap">{ "imports": { "three": "../../vendor/three@0.184.0/build/three.module.min.js" } }</script>
+  <!-- modulepreload: generuje tools/preload.mjs -->
+  <link rel="modulepreload" href="../../shared/data/race-portraits.js" />
+  <link rel="modulepreload" href="../../shared/data/races.js" />
+  <!-- /modulepreload -->
 </head>
 <body>
   <h1>Wizerunki ras</h1>

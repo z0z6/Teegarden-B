@@ -2,6 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-D8NB/Q5aOpodEik09gurprnBv6m1IDdX1QUaZ8zqakQ=' 'sha256-K/PL4SivyC8hPWXkDsRVadG7sF8To4i7UiFnpwWZwo0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Teegarden-B — Krok 10: Ekonomia, stacje i roje dronów</title>
   <link rel="preload" href="../cover/fonts/manrope-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
@@ -812,11 +813,63 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/"
+      "three": "../vendor/three@0.184.0/build/three.module.min.js",
+      "three/addons/": "../vendor/three@0.184.0/examples/jsm/"
     }
   }
   </script>
+  <!-- modulepreload: generuje tools/preload.mjs -->
+  <link rel="modulepreload" href="../shared/audio/audio-controls.js" />
+  <link rel="modulepreload" href="../shared/audio/audio.js" />
+  <link rel="modulepreload" href="../shared/audio/game-audio.js" />
+  <link rel="modulepreload" href="../shared/data/economy.js" />
+  <link rel="modulepreload" href="../shared/data/races.js" />
+  <link rel="modulepreload" href="../shared/input/android-landscape.js" />
+  <link rel="modulepreload" href="../shared/input/flight-controls.js" />
+  <link rel="modulepreload" href="../shared/ships/fleet.js" />
+  <link rel="modulepreload" href="../shared/systems/collision.js" />
+  <link rel="modulepreload" href="../shared/systems/combat-rules.js" />
+  <link rel="modulepreload" href="../shared/systems/combat.js" />
+  <link rel="modulepreload" href="../shared/systems/comms.js" />
+  <link rel="modulepreload" href="../shared/systems/dashboard.js" />
+  <link rel="modulepreload" href="../shared/systems/debris-field.js" />
+  <link rel="modulepreload" href="../shared/systems/economy-panel.js" />
+  <link rel="modulepreload" href="../shared/systems/economy.js" />
+  <link rel="modulepreload" href="../shared/systems/encounters.js" />
+  <link rel="modulepreload" href="../shared/systems/flares.js" />
+  <link rel="modulepreload" href="../shared/systems/missions.js" />
+  <link rel="modulepreload" href="../shared/systems/npc-ships.js" />
+  <link rel="modulepreload" href="../shared/systems/raids.js" />
+  <link rel="modulepreload" href="../shared/systems/space-background.js" />
+  <link rel="modulepreload" href="../shared/systems/star-systems.js" />
+  <link rel="modulepreload" href="../shared/systems/tactical-ai.js" />
+  <link rel="modulepreload" href="../shared/systems/target-labels.js" />
+  <link rel="modulepreload" href="../shared/systems/warp-drive.js" />
+  <link rel="modulepreload" href="../shared/systems/weapons.js" />
+  <link rel="modulepreload" href="../shared/systems/wolfpack.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/build/three.module.min.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/libs/meshopt_decoder.module.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/loaders/GLTFLoader.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/webxr/VRButton.js" />
+  <link rel="modulepreload" href="../shared/audio/music.js" />
+  <link rel="modulepreload" href="../shared/audio/sfx.js" />
+  <link rel="modulepreload" href="../shared/data/military.js" />
+  <link rel="modulepreload" href="../shared/data/race-portraits.js" />
+  <link rel="modulepreload" href="../shared/physics/n-body.js" />
+  <link rel="modulepreload" href="../shared/systems/asteroid-belt.js" />
+  <link rel="modulepreload" href="../shared/systems/economy-visuals.js" />
+  <link rel="modulepreload" href="../shared/systems/planet-surface.js" />
+  <link rel="modulepreload" href="../shared/systems/save-sanitize.js" />
+  <link rel="modulepreload" href="../shared/systems/star-surface.js" />
+  <link rel="modulepreload" href="../shared/systems/surface-detail.js" />
+  <link rel="modulepreload" href="../shared/ui/icons.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/build/three.core.min.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/utils/BufferGeometryUtils.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/utils/SkeletonUtils.js" />
+  <link rel="modulepreload" href="../shared/data/command.js" />
+  <link rel="modulepreload" href="../shared/data/difficulty.js" />
+  <link rel="modulepreload" href="../shared/systems/noise-textures.js" />
+  <!-- /modulepreload -->
 </head>
 <body>
   <div id="hud">
@@ -919,9 +972,29 @@
           if (/NOT SUPPORTED|NOT AVAILABLE|NEEDS HTTPS|NOT ALLOWED/i.test(el.textContent)) el.style.setProperty('display', 'none', 'important');
         }
       };
-      const mo = new MutationObserver(hideXrNotice);
-      mo.observe(document.body, { childList: true, subtree: true, characterData: true });
-      setTimeout(() => mo.disconnect(), 15000);
+      // WYDAJNOŚĆ: obserwujemy tylko bezpośrednie dzieci <body> (tam trafia przycisk
+
+      // VRButton), a zmiany tekstu - wyłącznie na samym przycisku. Wcześniej
+
+      // subtree + characterData na całym body odpalało callback przy każdej zmianie
+
+      // textContent w HUD (dziesiątki razy na klatkę) przez pierwsze 15 s gry.
+
+      const watched = [];
+
+      const watch = (el) => { const o = new MutationObserver(hideXrNotice); o.observe(el, { childList: true, subtree: true, characterData: true }); watched.push(o); };
+
+      const mo = new MutationObserver((recs) => {
+
+        for (const r of recs) for (const n of r.addedNodes) if (n.nodeName === 'BUTTON' || n.nodeName === 'A') watch(n);
+
+        hideXrNotice();
+
+      });
+
+      mo.observe(document.body, { childList: true });
+
+      setTimeout(() => { mo.disconnect(); for (const o of watched) o.disconnect(); }, 15000);
     })();
   </script>
   <script type="module" src="./main.js"></script>

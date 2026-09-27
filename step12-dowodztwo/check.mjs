@@ -31,11 +31,12 @@ Math.random = seededRng(777);
 const sum = (o) => METAL_ORDER.reduce((a, m) => a + (o[m] || 0), 0);
 const fmt = (n) => Math.round(n);
 
+const TEST_KEY = 'teegarden-b.dowodztwo.v1.test';
 function makeWorld({ memory = new Map(), hostiles = [] } = {}) {
   const storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k) => memory.delete(k) };
   const scene = new THREE.Scene();
   const combat = createCombat(scene);
-  const eco = createEconomy({ scene, storage, random: seededRng(5), combat, getHostiles: () => hostiles, fieldsFor: (id, sp) => generateFields(id, sp), saveKey: 'test12' });
+  const eco = createEconomy({ scene, storage, random: seededRng(5), combat, getHostiles: () => hostiles, fieldsFor: (id, sp) => generateFields(id, sp), saveKey: TEST_KEY });
   eco.enterSystem('teegarden', spawnOf('teegarden'));
   const decisions = [], events = [];
   const cmd = createCommand({ economy: eco, combat, getHostiles: () => hostiles, hqName: 'Siedziba testowa',
@@ -311,20 +312,20 @@ console.log('\n11. Zapisy gry: sloty, wczytanie, eksport i import');
   W.eco.save();
   let clock = 1000;
   const slots = createSaveSlots({ storage, prefix: 'tst', now: () => clock });
-  const a = slots.save({ name: 'Przed wojną', data: memory.get('test12'), meta: { home: 'teegarden', ship: 'x', credits: 4321 }, liveKey: 'test12' });
+  const a = slots.save({ name: 'Przed wojną', data: memory.get(TEST_KEY), meta: { home: 'teegarden', ship: 'x', credits: 4321 }, liveKey: TEST_KEY });
   ok(a.ok && slots.list().length === 1 && slots.list()[0].name === 'Przed wojną', `zapis w slocie: ${a.text}`);
   // gra toczy się dalej i autozapis się zmienia
   W.eco.state.credits = 10;
   W.cmd.state.techs.length = 0;
   W.eco.save();
   clock = 2000;
-  const b = slots.save({ name: 'Bieda', data: memory.get('test12'), meta: {}, liveKey: 'test12' });
+  const b = slots.save({ name: 'Bieda', data: memory.get(TEST_KEY), meta: {}, liveKey: TEST_KEY });
   ok(b.ok && slots.list()[0].id === b.id, 'lista: najnowszy zapis na górze');
   const r = slots.restore(a.id);
   const W2 = makeWorld({ memory });
   ok(r && W2.eco.state.credits === 4321 && W2.cmd.has('flotacja'), `wczytanie slotu przywraca stan (kredyty ${W2.eco.state.credits}, nauka)`);
   ok(W2.cmd.hq()?.id === W.cmd.hq().id && W2.eco.stations().filter((x) => x.type === 'siedziba').length === 1, 'po wczytaniu jedna, ta sama siedziba');
-  const over = slots.save({ name: 'Przed wojną', data: memory.get('test12'), meta: {}, liveKey: 'test12', id: a.id });
+  const over = slots.save({ name: 'Przed wojną', data: memory.get(TEST_KEY), meta: {}, liveKey: TEST_KEY, id: a.id });
   ok(over.ok && slots.list().length === 2, 'nadpisanie nie dubluje slotu');
   const file = slots.exportText(a.id);
   const imp = slots.importText(file);
@@ -332,7 +333,21 @@ console.log('\n11. Zapisy gry: sloty, wczytanie, eksport i import');
   ok(!slots.importText('{"x":1}').ok && !slots.importText('nie json').ok, 'import odrzuca obce pliki');
   ok(slots.remove(b.id).ok && slots.list().length === 2 && !memory.has(`tst.slot.${b.id}`), 'usunięcie slotu czyści pamięć');
   const full = createSaveSlots({ storage: { getItem: () => null, setItem: () => { throw new Error('quota'); }, removeItem: () => {} }, prefix: 'q' });
-  ok(!full.save({ name: 'x', data: '{}', liveKey: 'k' }).ok, 'brak miejsca w pamięci: czytelny błąd zamiast wyjątku');
+  ok(!full.save({ name: 'x', data: '{}', liveKey: TEST_KEY }).ok, 'brak miejsca w pamięci: czytelny błąd zamiast wyjątku');
+  // BEZPIECZEŃSTWO: spreparowany plik nie może pisać pod dowolny klucz localStorage
+  const evil = JSON.parse(file);
+  for (const key of ['tst.sloty', 'teegarden-b:misje', 'cudza-strona.token', '', null]) {
+    const before = memory.get('tst.sloty');
+    const r2 = slots.importText(JSON.stringify({ ...evil, liveKey: key }));
+    ok(!r2.ok && memory.get('tst.sloty') === before, `import odrzuca liveKey ${JSON.stringify(key)}`);
+  }
+  // slot podrzucony bezpośrednio do pamięci z obcym kluczem nie da się odtworzyć
+  memory.set('tst.slot.zly', JSON.stringify({ ...evil, id: 'zly', liveKey: 'tst.sloty' }));
+  ok(slots.read('zly') === null && slots.restore('zly') === null, 'odtworzenie slotu z obcym liveKey zablokowane');
+  const junk = slots.importText(JSON.stringify({ ...evil, meta: { raceName: '<img src=x onerror=alert(1)>', credits: 'dużo', evil: { deep: 1 } } }));
+  const m = slots.read(junk.id).meta;
+  ok(junk.ok && !('evil' in m) && !('credits' in m) && typeof m.raceName === 'string', 'meta z pliku: tylko znane pola o znanych typach');
+  ok(!slots.importText('x'.repeat(5_000_001)).ok, 'import odrzuca plik ponad limit rozmiaru');
 }
 
 

@@ -146,3 +146,43 @@ W/S — ciąg. A/D — przechył (roll). Shift — boost. Spacja — hamulec.
 
 Cały projekt trzyma się jednej wersji three.js (`0.184.0`) przez importmapy
 w każdym `index.html`, żeby uniknąć niespójności API między krokami.
+
+three.js leży w repo (`vendor/three@0.184.0/`, licencja MIT w tym katalogu),
+a nie na CDN: gra działa bez internetu, nie zależy od dostępności unpkg i
+ładuje zminifikowany rdzeń (~184 KB po gzip zamiast ~402 KB). Są tam tylko
+pliki faktycznie importowane. Nowy dodatek z `three/addons/...` trzeba
+skopiować z `node_modules/three/examples/jsm/` w to samo miejsce w `vendor/`
+(razem z jego zależnościami) - `node tools/check-imports.mjs` pokaże, czego brakuje.
+
+## Bezpieczeństwo i kontrole
+
+Każda strona ma w `<head>` politykę **Content-Security-Policy** (GitHub Pages
+nie pozwala ustawiać nagłówków, więc jest w `<meta>`). Skutki dla kodu:
+
+- **Żadnych inline handlerów** (`onclick="..."`, `onerror="..."`) ani
+  `javascript:` - przeglądarka je zablokuje. Używaj `addEventListener`.
+- **Inline `<script>` są dopuszczone po skrócie SHA-256.** Po każdej zmianie
+  inline skryptu (także import mapy) uruchom `node tools/csp.mjs`, inaczej
+  skrypt zostanie zablokowany ("Refused to execute inline script" w konsoli).
+- Tylko zasoby z tej samej domeny (bez zewnętrznych skryptów, fontów, obrazów).
+
+**Zapis gry z pliku jest niezaufany.** `shared/systems/save-slots.js`
+przyjmuje tylko klucz autozapisu w formacie gry, a `save-sanitize.js`
+usuwa z wczytanego stanu wpisy z nieznanymi id (okręty, drony, badania...),
+zanim trafią do paneli. Nowe pole stanu, które wskazuje na stałą tabelę
+(`WARSHIPS[...]`, `TECHS[...]`), warto dopisać do sanityzacji i do
+`step12-dowodztwo/check-save.mjs`.
+
+**Preload modułów**: bloki `<link rel="modulepreload">` generuje
+`node tools/preload.mjs` z grafu importów (wszystkie moduły lecą równolegle,
+zamiast 4 kolejnych fal). Po dodaniu albo usunięciu importu uruchom go ponownie.
+
+Kontrole (uruchamia je też CI - `.github/workflows/checks.yml` - przy każdym pushu):
+
+```bash
+npm i --no-save three@0.184.0       # raz, do testów w Node
+node tools/check-imports.mjs        # graf modułów każdej strony: brakujące / zewnętrzne pliki
+node tools/csp.mjs --check          # aktualność CSP (bez --check: aktualizuje)
+node tools/preload.mjs --check      # aktualność preloadów (bez --check: aktualizuje)
+node step12-dowodztwo/check-save.mjs  # odporność zapisu gry
+```

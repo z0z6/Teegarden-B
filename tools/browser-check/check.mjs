@@ -5,8 +5,9 @@
 //   npm i playwright@1.56.0   (+ przeglądarka: npx playwright install chromium)
 //   node tools/browser-check/check.mjs
 //
-// three.js w stronach idzie z unpkg (importmap); test podmienia te żądania na
-// lokalne node_modules/three, więc działa też bez internetu.
+// three.js leży w repo (vendor/three@0.184.0, import mapa) - strony nie
+// potrzebują internetu. Test BLOKUJE każde żądanie poza lokalny serwer i
+// zgłasza je jako błąd: gra ma być samowystarczalna (zgodnie z CSP).
 
 import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -17,9 +18,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = join(ROOT, 'tools/browser-check/out');
 const req = createRequire(join(process.cwd(), '/'));
-let chromium, threeDir;
+let chromium;
 try { ({ chromium } = req('playwright')); } catch { console.log('Brak playwright - pomijam (npm i playwright).'); process.exit(0); }
-try { threeDir = dirname(dirname(req.resolve('three'))); } catch { console.log('Brak three w node_modules - pomijam.'); process.exit(0); }
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.css': 'text/css' };
 const server = createServer(async (rq, rs) => {
@@ -46,10 +46,9 @@ async function open(path, { width = 1440, height = 900 } = {}) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error' && !/favicon|WebGL|GPU stall|GL_|swiftshader/i.test(m.text())) errors.push(m.text()); });
-  await page.route(/unpkg\.com\/three@[^/]+\/(.*)$/, async (route) => {
-    const rel = route.request().url().replace(/^.*unpkg\.com\/three@[^/]+\//, '');
-    try { route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(join(threeDir, rel)) }); }
-    catch { route.fulfill({ status: 404, body: '' }); }
+  await page.route((url) => !url.href.startsWith(BASE) && !/^(data|blob):/.test(url.href), (route) => {
+    errors.push(`żądanie zewnętrzne: ${route.request().url()}`);
+    route.abort();
   });
   await page.goto(BASE + path, { waitUntil: 'load' });
   return { page, errors };

@@ -1619,6 +1619,8 @@ const army = createArmy({
   onEvent: (e) => dashboard.show(`army-${e.key}`, { crew: e.faction ? factionCrew(e.faction) : CREW.tactical, urgency: e.urgency, ttl: 7000, text: e.text }),
 });
 const armyTab = createArmyTab({ army, strategy, economy, playerRace: () => playerState.raceId, systemName: sysName });
+// CSP: przycisk „Graj dalej” bez inline onclick
+document.querySelector('#victory [data-act="victory-close"]')?.addEventListener('click', () => document.getElementById('victory').classList.remove('visible'));
 
 const industryPanel = createEconomyPanel(document.getElementById('industry'), {
   economy, raids, getShip: shipAhead, getSystemName: () => starSystem.name,

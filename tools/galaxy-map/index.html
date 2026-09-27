@@ -2,6 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mapa galaktyki — Teegarden-B</title>
   <style>
@@ -89,6 +90,10 @@
     <p class="hint">Przeciągnij — przesuń mapę, kółko — przybliż. <code>?seed=123</code> w adresie — inna galaktyka. Model: <code>shared/data/galaxy.js</code>.</p>
   </div>
   <div id="zoom"><button id="zin" aria-label="Przybliż">+</button><button id="zout" aria-label="Oddal">−</button><button id="zreset">Cała galaktyka</button></div>
+  <!-- modulepreload: generuje tools/preload.mjs -->
+  <link rel="modulepreload" href="../../shared/data/galaxy.js" />
+  <link rel="modulepreload" href="../../shared/data/races.js" />
+  <!-- /modulepreload -->
   <script type="module" src="./main.js"></script>
 </body>
 </html>

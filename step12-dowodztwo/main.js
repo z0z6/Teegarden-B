@@ -129,7 +129,11 @@ camera.position.set(0, 0, 0);
 camera.rotation.set(0, 0, 0);
 scene.add(cameraRig);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// WYDAJNOŚĆ: MSAA przy gęstości pikseli >= 1,5 (telefony, ekrany Retina) to
+// podwójny koszt przy małym zysku - krawędzie i tak są drobne. ?jakosc=pelna
+// wymusza antyaliasing (i wyłącza adaptację rozdzielczości, patrz niżej).
+const FORCE_QUALITY = new URLSearchParams(location.search).get('jakosc') === 'pelna';
+const renderer = new THREE.WebGLRenderer({ antialias: FORCE_QUALITY || window.devicePixelRatio < 1.5, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1794,6 +1798,8 @@ function battleReportCard(r) {
   });
 }
 const armyTab = createArmyTab({ army, strategy, economy, playerRace: () => playerState.raceId, systemName: sysName });
+// CSP: przycisk „Graj dalej” bez inline onclick
+document.querySelector('#victory [data-act="victory-close"]')?.addEventListener('click', () => document.getElementById('victory').classList.remove('visible'));
 
 const industryPanel = createEconomyPanel(document.getElementById('industry'), {
   economy, raids, getShip: () => panelShip(), getSystemName: () => starSystem.name,
@@ -2576,10 +2582,17 @@ function adaptResolution(raw) {
   }
 }
 
+let pausedFrames = 0; // licznik klatek pauzy (render co 10.)
 function animate() {
   const raw = clock.getDelta();
   adaptResolution(raw);
-  if (!pauseMenu.open && !savePanel.open) tick(Math.min(raw, 0.05)); // krok 12c: menu gry = pauza
+  const paused = pauseMenu.open || savePanel.open; // krok 12c: menu gry = pauza
+  if (!paused) tick(Math.min(raw, 0.05));
+  // WYDAJNOŚĆ: w pauzie świat stoi, więc nie renderujemy go 60-120 razy na
+  // sekundę pod menu (telefon się grzeje). Pierwsza klatka pauzy i potem co
+  // 10. (zmiana rozmiaru okna nadąża). W VR zawsze - gogle wymagają klatek.
+  pausedFrames = paused ? pausedFrames + 1 : 0;
+  if (paused && !renderer.xr.isPresenting && pausedFrames > 1 && pausedFrames % 10 !== 0) return;
   renderer.render(scene, camera);
   if (mode === 'mostek') commandView.renderPip(); // krok 12: okienko podglądu wyprawy
 }

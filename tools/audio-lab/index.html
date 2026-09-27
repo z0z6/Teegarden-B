@@ -2,6 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-pWIp+BH2nGLmOalY0iKQYlf97VvUL7/+nbmDjLvewDw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Audio lab — Teegarden-B</title>
   <style>
@@ -49,6 +50,12 @@
 
   <div id="groups"></div>
 
+  <!-- modulepreload: generuje tools/preload.mjs -->
+  <link rel="modulepreload" href="../../shared/audio/audio-controls.js" />
+  <link rel="modulepreload" href="../../shared/audio/audio.js" />
+  <link rel="modulepreload" href="../../shared/audio/music.js" />
+  <link rel="modulepreload" href="../../shared/audio/sfx.js" />
+  <!-- /modulepreload -->
   <script type="module">
     import { getAudio } from '../../shared/audio/audio.js';
     import { mountAudioControls } from '../../shared/audio/audio-controls.js';
