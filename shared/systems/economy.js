@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   METALS, METAL_ORDER, STATIONS, DRONE, PLAYER_MINING, MARKET, LOGISTICS, START, SWARM_NAMES, BELT, ASTEROID_CLASSES, RAIDS,
 } from '../data/economy.js';
+import { REPAIR } from '../data/military.js';
 import {
   generateBelt, createAsteroidBelt, surfacePoint, markMined, markDepleted, remaining, hashString,
 } from './asteroid-belt.js';
@@ -331,6 +332,38 @@ export function createEconomy({
   // POMOCNICZE: stacje, magazynowanie, pula metalu
   // ------------------------------------------------------------
   const stationsOf = (sysId) => sysState(sysId)?.stations ?? [];
+
+  // ------------------------------------------------------------
+  // NAPRAWA STACJI (krok 12c)
+  // ------------------------------------------------------------
+  /** Stacje do naprawy w układzie: uszkodzone albo wyłączone (splądrowane, przegrzana wieża). */
+  function damagedStations(sysId) {
+    return stationsOf(sysId).filter((st) => st.status === 'gotowa' && STATIONS[st.type]?.hull
+      && !st.rush && ((st.hull ?? STATIONS[st.type].hull) < STATIONS[st.type].hull - 1 || st.immune > 0));
+  }
+  function stationRepairCost(sysId) {
+    const cost = { credits: 0 };
+    for (const st of damagedStations(sysId)) {
+      const miss = STATIONS[st.type].hull - (st.hull ?? STATIONS[st.type].hull);
+      cost.credits += miss * REPAIR.stationCredits + (st.immune > 0 ? REPAIR.stationDisabledFee : 0);
+      for (const [m, k] of Object.entries(REPAIR.stationMetal)) cost[m] = (cost[m] ?? 0) + miss * k;
+    }
+    for (const k in cost) cost[k] = k === 'credits' ? Math.ceil(cost[k]) : Math.ceil(cost[k] * 10) / 10;
+    return cost;
+  }
+  /** Remont przyspieszony stacji: płatny z góry, od razu z powrotem do pracy. */
+  function rushStationRepair(sysId) {
+    const list = damagedStations(sysId);
+    if (!list.length) return { ok: false, text: 'Stacje są sprawne.' };
+    const cost = stationRepairCost(sysId);
+    if (!canPay(sysId, cost)) return { ok: false, text: 'Brak środków na remont stacji (kredyty i żelazo w składzie).' };
+    pay(sysId, cost);
+    const back = list.filter((st) => st.immune > 0);
+    for (const st of list) { st.rush = true; st.immune = 0; }
+    bump();
+    save();
+    return { ok: true, text: `Remont stacji: ${list.length} (${cost.credits} kr).${back.length ? ` Z powrotem w pracy: ${back.map((s) => s.name).join(', ')}.` : ''}` };
+  }
   const byId = (sysId, id) => stationsOf(sysId).find((s) => s.id === id) ?? null;
   const swarmById = (sysId, id) => sysState(sysId)?.swarms.find((w) => w.id === id) ?? null;
   const freeSpace = (st) => STATIONS[st.type].capacity - sumMetals(st.storage);
@@ -1025,7 +1058,10 @@ export function createEconomy({
       st.hull ??= def.hull;
       if (st.immune > 0) { st.immune = Math.max(0, st.immune - dt); if (!st.immune) bump(); }
       const lastHit = rt?.sysId === sysId ? rt.stationRt.get(st.id)?.lastHit ?? -99 : -99;
-      if (st.hull < def.hull && state.time - lastHit > 10) st.hull = Math.min(def.hull, st.hull + def.hull * 0.01 * dt);
+      // krok 12c: remont przyspieszony (opłacony) - szybciej i już po 3 s od trafienia
+      const rush = st.rush ? REPAIR.stationRushRate : 0.01;
+      if (st.hull < def.hull && state.time - lastHit > (st.rush ? 3 : 10)) st.hull = Math.min(def.hull, st.hull + def.hull * rush * dt);
+      if (st.rush && st.hull >= def.hull) { delete st.rush; bump(); }
     }
 
     // 1) budowy: holowniki dowożą brakujący metal z puli, potem montaż
@@ -1256,6 +1292,7 @@ export function createEconomy({
     /** Koszt { credits, metale } z kredytów i puli metalu bieżącego układu (stocznia, krok 11). */
     canPayCost: (cost) => !!rt && canPay(rt.sysId, cost),
     canPayIn: (sysId, cost) => canPay(sysId, cost), payIn: (sysId, cost) => { pay(sysId, cost); bump(); },
+    damagedStations, stationRepairCost, rushStationRepair, // krok 12c: naprawy stacji
     payCost: (cost) => { if (rt) { pay(rt.sysId, cost); bump(); } },
     stationsNear: (sysId, pos, r) => stationsOf(sysId).filter((s) => Math.hypot(s.pos.x - pos.x, s.pos.y - pos.y, s.pos.z - pos.z) < r),
     enterSystem, leaveSystem, update, save, reset,

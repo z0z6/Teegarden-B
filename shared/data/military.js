@@ -110,3 +110,27 @@ export const OPS = {
 
 /** Nazwy grup (kolejne grupy dostają kolejne nazwy). */
 export const GROUP_NAMES = ['Alfa', 'Bravo', 'Czarny Kruk', 'Delta', 'Echo', 'Żuraw', 'Grot', 'Halny', 'Iskra', 'Jastrząb'];
+
+/**
+ * NAPRAWY (krok 12c). Okręty naprawiają się tylko w układzie z zapleczem
+ * i tylko poza walką (combatPause s od ostatniego trafienia):
+ *   stocznia  - yardRate kadłuba na sekundę, darmowo,
+ *   siedziba  - hqRate (naprawa polowa: wolniej, też darmowo),
+ *   remont przyspieszony - rushRate/s, płatny z góry za brakujący kadłub
+ *              (rushCredits kr i rushMetal t za punkt kadłuba); wymaga zaplecza.
+ * Stacje: odrastają same (economy.js, 1%/s); remont przyspieszony stacji
+ * przywraca je od razu do pracy (splądrowana / wyłączona wieża) i dokańcza
+ * kadłub w stationRushRate/s.
+ */
+export const REPAIR = {
+  yardRate: 0.01,
+  hqRate: 0.003,
+  rushRate: 0.05,
+  rushCredits: 1.1,
+  rushMetal: { zelazo: 0.07, nikiel: 0.02 },
+  combatPause: 8,
+  stationCredits: 0.5,
+  stationMetal: { zelazo: 0.05 },
+  stationRushRate: 0.08,
+  stationDisabledFee: 120, // kr za przywrócenie do pracy splądrowanej / wyłączonej stacji
+};

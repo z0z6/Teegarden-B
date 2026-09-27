@@ -53,7 +53,8 @@ export function createOpsTab({ ops, army, strategy, economy, playerRace, systemN
     const groups = ops.groups();
     const free = freeShips();
     const key = JSON.stringify([f.kind, f.field, f.strike, f.formation, f.roe, [...f.ships], [...f.groups], f.armWar, f.open,
-      groups.map((g) => [g.id, g.phase, g.where, g.formation, g.roe, g.ships.length, g.what]), free.map((s) => s.id), ops.log.length,
+      groups.map((g) => [g.id, g.phase, g.where, g.formation, g.roe, g.ships.length, g.what, Math.round(g.hull * 20), g.repairing, g.autoRush, g.repairOnReturn]),
+      free.map((s) => `${s.id}${Math.round(s.hull / WARSHIPS[s.cls].hull * 10)}`), ops.log.length,
       choices.map((c) => `${c.fid}${c.war}${c.fresh ? 1 : 0}`).join()]);
     return [key, () => html(choices, groups, free)];
   }
@@ -84,7 +85,7 @@ export function createOpsTab({ ops, army, strategy, economy, playerRace, systemN
     const strikeBtns = f.kind === 'uderzenie' ? `<h4>Cel uderzenia</h4><div class="cp-routes op-grid">${STRIKE_ORDER.map((k) => `<button data-act="op-strike" data-k="${k}" class="${f.strike === k ? 'on' : ''}" ${strikeOk(k) ? '' : 'disabled'}><b>${esc(STRIKE_TARGETS[k].name)}</b><small>${esc(strikeOk(k) ? STRIKE_TARGETS[k].desc : `Placówka nie ma wież (poziom ${lvl}, wieże od ${STRIKE_TARGETS[k].minDevelop}).`)}</small></button>`).join('')}</div>` : '';
     const formBtns = FORMATION_ORDER.map((k) => `<button data-act="op-form" data-k="${k}" class="${formation === k ? 'on' : ''}" title="${esc(FORMATIONS[k].desc)}">${esc(FORMATIONS[k].name)}<small>${FORMATIONS[k].posture === 'defensive' ? 'obronny' : FORMATIONS[k].posture === 'transit' ? 'przelot' : 'natarcie'}</small></button>`).join('');
     const roeBtns = ROE_ORDER.map((k) => `<button data-act="op-roe" data-k="${k}" class="${f.roe === k ? 'on' : ''}" title="${esc(ROE[k].desc)}">${esc(ROE[k].name)}</button>`).join('');
-    const shipRows = free.length ? free.map((s) => `<label class="cp-toggle op-pick"><input type="checkbox" data-act="op-ship" data-id="${s.id}"${f.ships.has(s.id) ? ' checked' : ''}/>${warshipIcon(s.cls, 18, race.color)}<span>„${esc(s.callsign)}” <small>${esc(WARSHIPS[s.cls].name)} · siła ${WARSHIPS[s.cls].power}</small></span></label>`).join('')
+    const shipRows = free.length ? free.map((s) => `<label class="cp-toggle op-pick"><input type="checkbox" data-act="op-ship" data-id="${s.id}"${f.ships.has(s.id) ? ' checked' : ''}/>${warshipIcon(s.cls, 18, race.color)}<span>„${esc(s.callsign)}” <small>${esc(WARSHIPS[s.cls].name)} · siła ${WARSHIPS[s.cls].power}${s.hull < WARSHIPS[s.cls].hull * 0.95 ? ` · <span class="cp-rep ${s.hull < WARSHIPS[s.cls].hull * 0.6 ? 'bad' : ''}">kadłub ${Math.round(s.hull / WARSHIPS[s.cls].hull * 100)}%</span>` : ''}</small></span></label>`).join('')
       : '<p class="cp-note">Wszystkie okręty przy siedzibie są w grupach albo poza bazą.</p>';
     const groupPick = groups.filter((g) => !g.transit).map((g) => `<label class="cp-toggle op-pick"><input type="checkbox" data-act="op-grp" data-id="${g.id}"${f.groups.has(g.id) ? ' checked' : ''}/><span>Grupa <b>${esc(g.name)}</b> <small>${g.ships.length} okr. · ${esc(g.what)} · ${esc(g.where)}</small></span></label>`).join('');
     const ratio = dfn > 0 ? powerSel / dfn : null;
@@ -114,15 +115,17 @@ export function createOpsTab({ ops, army, strategy, economy, playerRace, systemN
       return `<div class="cp-card op-grp" style="--c:${g.phase === 'w akcji' || g.phase === 'wsparcie' ? '#ff7a45' : g.phase === 'w fałdzie' ? '#9fd8ff' : '#4dd6a0'}">
         <div class="cp-card-h">${warshipIcon(g.ships[0]?.cls ?? 'fregata', 26, race.color)}<div><b>${esc(g.name)}</b> <span class="op-phase">${esc(g.phase)}</span>
           <small>${esc(g.what)}${g.fieldName ? ` — ${esc(g.fieldName)}` : ''} · ${esc(g.where)}${g.op ? ` · operacja ${esc(g.op.toUpperCase())}` : ''}</small></div></div>
-        <small class="op-line">${alive} okr. · siła ${g.power.toFixed(1)}${g.losses > 0.03 ? ` · straty ${Math.round(g.losses * 100)}%` : ''} · ${g.ships.map((s) => `„${esc(s.callsign)}”`).join(', ')}</small>
-        <span class="cp-hullbar"><i style="width:${Math.round((1 - g.losses) * 100)}%"></i></span>
+        <small class="op-line">${alive} okr. · siła ${g.power.toFixed(1)} · kadłuby <b class="${g.hull < 0.6 ? 'op-v-za-słabo' : g.hull < 0.9 ? 'op-v-wyrównane' : ''}">${Math.round(g.hull * 100)}%</b>${g.repairing ? ` · ${g.repairing === 'remont' ? 'remont przyspieszony' : g.repairing === 'stocznia' ? 'naprawa w stoczni' : 'naprawa polowa'}` : g.repairOnReturn ? ' · naprawa po powrocie' : ''} · ${g.ships.map((s) => `„${esc(s.callsign)}”`).join(', ')}</small>
+        <span class="cp-hullbar"><i style="width:${Math.round(g.hull * 100)}%"></i></span>
         <div class="cp-card-b op-ctl">
           <select data-act="op-gform" data-id="${g.id}" aria-label="Szyk">${FORMATION_ORDER.map((k) => `<option value="${k}"${g.formation === k ? ' selected' : ''}>${esc(FORMATIONS[k].name)}</option>`).join('')}</select>
           <select data-act="op-groe" data-id="${g.id}" aria-label="ROE">${ROE_ORDER.map((k) => `<option value="${k}"${g.roe === k ? ' selected' : ''}>${esc(ROE[k].name)}</option>`).join('')}</select>
           <button data-act="op-watch" data-id="${g.id}" ${g.live ? '' : 'disabled'} title="Podgląd zdalny">Obserwuj</button>
           <button data-act="op-recall" data-id="${g.id}" ${g.phase === 'powrót' ? 'disabled' : ''}>Odwołaj</button>
           <button data-act="op-disband" data-id="${g.id}">Rozwiąż</button>
-        </div></div>`;
+          <button data-act="op-repair" data-id="${g.id}" ${g.hull < 0.99 && g.repairing !== 'remont' ? '' : 'disabled'} title="W bazie: płatny remont przyspieszony. Z daleka: powrót i remont.">Na naprawę</button>
+        </div>
+        <label class="cp-toggle op-auto"><input type="checkbox" data-act="op-autorush" data-id="${g.id}"${g.autoRush ? ' checked' : ''}/>Po misji: remont przyspieszony (płatny)</label></div>`;
     }).join('') : '<p class="cp-note">Brak grup bojowych. Zaznacz okręty w „Nowej operacji” — grupa powstanie przy wydaniu rozkazu.</p>';
 
     const log = ops.log.slice(0, 10).map((e) => `<li class="op-log-${e.urgency}"><b>${esc(e.who)}</b> ${esc(e.text)}<small>${ago(ops.clock - e.t)}</small></li>`).join('');
@@ -178,6 +181,7 @@ export function createOpsTab({ ops, army, strategy, economy, playerRace, systemN
         case 'op-watch': onWatch(id); return null;
         case 'op-recall': return ops.recall(id);
         case 'op-disband': return ops.disband(id);
+        case 'op-repair': return ops.repair(id);
         default: return null;
       }
     },
@@ -189,6 +193,7 @@ export function createOpsTab({ ops, army, strategy, economy, playerRace, systemN
         case 'op-grp': if (t.checked) f.groups.add(id); else f.groups.delete(id); return null;
         case 'op-gform': return ops.setFormation(id, t.value);
         case 'op-groe': return ops.setRoe(id, t.value);
+        case 'op-autorush': return ops.setAutoRush(id, t.checked);
         default: return null;
       }
     },

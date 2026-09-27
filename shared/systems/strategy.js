@@ -151,7 +151,7 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
     const fs = state().fields[fid];
     // krok 12c: zniszczone wieże (uderzenie na infrastrukturę) osłabiają obronę na jakiś czas
     const sup = fs.suppressed && fs.suppressed.until > state().time ? fs.suppressed.mul : 1;
-    return (fs.develop * 1.5 + f.ships * 0.35 / n) * sup;
+    return (fs.develop * 1.5 + f.ships * 0.35 / n) * sup * (S.defenseMul ?? 1); // krok 12c: poziom trudności
   }
   /** Udział w wartości wszystkich pól (0..1) - ranking dominacji. */
   function share(who) {
@@ -416,7 +416,9 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
         if (o === id || atWar(id, o) || ['pakt', 'sojusz'].includes(stance(id, o))) continue;
         if (o === PLAYER && (st.time < S.grace || !fieldsOf(PLAYER).length)) continue; // okres ochronny / nic do zdobycia
         const ratio = power(id) / Math.max(0.5, power(o));
-        if (rel(id, o) < S.war && ratio > 1.3 - f.aggression * 0.6 && rng() < 0.25 + f.aggression * 0.3) {
+        // krok 12c: poziom trudności - wobec gracza rasy są mniej / bardziej skore do wojny
+        const warK = o === PLAYER ? (S.warMul ?? 1) : 1;
+        if (rel(id, o) < S.war && ratio > 1.3 - f.aggression * 0.6 && rng() < (0.25 + f.aggression * 0.3) * warK) {
           declareWar(id, o, 'spór o przestrzeń surowcową');
         }
       }
@@ -424,7 +426,8 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
       for (const o of enemies) {
         const since = st.time - (f.warSince[o] ?? st.time);
         const losing = power(id) < power(o) * 0.6;
-        if ((losing && rng() < 0.2) || (since > 420 && rel(id, o) > -60 && rng() < 0.08)) {
+        const peaceK = o === PLAYER ? (S.peaceMul ?? 1) : 1; // krok 12c: poziom trudności
+        if ((losing && rng() < 0.2 * peaceK) || (since > 420 / peaceK && rel(id, o) > -60 && rng() < 0.08 * peaceK)) {
           if (o === PLAYER) propose({ kind: 'peace', faction: id, text: `${race(id).name}: dość tej wojny. Proponujemy pokój.` });
           else makePeace(id, o);
         }
@@ -440,7 +443,7 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
         }
         targets.sort((a, b) => b.score - a.score);
         const t = targets[0];
-        const commit = Math.max(1, Math.round(f.ships * (0.35 + f.aggression * 0.35)));
+        const commit = Math.max(1, Math.round(f.ships * (0.35 + f.aggression * 0.35) * (t?.o === PLAYER ? (S.attackMul ?? 1) : 1))); // krok 12c
         if (t && commit > t.def * (0.6 + f.caution * 0.6)) {
           f.lastAttack = st.time;
           if (t.o === PLAYER) {

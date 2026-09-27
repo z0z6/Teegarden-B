@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WARSHIPS, STRATEGY } from '../data/economy.js';
 import { RACES } from '../data/races.js';
 import { PLAYER } from './strategy.js';
+import { REPAIR } from '../data/military.js';
 
 /**
  * ARMIA GRACZA (krok 11): "bogać się i buduj armię, która cię obroni albo
@@ -229,14 +230,18 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
       economy.state.credits -= cost;
       upkeepAcc = 0;
     }
-    // naprawa kadłubów w układzie ze stocznią (zaocznie i na miejscu), 1%/s
+    // krok 12c: naprawy - stocznia (1%/s), siedziba (naprawa polowa), remont
+    // przyspieszony (płatny); zawsze poza walką (REPAIR.combatPause)
     for (const s of st.ships) {
       const max = WARSHIPS[s.cls].hull;
-      if (s.hull < max && economy.stationsIn(s.sysId).some((x) => x.type === 'stocznia' && x.status === 'gotowa')) {
-        s.hull = Math.min(max, s.hull + max * 0.01 * dt);
-        const npc = spawned.get(s.id);
-        if (npc) npc.hull = Math.max(npc.hull, s.hull * mods().hull);
-      }
+      const npc = spawned.get(s.id);
+      if (npc?.alive) s.hull = Math.min(s.hull, Math.max(1, npc.hull / mods().hull)); // kadłub z walki na żywo
+      if (s.hull >= max) { if (s.rush) { delete s.rush; onEvent({ key: `rep-${s.id}`, urgency: 'info', text: `Remont zakończony: „${s.callsign}” w pełni sprawny.` }); } continue; }
+      const rate = repairRate(s);
+      if (!rate) continue;
+      if (npc?.alive && npc.sinceHit < REPAIR.combatPause) continue; // ekipy nie pracują pod ostrzałem
+      s.hull = Math.min(max, s.hull + max * rate * dt);
+      if (npc) npc.hull = Math.max(npc.hull, s.hull * mods().hull);
     }
     syncT -= dt;
     if (syncT <= 0) { syncT = 1; sync(); }
@@ -288,6 +293,80 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     return true;
   }
   const byId = (id) => state().ships.find((s) => s.id === id) ?? null;
+
+  // ------------------------------------------------------------
+  // NAPRAWY (krok 12c)
+  // ------------------------------------------------------------
+  /** Zaplecze naprawcze w układzie: 'stocznia' | 'siedziba' | null. */
+  function repairSite(sysId) {
+    if (!sysId) return null;
+    const st = economy.stationsIn(sysId).filter((x) => x.status === 'gotowa');
+    if (st.some((x) => x.type === 'stocznia')) return 'stocznia';
+    if (st.some((x) => x.type === 'siedziba')) return 'siedziba';
+    return null;
+  }
+  function repairRate(s) {
+    if (s.transit || !s.sysId) return 0;
+    const site = repairSite(s.sysId);
+    if (!site) return 0;
+    if (s.rush) return REPAIR.rushRate;
+    return site === 'stocznia' ? REPAIR.yardRate : REPAIR.hqRate;
+  }
+  /** Stan naprawy okrętu dla panelu: gdzie, jak szybko, ile jeszcze, czy pod ostrzałem. */
+  function repairInfo(s) {
+    const max = WARSHIPS[s.cls].hull;
+    const frac = s.hull / max;
+    const site = s.transit ? null : repairSite(s.sysId);
+    const rate = repairRate(s);
+    const npc = spawned.get(s.id);
+    return {
+      frac, damaged: frac < 0.995, site, rate, rushing: !!s.rush,
+      underFire: !!(npc?.alive && npc.sinceHit < REPAIR.combatPause),
+      eta: rate ? Math.ceil((1 - frac) / rate) : null,
+    };
+  }
+  /** Koszt remontu przyspieszonego (brakujący kadłub) dla listy okrętów. */
+  function repairCost(ids) {
+    const cost = { credits: 0 };
+    for (const id of ids) {
+      const s = byId(id);
+      if (!s || s.rush || !repairSite(s.sysId) || s.transit) continue;
+      const miss = WARSHIPS[s.cls].hull - s.hull;
+      if (miss < 1) continue;
+      cost.credits += miss * REPAIR.rushCredits;
+      for (const [m, k] of Object.entries(REPAIR.rushMetal)) cost[m] = (cost[m] ?? 0) + miss * k;
+    }
+    for (const k in cost) cost[k] = k === 'credits' ? Math.ceil(cost[k]) : Math.ceil(cost[k] * 10) / 10;
+    return cost;
+  }
+  /**
+   * Remont przyspieszony: płatność z góry (kredyty + metal ze składu układu,
+   * w którym stoją okręty), potem REPAIR.rushRate/s. Okręty bez zaplecza,
+   * w fałdzie albo sprawne są pomijane.
+   */
+  function rushRepair(ids) {
+    const bySys = new Map();
+    let skipped = 0;
+    for (const id of ids) {
+      const s = byId(id);
+      if (!s || s.rush || s.hull >= WARSHIPS[s.cls].hull - 1) continue;
+      if (s.transit || !repairSite(s.sysId)) { skipped++; continue; }
+      (bySys.get(s.sysId) ?? bySys.set(s.sysId, []).get(s.sysId)).push(s);
+    }
+    if (!bySys.size) return { ok: false, text: skipped ? 'Uszkodzone okręty są poza zapleczem — sprowadź je do siedziby albo stoczni.' : 'Nie ma czego naprawiać — flota sprawna.' };
+    let n = 0, paid = 0, poor = 0;
+    for (const [sysId, list] of bySys) {
+      const cost = repairCost(list.map((s) => s.id));
+      if (!economy.canPayIn(sysId, cost)) { poor += list.length; continue; }
+      economy.payIn(sysId, cost);
+      for (const s of list) s.rush = true;
+      n += list.length; paid += cost.credits;
+    }
+    economy.save();
+    if (!n) return { ok: false, text: 'Brak środków na remont przyspieszony (kredyty i żelazo, nikiel w składzie).' };
+    const eta = Math.ceil(Math.max(...[...bySys.values()].flat().filter((s) => s.rush).map((s) => (1 - s.hull / WARSHIPS[s.cls].hull) / REPAIR.rushRate)));
+    return { ok: true, text: `Remont przyspieszony: ${n} okr. za ${paid} kr (+ metal), gotowe za ok. ${eta} s.${poor ? ` ${poor} okr. czeka — za mało środków.` : ''}${skipped ? ` ${skipped} poza zapleczem.` : ''}` };
+  }
   /** Krok 12c: okręt stracony poza układem gracza (rozstrzygnięcie zaoczne grupy bojowej). */
   function lose(id) {
     const st = state();
@@ -302,6 +381,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
 
   return {
     update, order, setOrder, beforeJump, power, fieldDefense, sync, grantGarrison, rebrain, byId, lose, mods, defenseZone,
+    repairSite, repairInfo, repairCost, rushRepair,
     get ships() { return state().ships; }, get queue() { return state().queue; },
     get lost() { return state().lost; }, yardHere, spawned,
     upkeepPerMin: () => state().ships.reduce((a, s) => a + upkeepOf(s), 0) * 6,

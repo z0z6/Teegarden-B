@@ -284,6 +284,40 @@ export function createFleetOps({
     return out;
   }
 
+  /** Kadłuby grupy 0..1 (średnia ważona wytrzymałością). */
+  function hullFrac(g) {
+    const list = shipsOf(g);
+    const max = list.reduce((a, s) => a + WARSHIPS[s.cls].hull, 0);
+    return max ? list.reduce((a, s) => a + s.hull, 0) / max : 1;
+  }
+  /**
+   * Krok 12c: grupa na naprawę. W bazie - remont przyspieszony od razu; z daleka
+   * - powrót (misja przerwana) i remont po przylocie.
+   */
+  function repair(gid) {
+    const g = group(gid);
+    if (!g) return { ok: false, text: 'Nie ma takiej grupy.' };
+    if (hullFrac(g) >= 0.99) return { ok: false, text: `${g.name}: okręty sprawne.` };
+    const atBase = !g.transit && g.sysId === homeSystem() && g.phase !== 'powrot';
+    if (atBase) {
+      const r = army.rushRepair(g.ships);
+      if (r.ok) radio(g, 'remont przyspieszony w toku.', 'info', { key: 'repair' });
+      return r;
+    }
+    g.repairOnReturn = true;
+    if (g.mission && g.phase !== 'powrot') g.mission.result = 'przerwana (naprawa)';
+    startReturn(g, 'przerwana (naprawa)');
+    radio(g, 'przyjąłem, schodzimy na naprawę — kurs na bazę.', 'info', { key: 'repair' });
+    return { ok: true, text: `${g.name} wraca do bazy na remont.` };
+  }
+  function setAutoRush(gid, on) {
+    const g = group(gid);
+    if (!g) return { ok: false, text: 'Nie ma takiej grupy.' };
+    g.autoRush = !!on;
+    economy.save?.();
+    return { ok: true, text: `${g.name}: ${on ? 'po każdej misji płatny remont przyspieszony' : 'po misji zwykła naprawa (darmowa, wolniejsza)'}.` };
+  }
+
   function recall(gid) {
     const g = group(gid);
     if (!g) return { ok: false, text: 'Nie ma takiej grupy.' };
@@ -346,6 +380,13 @@ export function createFleetOps({
     g.phase = 'postoj';
     const r = assign(g.id, { kind: 'obrona', field: homeField(), formation: 'jez', quiet: true });
     if (r.ok) radio(g, `w bazie. Bronimy pola: ${fieldName(homeField())}, szyk jeż.`);
+    // krok 12c: naprawa po powrocie - na rozkaz albo z automatu (płatny remont przyspieszony)
+    const want = g.repairOnReturn || g.autoRush;
+    g.repairOnReturn = false;
+    if (want && hullFrac(g) < 0.99) {
+      const rr = army.rushRepair?.(g.ships);
+      if (rr) radio(g, rr.ok ? `remont przyspieszony w toku. ${rr.text.replace(/^Remont przyspieszony: /, '')}` : `${rr.text} Naprawiamy się powoli.`, rr.ok ? 'info' : 'warning', { key: 'repair' });
+    }
   }
 
   function report(g) {
@@ -757,6 +798,8 @@ export function createFleetOps({
       phase: g.support?.until > clock() ? 'wsparcie' : PHASE_NAME[g.phase] ?? g.phase, where, what,
       field: m?.field ?? null, fieldName: m?.field ? fieldName(m.field) : null, op: m?.op ?? null,
       live: isLive(g), transit: g.transit ? { ...g.transit } : null,
+      hull: hullFrac(g), autoRush: !!g.autoRush, repairOnReturn: !!g.repairOnReturn,
+      repairing: shipsOf(g).some((s) => s.rush) ? 'remont' : (!g.transit && army.repairSite?.(g.sysId) && hullFrac(g) < 0.99 ? army.repairSite(g.sysId) : null),
       losses: m?.startPower ? Math.max(0, 1 - groupPower(g) / m.startPower) : 0,
       anchor: frames.get(g.id)?.anchor ?? null,
     };
@@ -764,7 +807,7 @@ export function createFleetOps({
 
   return {
     update, onTacticEvent, brainFor,
-    createGroup, disband, removeFromGroup, setFormation, setRoe, assign, launchOperation, recall, suggestShips,
+    createGroup, disband, removeFromGroup, setFormation, setRoe, assign, launchOperation, recall, suggestShips, repair, setAutoRush, hullFrac,
     gatherIntel, intel: (fid) => state().intel[fid] ?? null, intelFresh,
     groups: () => groups().map(describe), group, groupPower, travelTime,
     get log() { return state().log; }, get clock() { return clock(); },

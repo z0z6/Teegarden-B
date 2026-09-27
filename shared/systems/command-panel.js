@@ -334,6 +334,16 @@ export function createCommandPanel(root, {
       }).join('')}`];
   }
 
+  /** Krok 12c: krótki stan naprawy okrętu w wierszu listy. */
+  function repairLabel(x) {
+    const r = army?.repairInfo?.(x);
+    if (!r?.damaged) return '';
+    const pct = `${Math.round(r.frac * 100)}%`;
+    if (r.underFire) return ` · <span class="cp-rep bad">${pct} · pod ostrzałem</span>`;
+    if (r.rushing) return ` · <span class="cp-rep go">${pct} · remont ${r.eta} s</span>`;
+    if (r.site) return ` · <span class="cp-rep">${pct} · ${r.site === 'stocznia' ? 'stocznia' : 'naprawa polowa'} ${r.eta > 90 ? `${Math.ceil(r.eta / 60)} min` : `${r.eta} s`}</span>`;
+    return ` · <span class="cp-rep bad">${pct} · bez zaplecza</span>`;
+  }
   function tabFleet() {
     if (!army) return ['f', () => '<p class="cp-note">Brak floty w tym trybie.</p>'];
     const ships = army.ships;
@@ -341,7 +351,16 @@ export function createCommandPanel(root, {
     const here = economy.systemId === s().home;
     const race = RACES[playerRace()];
     const yardAtHome = economy.stationsIn(s().home).find((x) => x.type === 'stocznia');
-    const key = `f|${ships.map((x) => `${x.id}:${x.order}:${x.field}:${x.sysId}`).join()}|${army.queue.length}|${Math.round(army.power() * 10)}|${yard?.id}|${yardAtHome?.status}|${WARSHIP_ORDER.map((c) => economy.canPayCost(WARSHIPS[c].cost)).join()}|${can(STATIONS.stocznia.cost)}|${here}`;
+    // krok 12c: naprawy - stan zmienia się co 5% kadłuba albo przy zmianie zaplecza / remontu
+    const rep = (x) => army.repairInfo?.(x);
+    const damaged = ships.filter((x) => rep(x)?.damaged);
+    const fixable = damaged.filter((x) => rep(x).site && !x.rush);
+    const repCost = army.repairCost ? army.repairCost(fixable.map((x) => x.id)) : null;
+    const stDamaged = economy.damagedStations ? economy.damagedStations(s().home) : [];
+    const stCost = stDamaged.length ? economy.stationRepairCost(s().home) : null;
+    const repKey = ships.map((x) => { const r = rep(x); return r ? `${Math.round(r.frac * 20)}${r.site ?? '-'}${r.rushing ? 'R' : ''}${r.underFire ? 'F' : ''}` : ''; }).join()
+      + `|${stDamaged.map((x) => `${x.id}${x.immune > 0 ? 'x' : ''}${Math.round(x.hull / 50)}`).join()}|${repCost && can(repCost)}|${stCost && can(stCost)}`;
+    const key = `f|${repKey}|${ships.map((x) => `${x.id}:${x.order}:${x.field}:${x.sysId}`).join()}|${army.queue.length}|${Math.round(army.power() * 10)}|${yard?.id}|${yardAtHome?.status}|${WARSHIP_ORDER.map((c) => economy.canPayCost(WARSHIPS[c].cost)).join()}|${can(STATIONS.stocznia.cost)}|${here}`;
     const orderOpts = (x) => {
       const opts = [`<option value="eskorta|"${x.order === 'eskorta' && !x.group ? ' selected' : ''}>Eskorta (leci z tobą)</option>`];
       if (x.group) opts.unshift('<option value="" selected disabled>W grupie bojowej (Operacje)</option>');
@@ -360,6 +379,11 @@ export function createCommandPanel(root, {
       <div class="cp-powerbox cp-fleethead">${warshipIcon('fregata', 26, '#ff7a45')}<div><b>Flota: ${ships.length} okr. · siła ${army.power().toFixed(1)}</b><small>Utrzymanie ${fmt(army.upkeepPerMin())} kr/min${ships.some((x) => x.garrison) ? ' (garnizon siedziby bez opłat)' : ''} · straty ${army.lost}</small></div></div>
       <div class="cp-row"><button data-act="fleet-defend" ${homeShips().length ? '' : 'disabled'}>Broń bazy</button><button data-act="watch-fleet" ${ships.some((x) => x.sysId === economy.systemId) ? '' : 'disabled'}>${eyeIcon(14)} Obserwuj</button><button data-act="industry-fleet">Rozkazy w innych układach</button></div>
       ${extraTab('operacje') ? '<div class="cp-row"><button class="primary" data-act="tab" data-tab="operacje">Grupy bojowe i operacje →</button></div>' : ''}
+      ${damaged.length || stDamaged.length ? `<h4>Naprawy</h4>
+        ${damaged.length ? `<p class="cp-note">Uszkodzone okręty: <b>${damaged.length}</b>. Stocznia naprawia darmowo 1%/s, siedziba 0,3%/s (naprawa polowa), zawsze poza walką. Remont przyspieszony: ok. 20 s, płatny.</p>
+          <div class="cp-card-b cp-repair">${fixable.length ? `${costHtml(repCost, can(repCost))}<button class="primary" data-act="fleet-repair" ${can(repCost) ? '' : 'disabled'}>Remont przyspieszony (${fixable.length})</button>` : `<small>${damaged.some((x) => x.rush) ? 'Remont w toku.' : 'Uszkodzone okręty są poza zapleczem — przywołaj je do siedziby.'}</small>`}</div>` : ''}
+        ${stDamaged.length ? `<p class="cp-note">Uszkodzone stacje: ${stDamaged.map((x) => `<b>${esc(x.name)}</b>${x.immune > 0 ? ` (${x.type === 'wieza' ? 'wyłączona' : 'splądrowana'} ${Math.ceil(x.immune)} s)` : ` ${Math.round(x.hull / STATIONS[x.type].hull * 100)}%`}`).join(', ')}. Odrastają same; remont przywraca je do pracy od razu.</p>
+          <div class="cp-card-b cp-repair">${costHtml(stCost, can(stCost))}<button data-act="station-repair" ${can(stCost) ? '' : 'disabled'}>Napraw stacje (${stDamaged.length})</button></div>` : ''}` : ''}
       <h4>Stocznia</h4>
       ${yard ? `<p class="cp-note">${esc(yard.name)} buduje okręty z metalu w składzie. Nowe okręty dołączają jako eskorta — zmień rozkaz na liście niżej.</p>`
         : yardAtHome && yardAtHome.status !== 'gotowa' ? `<p class="cp-note">Stocznia w budowie (${Math.round(yardAtHome.progress * 100)}%). Holowniki dowożą metal ze składu.</p>`
@@ -374,7 +398,7 @@ export function createCommandPanel(root, {
       }).join('')}
       ${army.queue.length ? `<h4>W budowie</h4>${army.queue.map((q, i) => `<div class="cp-queue">${warshipIcon(q.cls, 18, race.color)}<span>${esc(WARSHIPS[q.cls].name)}</span><span class="cp-bar"><i data-live="shipq-${i}"></i></span></div>`).join('')}` : ''}
       <h4>Okręty</h4>
-      ${ships.length ? ships.map((x) => `<div class="cp-st cp-shiprow">${warshipIcon(x.cls, 22, race.color)}<div><b>„${esc(x.callsign)}”</b><small>${esc(WARSHIPS[x.cls].name)}${x.garrison ? ' · garnizon' : ''} · ${x.transit ? 'w fałdzie' : esc(systemName(x.sysId))}${x.group ? ' · grupa bojowa' : ''}</small><span class="cp-hullbar"><i data-live="hull-${x.id}"></i></span></div>
+      ${ships.length ? ships.map((x) => `<div class="cp-st cp-shiprow">${warshipIcon(x.cls, 22, race.color)}<div><b>„${esc(x.callsign)}”</b><small>${esc(WARSHIPS[x.cls].name)}${x.garrison ? ' · garnizon' : ''} · ${x.transit ? 'w fałdzie' : esc(systemName(x.sysId))}${x.group ? ' · grupa bojowa' : ''}${repairLabel(x)}</small><span class="cp-hullbar"><i data-live="hull-${x.id}"></i></span></div>
           <select data-act="ship-order" data-ship="${x.id}" aria-label="Rozkaz dla ${esc(x.callsign)}">${orderOpts(x)}</select></div>`).join('')
         : '<p class="cp-note">Nie masz okrętów. Flota broni pól przed nalotami i odbiera pola rywalom.</p>'}`];
   }
@@ -496,6 +520,11 @@ export function createCommandPanel(root, {
       if (r && r.text) result(r);
       if (r?.tab) { tab = r.tab; sheet = 'side'; }
     }
+    if (act === 'fleet-repair' && army) {
+      const ids = army.ships.filter((x) => army.repairInfo(x).damaged).map((x) => x.id);
+      result(army.rushRepair(ids));
+    }
+    if (act === 'station-repair') result(economy.rushStationRepair(s().home));
     switch (act) {
       case 'pick': picker = picker?.type === b.dataset.type ? null : { type: b.dataset.type, target: null, n: DRONE_TYPES[b.dataset.type].group }; keys.orders = null; break;
       case 'target': picker.target = b.dataset.id; break;
@@ -560,6 +589,8 @@ export function createCommandPanel(root, {
     refresh, toast, result,
     /** Krok 12c: otwórz zakładkę (np. Operacje po "Kontratak" z raportu potyczki). */
     showTab(id) { tab = id; sheet = 'side'; picker = null; for (const k in keys) keys[k] = null; refresh(); },
+    /** Krok 12c: przerysuj wszystko (np. po zmianie poziomu trudności - nowe ceny). */
+    invalidate() { for (const k in keys) keys[k] = null; refresh(); },
     openPicker(type) { picker = { type, target: null, n: DRONE_TYPES[type].group }; sheet = 'orders'; refresh(); },
     /** Tryb kompaktowy: otwarty arkusz ('orders' | 'exps' | 'side' | null). */
     get sheet() { return sheet; },
