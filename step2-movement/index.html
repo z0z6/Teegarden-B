@@ -2,6 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-D8NB/Q5aOpodEik09gurprnBv6m1IDdX1QUaZ8zqakQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Space Game — Krok 2: Ruch statku</title>
   <style>
@@ -32,11 +33,15 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/"
+      "three": "../vendor/three@0.184.0/build/three.module.min.js",
+      "three/addons/": "../vendor/three@0.184.0/examples/jsm/"
     }
   }
   </script>
+  <!-- modulepreload: generuje tools/preload.mjs -->
+  <link rel="modulepreload" href="../vendor/three@0.184.0/build/three.module.min.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/build/three.core.min.js" />
+  <!-- /modulepreload -->
 </head>
 <body>
   <div id="hud">Krok 2: Sterowanie — W/S przyspiesz/hamuj, A/D obrót, Shift boost, Spacja stop</div>

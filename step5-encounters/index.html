@@ -2,6 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-D8NB/Q5aOpodEik09gurprnBv6m1IDdX1QUaZ8zqakQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Space Game — Krok 5: Rasy i sceny fabularne</title>
   <style>
@@ -307,11 +308,38 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/"
+      "three": "../vendor/three@0.184.0/build/three.module.min.js",
+      "three/addons/": "../vendor/three@0.184.0/examples/jsm/"
     }
   }
   </script>
+  <!-- modulepreload: generuje tools/preload.mjs -->
+  <link rel="modulepreload" href="../shared/data/races.js" />
+  <link rel="modulepreload" href="../shared/input/android-landscape.js" />
+  <link rel="modulepreload" href="../shared/input/flight-controls.js" />
+  <link rel="modulepreload" href="../shared/ships/fleet.js" />
+  <link rel="modulepreload" href="../shared/systems/collision.js" />
+  <link rel="modulepreload" href="../shared/systems/combat.js" />
+  <link rel="modulepreload" href="../shared/systems/comms.js" />
+  <link rel="modulepreload" href="../shared/systems/dashboard.js" />
+  <link rel="modulepreload" href="../shared/systems/debris-field.js" />
+  <link rel="modulepreload" href="../shared/systems/encounters.js" />
+  <link rel="modulepreload" href="../shared/systems/npc-ships.js" />
+  <link rel="modulepreload" href="../shared/systems/space-background.js" />
+  <link rel="modulepreload" href="../shared/systems/target-labels.js" />
+  <link rel="modulepreload" href="../shared/systems/triple-star-system.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/build/three.module.min.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/libs/meshopt_decoder.module.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/loaders/GLTFLoader.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/webxr/VRButton.js" />
+  <link rel="modulepreload" href="../shared/data/race-portraits.js" />
+  <link rel="modulepreload" href="../shared/physics/n-body.js" />
+  <link rel="modulepreload" href="../shared/systems/surface-detail.js" />
+  <link rel="modulepreload" href="../shared/systems/weapons.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/build/three.core.min.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/utils/BufferGeometryUtils.js" />
+  <link rel="modulepreload" href="../vendor/three@0.184.0/examples/jsm/utils/SkeletonUtils.js" />
+  <!-- /modulepreload -->
 </head>
 <body>
   <div id="hud">
