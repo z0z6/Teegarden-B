@@ -3,6 +3,7 @@ import { createSpaceBackground } from '../shared/systems/space-background.js';
 import { SYSTEMS, SYSTEM_ORDER } from '../shared/systems/star-systems.js';
 import { MISSIONS, MISSION_ORDER } from '../shared/systems/missions.js';
 import { DIFFICULTY } from '../shared/systems/tactical-ai.js';
+import { CAMPAIGN_DIFFICULTY } from '../shared/data/difficulty.js'; // krok 12c: poziomy kampanii
 import { SHIPS } from '../shared/ships/fleet.js';
 import { RACES, SHIP_RACE, deriveStats } from '../shared/data/races.js';
 import { getAudio } from '../shared/audio/audio.js';
@@ -187,14 +188,15 @@ function renderHulls(r) {
 }
 
 const diffEl = document.getElementById('diff');
-const DIFF_NOTE = { latwa: '1 naraz', normalna: '2 naraz', trudna: '3 naraz' };
+// krok 12c: poziom stroi całą kampanię (rasy, naloty, koszty, naprawy) i walkę myśliwcem
 for (const k of Object.keys(DIFFICULTY)) {
+  const C = CAMPAIGN_DIFFICULTY[k];
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'opt';
   b.dataset.id = k;
-  b.innerHTML = `<b>${DIFFICULTY[k].name}</b><span>${DIFF_NOTE[k] ?? ''}</span>`;
-  b.title = 'Ilu wrogów naraz naciera na ciebie, czas reakcji, skuteczność uników';
+  b.innerHTML = `<b>${C?.name ?? DIFFICULTY[k].name}</b><span>${C?.tagline ?? ''}</span>`;
+  b.title = C?.desc ?? 'Ilu wrogów naraz naciera na ciebie, czas reakcji, skuteczność uników';
   b.addEventListener('click', () => { state.diff = k; audio.play('ui-click'); render(); });
   diffEl.appendChild(b);
 }
