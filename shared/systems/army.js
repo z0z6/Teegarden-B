@@ -123,13 +123,34 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     const d = strategy.defs.get(fid);
     return new THREE.Vector3(d.center.x, d.center.y + 300, d.center.z);
   }
+  /**
+   * Krok 12c: strefa obrony pola = pas I stacje gracza przy nim. Siedziba,
+   * huta i reaktor stoją 5-7 tys. j. od środka pola; obrona trzymana na
+   * smyczy wokół samego środka nie widziała rabusiów łupiących stacje.
+   * Punkt: między środkiem pola a stacjami; smycz: do najdalszej stacji + zapas.
+   */
+  function defenseZone(fid) {
+    const d = strategy.defs.get(fid);
+    const c = new THREE.Vector3(d.center.x, d.center.y, d.center.z);
+    const near = economy.stationsIn(d.systemId).filter((s) => s.status === 'gotowa' && s.pos
+      && Math.hypot(s.pos.x - c.x, s.pos.y - c.y, s.pos.z - c.z) < d.radius + 9000);
+    if (!near.length) return { anchor: fieldAnchor(fid), leash: 4500, center: c };
+    const st = new THREE.Vector3();
+    for (const s of near) st.add(new THREE.Vector3(s.pos.x, s.pos.y, s.pos.z));
+    st.multiplyScalar(1 / near.length);
+    const anchor = c.clone().lerp(st, 0.5);
+    anchor.y += 300;
+    let far = anchor.distanceTo(c);
+    for (const s of near) far = Math.max(far, anchor.distanceTo(new THREE.Vector3(s.pos.x, s.pos.y, s.pos.z)));
+    return { anchor, leash: Math.max(4500, far + 3000), center: c };
+  }
   function aiFor(s) {
     const custom = s.group && brainFor?.(s);
     if (custom) return { net: 'flota', ...custom };
     return { net: 'flota', ...baseAi(s) };
   }
   function baseAi(s) {
-    if (s.order === 'obrona' && s.field) return { base: 'hold', anchor: fieldAnchor(s.field), leash: 4500, squad: `obr-${s.field}` };
+    if (s.order === 'obrona' && s.field) { const z = defenseZone(s.field); return { base: 'hold', anchor: z.anchor, leash: z.leash, squad: `obr-${s.field}` }; }
     if (s.order === 'atak' && s.field) {
       return { base: 'hunt', anchor: fieldAnchor(s.field), leash: 9000, squad: `atak-${s.field}`,
         prio: (c) => (c.kind === 'station' ? 3 : c.kind === 'drone' ? 0.6 : 1) };
@@ -280,7 +301,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
   }
 
   return {
-    update, order, setOrder, beforeJump, power, fieldDefense, sync, grantGarrison, rebrain, byId, lose, mods,
+    update, order, setOrder, beforeJump, power, fieldDefense, sync, grantGarrison, rebrain, byId, lose, mods, defenseZone,
     get ships() { return state().ships; }, get queue() { return state().queue; },
     get lost() { return state().lost; }, yardHere, spawned,
     upkeepPerMin: () => state().ships.reduce((a, s) => a + upkeepOf(s), 0) * 6,

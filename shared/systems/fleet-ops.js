@@ -390,11 +390,13 @@ export function createFleetOps({
     }
     return d;
   }
+  /** Punkt i smycz obrony pola (pas + stacje przy nim, army.defenseZone). */
+  const defZone = (fid) => army.defenseZone?.(fid) ?? { anchor: fieldAnchor(fid), leash: 4500 };
   function stagePoint(g) {
     const fid = g.phase === 'powrot' ? homeField() : g.mission?.field ?? homeField();
     if (!fid) return new THREE.Vector3();
     const kind = g.mission?.kind;
-    if (g.phase === 'powrot' || kind === 'obrona' || kind === 'patrol' || !kind) return fieldAnchor(fid);
+    if (g.phase === 'powrot' || kind === 'obrona' || kind === 'patrol' || !kind) return defZone(fid).anchor;
     return fieldAnchor(fid).addScaledVector(approachDir(g, fid), kind === 'zwiad' ? 9000 : 7000);
   }
   /** Punkt, do którego zmierza rama, i kierunek frontu. */
@@ -418,7 +420,7 @@ export function createFleetOps({
         out.copy(fieldAnchor(fid)).addScaledVector(approachDir(g, fid), 1300);
         return;
       }
-      default: out.copy(fieldAnchor(fid));
+      default: out.copy(defZone(fid).anchor); // obrona: między polem a stacjami
     }
   }
   function applyFormation(g, F) {
@@ -430,7 +432,7 @@ export function createFleetOps({
     F.evasive = m?.kind === 'zwiad';
     F.holdFire = false;
     F.contactR = OPS.contactRange;
-    F.leash = m?.kind === 'obrona' ? 4500 : m?.kind === 'patrol' ? 5000 : 9000;
+    F.leash = m?.kind === 'obrona' ? defZone(m.field).leash : m?.kind === 'patrol' ? 6000 : 9000;
     if (g.support && g.support.until > clock()) { F.posture = 'offensive'; F.engaged = true; F.leash = 6000; }
   }
   function frameFor(g) {

@@ -10,7 +10,10 @@ import { scienceIcon, scanIcon, droneTypeIcon, pilotIcon, upgradeIcon, stationIc
  *
  * ask({ id, kind, title, text, urgency, choices: [{label, act, primary}],
  *       manage: [{label, act, disabled}], timeout, defaultAct, onChoose(act),
- *       portrait })
+ *       portrait, details: [{label, value, tone: 'good'|'bad'|''}] })
+ *
+ * Krok 12c: `details` - tabelka pod tekstem (raport z potyczki). Na telefonie
+ * zwinięta pod "Szczegóły ▾".
  */
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -19,6 +22,7 @@ const KIND_ICON = {
   survey: () => scanIcon(26),
   return: () => droneTypeIcon('gornik', 26, '#4dd6a0'),
   threat: () => pilotIcon(26, '#ff5a4d'),
+  battle: () => pilotIcon(26, '#ff7a45'), // krok 12c: raport z potyczki
   fleet: () => pilotIcon(26, '#ff7a45'),
   info: () => upgradeIcon(26),
   logistics: () => stationIcon('magazyn', 26, '#ffb45c'), // krok 12b: trasy urobku, magazyny, frachtowiec
@@ -58,6 +62,7 @@ export function createDecisions(root, { onShow = () => {}, onPick = () => {}, ma
       <div class="dc-body">
         <b class="dc-title">${esc(d.title)}</b>
         <p class="dc-text">${esc(d.text)}</p>
+        ${d.details?.length ? `<button class="dc-more" data-more="1" aria-expanded="false">Szczegóły ▾</button><dl class="dc-details">${d.details.map((r) => `<dt>${esc(r.label)}</dt><dd class="${r.tone ? `dc-${r.tone}` : ''}">${esc(r.value)}</dd>`).join('')}</dl>` : ''}
         <div class="dc-row">${buttons}${manage}</div>
         ${d.manage?.length ? `<div class="dc-row dc-sub" hidden>${d.manage.map((m) => `<button class="dc-btn sub" data-act="${esc(m.act)}" ${m.disabled ? 'disabled' : ''}>${esc(m.label)}</button>`).join('')}</div>` : ''}
       </div>
@@ -66,6 +71,13 @@ export function createDecisions(root, { onShow = () => {}, onPick = () => {}, ma
     el.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b || b.disabled) return;
+      if (b.dataset.more) {
+        const open = el.classList.toggle('dc-open');
+        b.setAttribute('aria-expanded', String(open));
+        b.textContent = open ? 'Szczegóły ▴' : 'Szczegóły ▾';
+        it.hover = true;
+        return;
+      }
       if (b.dataset.manage) {
         const sub = el.querySelector('.dc-sub');
         sub.hidden = !sub.hidden;

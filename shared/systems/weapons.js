@@ -746,7 +746,17 @@ export function createWeapons({ scene, combat, camera, onFire = null, onBlast = 
 
   function clear() {}
 
-  return { fire, npcFire, flareBurst, update, clear, particles, get time() { return time; } };
+  /**
+   * Krok 12c: wszystkie efekty trafień naraz (rozgrzewka shaderów - warmup.js).
+   * Implozja torpedy tworzy materiały na ułamek sekundy; bez rozgrzewki każde
+   * trafienie torpedą kompilowało shader od nowa.
+   */
+  function demoEffects(p) {
+    explosion(p, 60, 0xffa640);
+    implosion(p.clone().add(new THREE.Vector3(600, 0, 0)), 120, 0x9fd8ff);
+  }
+
+  return { fire, npcFire, flareBurst, update, clear, particles, demoEffects, get time() { return time; } };
 }
 
 // ============================================================

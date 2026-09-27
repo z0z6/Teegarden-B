@@ -279,6 +279,7 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     if (sc) npc.contact.recentAttackers.set(sc, tactics?.time ?? 0);
     if (tactics && npc.brain) tactics.reportHit(npc, sc, dealt);
     emit('hit', { npc, amount: dealt, shooter: sc });
+    if (sc) npc.lastShooter = sc; // krok 12c: raport z potyczki - kto zestrzelił
     if (npc.hull <= 0) { kill(npc); return; }
     // krok 9: unieruchomienie (misja przechwycenia) - napęd pada, statek dryfuje
     if (npc.disableAt > 0 && !npc.disabled && npc.hull < npc.maxHull * npc.disableAt) {

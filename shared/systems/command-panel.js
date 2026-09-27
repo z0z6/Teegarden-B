@@ -558,6 +558,8 @@ export function createCommandPanel(root, {
       refresh();
     },
     refresh, toast, result,
+    /** Krok 12c: otwórz zakładkę (np. Operacje po "Kontratak" z raportu potyczki). */
+    showTab(id) { tab = id; sheet = 'side'; picker = null; for (const k in keys) keys[k] = null; refresh(); },
     openPicker(type) { picker = { type, target: null, n: DRONE_TYPES[type].group }; sheet = 'orders'; refresh(); },
     /** Tryb kompaktowy: otwarty arkusz ('orders' | 'exps' | 'side' | null). */
     get sheet() { return sheet; },

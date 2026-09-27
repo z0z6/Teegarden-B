@@ -150,6 +150,12 @@ export function createOpsTab({ ops, army, strategy, economy, playerRace, systemN
   }
 
   return {
+    /** Krok 12c: gotowy formularz (np. kontratak z raportu potyczki), z doborem składu. */
+    preset({ kind, field, strike = 'obrona' }) {
+      f.kind = kind; f.field = field; f.strike = strike; f.formation = null; f.armWar = false; f.open = true;
+      f.groups.clear();
+      f.ships = new Set(ops.suggestShips({ kind, field, strike }));
+    },
     id: 'operacje', label: 'Operacje',
     badge: () => { const n = ops.groups().filter((g) => g.phase !== 'postój' && g.what !== 'obrona pola').length; return n || ''; },
     render,

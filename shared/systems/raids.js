@@ -32,6 +32,12 @@ import { RACES } from '../data/races.js';
  * omija licznik zagrożenia, wchodzi okrętami wojennymi tej rasy (mocniejsze
  * kadłuby, stronnictwo rządzące), a wynik wraca do strategii (onEnd: straty
  * rasy, łup). Piraci zostają, ale rzadsi (pirateScale).
+ *
+ * KROK 12c: RAPORT Z POTYCZKI. Przy wejściu wroga robimy migawkę (hook
+ * `snapshot`: okręty i stacje w układzie), liczymy zestrzelenia według
+ * strzelca (`classifyKiller`: flota / gracz / wataha / obrona) i uciekinierów,
+ * a po końcu nalotu (także zaocznego) oddajemy fakty przez `onReport`.
+ * Werdykt i tekst składa battle-report.js.
  */
 
 const CALLSIGNS = ['Hiena', 'Szakal', 'Sęp', 'Kruk', 'Łasica', 'Szczur', 'Pijawka', 'Ćma'];
@@ -40,6 +46,9 @@ export function createRaids({
   economy, npcs, onEvent = () => {}, rng = Math.random,
   canRaid = () => true, systemName = (id) => id, playerRaceId = () => null,
   pirateScale = 1, // krok 11: piraci rzadziej, bo zagrożeniem są głównie rasy
+  // krok 12c: raport z potyczki
+  snapshot = null, onReport = null,
+  classifyKiller = (sc) => (!sc ? 'inne' : sc.kind === 'player' ? 'gracz' : sc.npc?.fleetShip ? 'flota' : sc.npc?.tag === 'pack' ? 'wataha' : sc.npc ? 'inne' : 'obrona'),
 }) {
   let raid = null;
   const pending = []; // ataki ras czekające, aż skończy się bieżący nalot
@@ -49,7 +58,10 @@ export function createRaids({
   const say = (key, text, urgency = 'danger', ttl) => onEvent({ key, text, urgency, ttl });
 
   npcs.on('killed', (npc) => {
-    if (raid?.raiders.includes(npc)) raid.kills++;
+    if (!raid?.raiders.includes(npc)) return;
+    raid.kills++;
+    const k = classifyKiller(npc.lastShooter);
+    raid.killsBy[k] = (raid.killsBy[k] ?? 0) + 1;
   });
   economy.hooks.droneLost = () => { if (raid?.phase === 'active') raid.dronesLost++; };
   economy.hooks.stolen = (t) => { if (raid?.phase === 'active') raid.stolen += t; };
@@ -105,6 +117,8 @@ export function createRaids({
         : `${name} złupili twoją kopalnię w układzie ${systemName(spec.sysId)}: stracono ${res.dronesLost} dronów, zrabowano ${Math.round(res.stolen)} t.`,
     });
     spec.onEnd?.({ kills: res.killed, n: spec.n, dronesLost: res.dronesLost, stolen: res.stolen, offline: true });
+    onReport?.({ offline: true, repelled: res.repelled, sysId: spec.sysId, n: spec.n, kills: res.killed, fled: Math.max(0, spec.n - res.killed), killsBy: { obrona: res.killed },
+      dronesLost: res.dronesLost, stolen: res.stolen, bounty: 0, pirate: false, raceId: spec.raceId, raceName: name });
   }
 
   function spawnRaiders() {
@@ -137,6 +151,8 @@ export function createRaids({
     raid.faction = RACES[raceId].factions[war ? (raid.attacker.factionKey ?? 'hawk') : 'coalition'];
     raid.phase = 'active';
     raid.t = 0;
+    raid.killsBy = {};
+    raid.before = snapshot?.(id) ?? null;
     economy.state.stats.raids++;
     say('raid-in', war
       ? `Atak! ${raid.n} okręty rasy ${raid.raceName} (${raid.faction}) wychodzą z fałdy. Celują w drony i stacje.`
@@ -163,6 +179,15 @@ export function createRaids({
     else if (raid.kills >= raid.n) text = `${raid.attacker ? 'Atak' : 'Nalot'} odparty! Zestrzelono wszystkich (${raid.kills}). ${losses[0].toUpperCase() + losses.slice(1)}.${bounty ? ` Nagroda: +${bounty} kr.` : ''}`;
     else text = `${label()[0].toUpperCase() + label().slice(1)} odlecieli. Zestrzeleni: ${raid.kills}/${raid.n}, ${losses}${bounty ? `. Nagroda: +${bounty} kr` : ''}.`;
     say('raid-end', text, raid.dronesLost + raid.stolen > 0 && raid.kills < raid.n ? 'warning' : 'info', 9000);
+    if (raid.phase === 'active' || offlineRest > 0) {
+      const fled = raid.raiders.filter((n) => n.alive).length; // odlecieli w fałdę (żywi, ale już nie w układzie)
+      onReport?.({
+        offline: raid.phase !== 'active', repelled: raid.kills >= raid.n, sysId: id, n: raid.n, kills: raid.kills,
+        fled: Math.max(0, Math.min(fled, raid.n - raid.kills)), killsBy: raid.killsBy ?? {}, sated: raid.dronesLost >= RAIDS.lootDrones || raid.stolen >= RAIDS.lootTons,
+        dronesLost: raid.dronesLost, stolen: raid.stolen, bounty, pirate: !raid.attacker, raceId: raid.attacker?.raceId ?? null,
+        raceName: raid.raceName, faction: raid.faction, before: raid.before ?? null, after: snapshot?.(id) ?? null, duration: raid.t,
+      });
+    }
     const s = slot(id);
     s.threat = 0;
     s.cooldown = RAIDS.cooldown;
