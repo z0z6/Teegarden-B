@@ -148,7 +148,10 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
     if (!owner) return 0;
     const f = state().factions[owner];
     const n = Math.max(1, fieldsOf(owner).length);
-    return state().fields[fid].develop * 1.5 + f.ships * 0.35 / n;
+    const fs = state().fields[fid];
+    // krok 12c: zniszczone wieże (uderzenie na infrastrukturę) osłabiają obronę na jakiś czas
+    const sup = fs.suppressed && fs.suppressed.until > state().time ? fs.suppressed.mul : 1;
+    return (fs.develop * 1.5 + f.ships * 0.35 / n) * sup;
   }
   /** Udział w wartości wszystkich pól (0..1) - ranking dominacji. */
   function share(who) {
@@ -303,6 +306,25 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
       log(`${race(owner).name} tracą pole ${defs.get(fid).name} (${systemName(fid)}). Pole jest wolne.`, { faction: owner, kind: 'field', field: fid });
     }
   }
+  /**
+   * Krok 12c: skutki uderzenia na infrastrukturę pola rasy.
+   *   kind 'obrona'     - obrona pola × mul przez `time` s,
+   *   kind 'gospodarka' - dochód z pola × mul przez `time` s, strata kredytów.
+   * Każde uderzenie to prowokacja (wojna, jeśli jej nie było).
+   */
+  function sabotage(fid, kind, { mul = 0.5, time = 240, credits = 0, by = PLAYER } = {}) {
+    const fs = state().fields[fid];
+    if (!fs?.owner) return false;
+    const owner = fs.owner;
+    if (by === PLAYER && !atWar(PLAYER, owner)) declareWar(owner, PLAYER, 'atak na placówkę');
+    const until = state().time + time;
+    if (kind === 'obrona') fs.suppressed = { mul, until };
+    if (kind === 'gospodarka') fs.disrupted = { mul, until };
+    const f = state().factions[owner];
+    if (f && credits) f.credits = Math.max(0, f.credits - credits);
+    addRel(PLAYER, owner, -4);
+    return true;
+  }
   function shipLost(fid, n = 1) {
     const f = state().factions[fid];
     if (f) f.ships = Math.max(0, f.ships - n);
@@ -352,7 +374,11 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
       const f = st.factions[id];
       const mine = fieldsOf(id);
       // --- dochód i utrzymanie ---
-      f.credits += mine.reduce((a, fid) => a + S.income * fieldValue(defs.get(fid)) * st.fields[fid].develop, 0);
+      f.credits += mine.reduce((a, fid) => {
+        const fs = st.fields[fid];
+        const dis = fs.disrupted && fs.disrupted.until > st.time ? fs.disrupted.mul : 1; // krok 12c: rajd na doki
+        return a + S.income * fieldValue(defs.get(fid)) * fs.develop * dis;
+      }, 0);
       f.credits -= f.ships * S.shipUpkeep;
       if (f.credits < 0) { f.ships = Math.max(0, f.ships - 1); f.credits = 0; }
 
@@ -505,7 +531,7 @@ export function createStrategy({ economy, playerRace, systems, spawnOf, onEvent 
     ensure, update, step, get state() { return state(); },
     defs, bySystem, allFields, totalValue,
     ownerOf, foreignOwner, rel, stance, atWar, power, fieldDefense, share, standings, fieldsOf,
-    playerAction, answer, damageOutpost, shipLost, poached, declareWar, makePeace,
+    playerAction, answer, damageOutpost, shipLost, poached, declareWar, makePeace, sabotage,
     factionName, rulingFaction, systemOf,
   };
 }

@@ -234,8 +234,21 @@ export function createRivalPresence({ scene, economy, strategy, combat, npcs, pl
     droneGfx?.end();
   }
 
+  /** Krok 12c: stan placówki na polu (zwiad, cele uderzenia, ocena wykonania zadania). */
+  function outpostInfo(fid) {
+    const o = outposts.get(fid);
+    if (!o) return null;
+    const byType = {};
+    for (const st of o.stations) if (st.alive) byType[st.type] = (byType[st.type] ?? 0) + 1;
+    return {
+      owner: o.owner, center: o.center, byType,
+      stations: o.stations.filter((x) => x.alive).length, towers: byType.wieza ?? 0,
+      drones: o.drones.filter((d) => d.alive).length, patrols: o.patrols.filter((n) => n.alive).length,
+    };
+  }
+
   return {
-    update, sync,
+    update, sync, outpostInfo,
     /** Kontakty dla mózgów NPC (flota gracza atakuje placówki na wojnie). */
     contacts() {
       const out = [];

@@ -594,8 +594,9 @@ export function createNpcManager(scene, combat, player, { warp = null, weapons =
     if (I.hold) {
       npc.speed = Math.max(0, npc.speed - npc.accel * dt);
       lookQuat(npc.group.position, I.point, _q);
-      npc.group.quaternion.rotateTowards(_q, npc.turnRate * 0.3 * dt);
+      npc.group.quaternion.rotateTowards(_q, npc.turnRate * (I.turn ?? 0.3) * dt);
       npc.velocity.set(0, 0, 0);
+      if (I.fire && !npc.disabled) tryFire(npc, I.fire); // krok 12c: linia ognia ze slotu szyku
       return;
     }
     steer(npc, I.point, Math.min(I.speed, npc.maxSpeed), dt);

@@ -48,6 +48,19 @@ import { NPC_PROFILE } from './weapons.js';
  *   - ranny skrzydłowy odchodzi, a kolega bierze na siebie jego prześladowcę.
  *
  * STRONY: 'player' i 'ally' walczą z 'hostile'; 'neutral' z nikim.
+ *
+ * KROK 12c - FLOTA (baza 'fleet', grupy bojowe z fleet-ops.js):
+ *   - SZYK: eskadra ma "ramę" (punkt, kierunek, prędkość) prowadzoną przez
+ *     fleet-ops; każdy okręt ma slot w szyku (formationSlot). Postawa szyku:
+ *     offensive - lot w szyku do kontaktu, potem natarcie (kleszcze: skrzydła
+ *     wychodzą na flanki); defensive - okręty trzymają sloty i biją z miejsca
+ *     (linia ognia); transit - szyk, ogień tylko okazyjny; evasive - zwiad,
+ *     unika walki,
+ *   - ŁĄCZE DANYCH (net): eskadry w tej samej sieci widzą to, co widzi
+ *     którakolwiek z nich (wspólny obraz sytuacji),
+ *   - WEZWANIE WSPARCIA: eskadra w sieci, która przegrywa bilans sił, woła
+ *     o pomoc (zdarzenie 'support') - fleet-ops kieruje tam najbliższą wolną grupę,
+ *   - SCHRONIENIE: ranny okręt (poniżej progu ROE) wraca do slotu zamiast ginąć.
  */
 
 // ============================================================
@@ -98,6 +111,49 @@ const UP = new THREE.Vector3(0, 1, 0);
 const FWD = new THREE.Vector3(0, 0, -1);
 
 /**
+ * Slot okrętu `i` z `n` w szyku (jednostki odstępu): x - prawo, y - góra,
+ * z - przód. Lider (i = 0) stoi w punkcie ramy (poza jeżem i ścianą).
+ */
+export function formationSlot(kind, i, n, out = new THREE.Vector3()) {
+  switch (kind) {
+    case 'linia': return out.set(i - (n - 1) / 2, 0, 0);
+    case 'kolumna': return out.set(0, 0, -i);
+    case 'kleszcze': {
+      if (n < 4) return formationSlot('klin', i, n, out);
+      const side = i % 2 ? 1 : -1, k = Math.floor(i / 2);
+      return out.set(side * (2.5 + 0.7 * k), 0.1 * k, 0.6 - 0.8 * k);
+    }
+    case 'jez': {
+      if (n <= 1) return out.set(0, 0, 0);
+      const y = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(Math.max(0, 1 - y * y)), th = i * 2.399963;
+      const R = Math.max(1.3, 0.75 * Math.sqrt(n));
+      return out.set(Math.cos(th) * r * R, y * R * 0.8, Math.sin(th) * r * R);
+    }
+    case 'sciana': {
+      const cols = Math.max(1, Math.ceil(Math.sqrt(n * 2))), rows = Math.ceil(n / cols);
+      return out.set((i % cols) - (cols - 1) / 2, (Math.floor(i / cols) - (rows - 1) / 2) * 0.8, 0);
+    }
+    case 'klin':
+    default: {
+      if (i === 0) return out.set(0, 0, 0);
+      const side = i % 2 ? 1 : -1, rank = Math.ceil(i / 2);
+      return out.set(side * rank, 0.08 * rank, -rank);
+    }
+  }
+}
+
+const _sr = new THREE.Vector3(), _su = new THREE.Vector3(), _sl = new THREE.Vector3();
+/** Punkt slotu w świecie dla ramy szyku F = { kind, spacing, anchor, fwd }. */
+export function slotWorld(F, i, n, out = new THREE.Vector3()) {
+  formationSlot(F.kind, i, n, _sl).multiplyScalar(F.spacing ?? 260);
+  _sr.crossVectors(F.fwd, UP);
+  if (_sr.lengthSq() < 1e-6) _sr.set(1, 0, 0);
+  _sr.normalize();
+  _su.crossVectors(_sr, F.fwd).normalize();
+  return out.copy(F.anchor).addScaledVector(_sr, _sl.x).addScaledVector(_su, _sl.y).addScaledVector(F.fwd, _sl.z);
+}
+
+/**
  * @param {object} o
  * @param {object} [o.combat]      combat.js (combat.incoming - wykrywanie pocisków)
  * @param {Function} [o.rng]
@@ -108,6 +164,7 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
   let DIFF = DIFFICULTY[difficulty] ?? DIFFICULTY.normalna;
   const squads = new Map();
   const load = new Map(); // kontakt -> ilu napastników jest w natarciu na niego
+  const netSeen = new Map(); // sieć łącza danych -> Set kontaktów widzianych przez jej eskadry
   let time = 0;
   const emit = (type, npc, extra = {}) => onEvent?.({ type, npc, ...extra });
 
@@ -122,6 +179,7 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
         id, members: new Set(), focus: null, t: 0, order: 'free', orderTarget: null,
         window: null, slotSpin: rng() * Math.PI * 2, retreating: false, alerted: true,
         attackedBy: new Map(), bait: null, baitT: 0, pursuit: false,
+        formation: null, net: null, lastCall: -99, fN: 1, balance: 1,
       };
       squads.set(id, s);
     }
@@ -164,11 +222,14 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
       sprint: cfg.sprint ?? null, sprintLeft: cfg.sprint?.dur ?? 0, sprintCool: 0,
       formation: cfg.formation ? cfg.formation.clone() : null,
       pincerSide: 1, distressCd: 0, lastEvent: {},
+      fslot: 0, shelterAt: cfg.shelterAt ?? 0.2,
       combatSpeed: cfg.combatSpeed ?? npc.combatSpeed ?? npc.maxSpeed,
       intent: { point: new THREE.Vector3(), speed: 0, fire: null, retreat: false, drift: false, formation: null, warpOut: false, hold: false },
     };
     npc.brain = b;
-    squadOf(b.squadId).members.add(npc);
+    const sq = squadOf(b.squadId);
+    sq.members.add(npc);
+    if (cfg.net) sq.net = cfg.net;
     return b;
   }
 
@@ -233,6 +294,19 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
 
   function setDifficulty(name) { DIFF = DIFFICULTY[name] ?? DIFF; }
 
+  /**
+   * Szyk eskadry floty (krok 12c). F = { kind, spacing, anchor, fwd, vel,
+   * posture, engaged, contactR, leash, holdFire, evasive } - obiekt należy do
+   * fleet-ops.js, który co klatkę przesuwa ramę; tu tylko czytamy.
+   */
+  function setFormation(squadId, F) {
+    const s = squadOf(squadId);
+    s.formation = F;
+    for (const n of s.members) if (n.brain) { n.brain.thinkIn = Math.min(n.brain.thinkIn, 0.1); n.brain.sub = 'move'; }
+  }
+  /** Sieć łącza danych: eskadry w jednej sieci dzielą obraz sytuacji i wzywają wsparcia. */
+  function setNet(squadId, net) { squadOf(squadId).net = net; }
+
   // ------------------------------------------------------------
   // DOWÓDCA ESKADRY (co 0,5 s): wspólny cel, role, żetony, okna, odwrót
   // ------------------------------------------------------------
@@ -247,6 +321,27 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
     for (const n of s.members) if (!n.alive) s.members.delete(n);
     const members = [...s.members].filter((n) => n.brain && !n.hidden && !n.warping);
     if (!members.length) return;
+
+    // --- szyk floty: stałe sloty (lider = najcięższy), kontakt rozwija natarcie ---
+    const F = s.formation;
+    if (F) {
+      const ordered = members.slice().sort((x, y) => y.maxHull - x.maxHull || (x.id < y.id ? -1 : 1));
+      ordered.forEach((m, i) => { m.brain.fslot = i; });
+      s.fN = ordered.length;
+      if (!F.engaged && F.posture === 'offensive') {
+        const R = F.contactR ?? 2600;
+        const hit = members.some((m) => m.brain.enemies.some((e) => e.c.position.distanceTo(F.anchor) < R)
+          || (time - m.brain.lastHitT < 2));
+        if (hit) {
+          F.engaged = true;
+          for (const m of members) {
+            m.brain.thinkIn = 0.05 + rng() * 0.2;
+            if (F.kind === 'kleszcze' && members.length >= 4) { m.brain.sub = 'swing'; m.brain.subT = 0; m.brain.pincerSide = m.brain.fslot % 2 ? 1 : -1; }
+          }
+          emit('contact', members[0], { squadId: s.id });
+        }
+      }
+    }
 
     // --- wspólny cel ---
     let focus = null;
@@ -347,15 +442,24 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
     }
 
     // --- bilans sił: przegrana potyczka = odwrót (rozłożony w czasie) ---
-    if (!s.retreating && world && members.length) {
+    if (world && members.length) {
       let mine = 0, theirs = 0, aggr = 0, noRet = false;
-      for (const m of members) { mine += m.hull / m.maxHull; aggr += m.brain.temper.aggression; noRet ||= m.brain.noRetreat || m.brain.base === 'pack' || m.brain.base === 'trader'; }
+      for (const m of members) { mine += m.hull / m.maxHull; aggr += m.brain.temper.aggression; noRet ||= m.brain.noRetreat || m.brain.base === 'pack' || m.brain.base === 'trader' || m.brain.base === 'fleet'; }
       aggr /= members.length;
       const seen = new Set();
-      for (const m of members) for (const e of m.brain.enemies) if (!seen.has(e.c) && e.d < 3500) { seen.add(e.c); theirs += e.c.hullFrac * (e.c.kind === 'player' ? 1.6 : 1); }
-      if (!noRet && theirs > 0 && mine / theirs < 0.3 && aggr < 0.85 && members.every((m) => m.hull / m.maxHull < 0.6)) {
+      for (const m of members) for (const e of m.brain.enemies) if (!seen.has(e.c) && e.d < 3500) { seen.add(e.c); theirs += e.c.hullFrac * (e.c.kind === 'player' ? 1.6 : e.c.kind === 'station' ? 0.8 : e.c.kind === 'drone' ? 0.1 : 1); }
+      s.balance = theirs > 0 ? mine / theirs : 99;
+      if (!s.retreating && !noRet && theirs > 0 && mine / theirs < 0.3 && aggr < 0.85 && members.every((m) => m.hull / m.maxHull < 0.6)) {
         s.retreating = true;
         emit('squad-retreat', members[0], { squadId: s.id });
+      }
+      // wezwanie wsparcia (sieć floty): przegrywamy wymianę - wołamy najbliższych
+      if (s.net && theirs > 0.9 && mine / theirs < 1 && time - s.lastCall > 20) {
+        s.lastCall = time;
+        const at = new THREE.Vector3();
+        for (const m of members) at.add(m.group.position);
+        at.multiplyScalar(1 / members.length);
+        emit('support', members[0], { squadId: s.id, net: s.net, point: at, ratio: mine / theirs, enemies: seen.size });
       }
     }
   }
@@ -433,6 +537,9 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
     if (s.focus && s.focus.isAlive() && !b.enemies.some((e) => e.c === s.focus) && isFoe(npc.side, s.focus.side)) {
       b.enemies.push({ c: s.focus, d: s.focus.position.distanceTo(pos) });
     }
+    // łącze danych (krok 12c): cele widziane przez inne eskadry tej samej sieci
+    const shared = s.net ? netSeen.get(s.net) : null;
+    if (shared) for (const c of shared) if (c.isAlive() && isFoe(npc.side, c.side) && !b.enemies.some((e) => e.c === c)) b.enemies.push({ c, d: c.position.distanceTo(pos) });
 
     // --- zasadzka: czekamy ---
     if (b.base === 'lurk' && !b.sprung) {
@@ -455,6 +562,12 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
     if (!b.noRetreat) {
       const hopeless = hullFrac < 0.4 && risk * T.caution * 1.7 > 0.3 + T.aggression * 0.9;
       const ordered = s.retreating && rng() < 0.45; // odwrót eskadry - rozłożony w czasie
+      if (b.base === 'fleet' && (hopeless || hullFrac < b.shelterAt)) {
+        // okręt grupy bojowej nie opuszcza układu - chowa się w slocie szyku
+        if (b.plan !== 'formationAt') emit('shelter', npc);
+        b.plan = 'formationAt'; b.target = null;
+        return;
+      }
       if (b.base === 'pack' && hopeless) {
         // skrzydłowy watahy nie ucieka z pola - chowa się w szyku za graczem
         if (b.plan !== 'formation') emit('shelter', npc);
@@ -471,7 +584,7 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
         return;
       }
     }
-    if (b.plan === 'disengage') {
+    if (b.plan === 'disengage' && b.base !== 'fleet') {
       if (hullFrac < 0.75 && !(nearest && nearest.d < 600)) return; // regeneracja w spokoju
       b.plan = 'engage';
     }
@@ -493,6 +606,9 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
       emit('evade', npc, { guided: threat.guided, torpedo: threat.aoe > 100 });
       return;
     }
+
+    // --- grupa bojowa floty (krok 12c): szyk, postawa, smycz ---
+    if (b.base === 'fleet') { thinkFleet(npc, s); return; }
 
     // --- szyk / osłona (wataha) ---
     if (b.base === 'pack' && s.order === 'regroup') {
@@ -531,6 +647,32 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
     }
     const t = pickTarget(npc, cands, s);
     newTarget(b, t);
+    b.plan = 'engage';
+    if (b.lastEvent.engage !== t) { b.lastEvent.engage = t; emit('engage', npc, { target: t }); }
+  }
+
+  function thinkFleet(npc, s) {
+    const b = npc.brain;
+    const F = s.formation;
+    if (!F) { // bez szyku: zachowanie jak łowca na smyczy
+      const cands = b.anchor ? b.enemies.filter((e) => e.c.position.distanceTo(b.anchor) < b.leash) : b.enemies;
+      if (!cands.length) { b.target = null; b.plan = b.anchor ? 'patrol' : 'search'; return; }
+      newTarget(b, pickTarget(npc, cands, s)); b.plan = 'engage'; return;
+    }
+    if (F.evasive) {
+      // zwiad: widzi wszystko, nie wdaje się w walkę; zagrożenie blisko = odskok
+      const near = b.enemies.find((e) => e.d < 2400 && e.c.kind !== 'drone' && (e.c.kind !== 'station' || e.c.station?.type === 'wieza'));
+      b.target = null;
+      b.plan = near ? 'disengage' : 'formationAt';
+      return;
+    }
+    let cands = b.enemies.filter((e) => e.c.position.distanceTo(F.anchor) < (F.leash ?? 4500));
+    if (F.holdFire) cands = cands.filter((e) => b.attackers.has(e.c) && time - b.attackers.get(e.c) < 4);
+    if (!cands.length) { b.target = null; b.role = 'free'; b.plan = 'formationAt'; return; }
+    const t = pickTarget(npc, cands, s);
+    newTarget(b, t);
+    if (F.posture === 'defensive') { b.plan = 'slotFire'; return; }
+    if (!F.engaged) { b.plan = 'formationAt'; return; } // do kontaktu - w szyku, ogień okazyjny
     b.plan = 'engage';
     if (b.lastEvent.engage !== t) { b.lastEvent.engage = t; emit('engage', npc, { target: t }); }
   }
@@ -716,7 +858,7 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
   function decide(npc, dt, world) {
     const b = npc.brain;
     const I = b.intent;
-    I.fire = null; I.retreat = false; I.drift = false; I.formation = null; I.warpOut = false; I.hold = false;
+    I.fire = null; I.retreat = false; I.drift = false; I.formation = null; I.warpOut = false; I.hold = false; I.turn = 0.3;
     b.dmgRecent *= Math.exp(-dt / 3);
     b.distressCd -= dt;
     b.thinkIn -= dt;
@@ -791,6 +933,43 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
       case 'formation':
         I.formation = b.formation ?? _a.set(180, 20, 260);
         break;
+      case 'formationAt': {
+        // krok 12c: slot w szyku grupy bojowej (rama prowadzona przez fleet-ops)
+        const F = s.formation;
+        if (!F) { I.point.copy(pos); I.speed = 0; I.hold = true; break; }
+        slotWorld(F, b.fslot, s.fN, I.point);
+        const d = pos.distanceTo(I.point);
+        const fv = F.vel ? F.vel.length() : 0;
+        if (d < 70 && fv < 5) {
+          I.hold = true; I.turn = 0.6;
+          const t = b.target?.isAlive() ? b.target : null;
+          if (t && pos.distanceTo(t.position) < b.range) leadPoint(npc, t, I.point); else I.point.copy(pos).addScaledVector(F.fwd, 900);
+        } else {
+          if (F.vel) I.point.addScaledVector(F.vel, 0.8);
+          I.speed = clampSpeed(npc, fv + d * 0.8);
+        }
+        const t = b.target?.isAlive() ? b.target : null;
+        if (t && !F.evasive && pos.distanceTo(t.position) < b.range) I.fire = t;
+        break;
+      }
+      case 'slotFire': {
+        // krok 12c: postawa obronna - linia ognia ze slotu (bez pogoni)
+        const F = s.formation;
+        const t = b.target;
+        if (!F || !t || !t.isAlive()) { b.thinkIn = 0; b.plan = 'formationAt'; I.point.copy(pos); I.speed = 0; I.hold = true; break; }
+        slotWorld(F, b.fslot, s.fN, I.point);
+        const d = pos.distanceTo(I.point);
+        const dt2 = pos.distanceTo(t.position);
+        if (d > 240) {
+          I.speed = clampSpeed(npc, b.combatSpeed + d * 0.3);
+        } else {
+          I.hold = true; I.turn = 1.2;
+          leadPoint(npc, t, I.point);
+          addJink(npc, I.point, 60);
+        }
+        I.fire = dt2 < b.range ? t : null;
+        break;
+      }
       case 'escortPos': {
         const p = b.base === 'guard' ? b.protect : world.player;
         if (!p || !p.isAlive()) { I.point.copy(pos); I.speed = 0; b.plan = 'search'; break; }
@@ -829,10 +1008,13 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
         I.point.copy(pos); I.speed = 0;
     }
     // "pincer" watahy: skrzydło najpierw wychodzi na swoją flankę celu
-    if (b.plan === 'engage' && b.base === 'pack' && s.order === 'pincer' && b.sub === 'swing' && b.target) {
+    const pincer = (b.base === 'pack' && s.order === 'pincer') || (b.base === 'fleet' && s.formation?.kind === 'kleszcze' && s.formation.engaged);
+    if (b.plan === 'engage' && pincer && b.sub === 'swing' && b.target) {
       b.subT += dt;
       const t = b.target;
-      _a.copy(t.position).sub(world.player?.position ?? pos).normalize();
+      _a.copy(t.position).sub(b.base === 'fleet' ? s.formation.anchor : (world.player?.position ?? pos));
+      if (_a.lengthSq() < 1) _a.copy(t.position).sub(pos);
+      _a.normalize();
       _b.crossVectors(_a, UP); if (_b.lengthSq() < 1e-4) _b.set(1, 0, 0);
       I.point.copy(t.position).addScaledVector(_b.normalize(), b.pincerSide * 1300).addScaledVector(_a, 200);
       I.speed = npc.maxSpeed;
@@ -846,6 +1028,14 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
   function update(dt, world) {
     time += dt;
     load.clear();
+    // łącze danych: kto co widzi w każdej sieci (z ostatniego "myślenia")
+    netSeen.clear();
+    for (const s of squads.values()) {
+      if (!s.net) continue;
+      let set = netSeen.get(s.net);
+      if (!set) netSeen.set(s.net, (set = new Set()));
+      for (const n of s.members) if (n.alive && n.brain) for (const e of n.brain.enemies) if (e.d < n.brain.sensorRange) set.add(e.c);
+    }
     for (const s of squads.values()) {
       for (const n of s.members) {
         const b = n.brain;
@@ -860,10 +1050,11 @@ export function createTactics({ combat = null, rng = Math.random, difficulty = '
     }
   }
 
-  function clear() { squads.clear(); load.clear(); }
+  function clear() { squads.clear(); load.clear(); netSeen.clear(); }
 
   return {
-    attach, detach, decide, update, reportHit, spring, alertSquad, setOrder, setDifficulty, clear,
+    attach, detach, decide, update, reportHit, spring, alertSquad, setOrder, setDifficulty, clear, setFormation, setNet,
+    netContacts: (net) => netSeen.get(net) ?? null,
     squad: (id) => squads.get(id) ?? null,
     squadOf,
     get difficulty() { return DIFF; },

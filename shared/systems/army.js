@@ -23,11 +23,18 @@ import { PLAYER } from './strategy.js';
  * siła floty kontra obrona pola).
  *
  * Stan (economy.state.army) jest w zapisie gry; kadłuby okrętów też.
+ *
+ * Krok 12c: okręty mogą należeć do GRUPY BOJOWEJ (s.group, fleet-ops.js).
+ * Wtedy mózg okrętu daje hook `brainFor(s)`, a oblężenia zaoczne i przeloty
+ * między układami (s.transit, s.sysId = null w fałdzie) prowadzi fleet-ops.
+ * Wszystkie okręty gracza są w jednej sieci łącza danych ('flota').
  */
 
 export function createArmy({ economy, strategy, npcs, playerRace, player, onEvent = () => {}, rng = Math.random, modelFor = null,
   // krok 12: ulepszenia floty (command.js) - mnożniki siły ognia i wytrzymałości
-  mods = () => ({ power: 1, hull: 1 }) }) {
+  mods = () => ({ power: 1, hull: 1 }),
+  // krok 12c: grupy bojowe (fleet-ops.js) - mózg okrętu w grupie i przebudowa mózgu w locie
+  brainFor = null, tactics = null }) {
   const spawned = new Map(); // shipId -> npc
   let upkeepAcc = 0, siegeAcc = 0, syncT = 0;
 
@@ -91,6 +98,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
   function setOrder(shipIds, orderKind, field = null) {
     for (const s of state().ships) {
       if (!shipIds.includes(s.id)) continue;
+      if (s.transit) return { ok: false, text: `„${s.callsign}” jest w fałdzie — rozkaz po przylocie.` };
       if (orderKind === 'atak') {
         const owner = strategy.foreignOwner(field);
         if (!owner) return { ok: false, text: 'To pole nie należy do żadnej rasy.' };
@@ -98,6 +106,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
       }
       s.order = orderKind;
       s.field = field;
+      delete s.group; // ręczny rozkaz wyjmuje okręt z grupy bojowej
       if (field && orderKind !== 'eskorta') s.sysId = strategy.systemOf(field); // okręt przelatuje do układu pola
       const npc = spawned.get(s.id);
       if (npc) { npcs.remove(npc); spawned.delete(s.id); } // nowy mózg przy następnej synchronizacji
@@ -115,6 +124,11 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     return new THREE.Vector3(d.center.x, d.center.y + 300, d.center.z);
   }
   function aiFor(s) {
+    const custom = s.group && brainFor?.(s);
+    if (custom) return { net: 'flota', ...custom };
+    return { net: 'flota', ...baseAi(s) };
+  }
+  function baseAi(s) {
     if (s.order === 'obrona' && s.field) return { base: 'hold', anchor: fieldAnchor(s.field), leash: 4500, squad: `obr-${s.field}` };
     if (s.order === 'atak' && s.field) {
       return { base: 'hunt', anchor: fieldAnchor(s.field), leash: 9000, squad: `atak-${s.field}`,
@@ -124,10 +138,13 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
   }
   function spawnShip(s, near = null) {
     const def = WARSHIPS[s.cls];
-    const at = near ?? (s.field ? fieldAnchor(s.field) : player.position.clone());
+    const at = near ?? (s.spawnAt ? new THREE.Vector3(s.spawnAt.x, s.spawnAt.y, s.spawnAt.z) : s.field ? fieldAnchor(s.field) : player.position.clone());
+    delete s.spawnAt;
     const pos = at.clone().add(new THREE.Vector3((rng() - 0.5) * 600, (rng() - 0.5) * 200, (rng() - 0.5) * 600));
+    const arrive = !!s.arrive;
+    delete s.arrive;
     const npc = npcs.spawn({
-      raceId: playerRace(), factionKey: 'hawk', side: 'ally', position: pos, arrival: 'none', shipId: s.model ?? undefined,
+      raceId: playerRace(), factionKey: 'hawk', side: 'ally', position: pos, arrival: arrive ? 'warp' : 'none', shipId: s.model ?? undefined,
       mode: 'tactical', hull: def.hull * mods().hull, label: `${def.name} · ${s.order}`, tag: 'fleet', callsign: s.callsign,
       maxSpeed: 700 * def.speed, combatSpeed: 300 * def.speed, ai: aiFor(s), noFlee: true,
     });
@@ -141,7 +158,12 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     for (const s of state().ships) {
       const npc = spawned.get(s.id);
       if (s.sysId === here && !npc) spawnShip(s);
-      if (s.sysId !== here && npc) { npcs.remove(npc); spawned.delete(s.id); }
+      if (s.sysId !== here && npc) {
+        s.hull = Math.max(1, npc.hull / mods().hull);
+        if (s.transit && npc.alive) npcs.depart(npc); else npcs.remove(npc); // krok 12c: odlot w fałdę widać
+        spawned.delete(s.id);
+        continue;
+      }
       if (npc) s.hull = Math.max(1, npc.hull / mods().hull);
     }
   }
@@ -203,7 +225,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     if (siegeAcc >= STRATEGY.siegeTime) {
       siegeAcc = 0;
       const groups = new Map();
-      for (const s of st.ships) if (s.order === 'atak' && s.field && s.sysId !== economy.systemId) (groups.get(s.field) ?? groups.set(s.field, []).get(s.field)).push(s);
+      for (const s of st.ships) if (s.order === 'atak' && s.field && !s.group && s.sysId && s.sysId !== economy.systemId) (groups.get(s.field) ?? groups.set(s.field, []).get(s.field)).push(s);
       for (const [fid, ships] of groups) resolveSiege(fid, ships);
     }
   }
@@ -236,8 +258,29 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     }
   }
 
+  /** Krok 12c: nowy mózg dla okrętu w układzie (bez przestawiania go w przestrzeni). */
+  function rebrain(id) {
+    const npc = spawned.get(id);
+    if (!npc || !tactics) return false;
+    tactics.detach(npc);
+    tactics.attach(npc, aiFor(npc.fleetShip));
+    return true;
+  }
+  const byId = (id) => state().ships.find((s) => s.id === id) ?? null;
+  /** Krok 12c: okręt stracony poza układem gracza (rozstrzygnięcie zaoczne grupy bojowej). */
+  function lose(id) {
+    const st = state();
+    const i = st.ships.findIndex((s) => s.id === id);
+    if (i < 0) return null;
+    const [s] = st.ships.splice(i, 1);
+    st.lost++;
+    const npc = spawned.get(id);
+    if (npc) { npcs.remove(npc); spawned.delete(id); }
+    return s;
+  }
+
   return {
-    update, order, setOrder, beforeJump, power, fieldDefense, sync, grantGarrison,
+    update, order, setOrder, beforeJump, power, fieldDefense, sync, grantGarrison, rebrain, byId, lose, mods,
     get ships() { return state().ships; }, get queue() { return state().queue; },
     get lost() { return state().lost; }, yardHere, spawned,
     upkeepPerMin: () => state().ships.reduce((a, s) => a + upkeepOf(s), 0) * 6,
