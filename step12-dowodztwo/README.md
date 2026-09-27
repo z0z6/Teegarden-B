@@ -320,10 +320,99 @@ GPU na tryb. Na telefonach (`setSurfaceQuality`) jest mniej oktaw i nie ma
 nitów. Zatoka hangaru nie ma ścianek leżących w jednej płaszczyźnie
 (to one migały na krawędziach pasa), a linie pasa wiszą nad podłogą.
 
+## Grupy bojowe i operacje (krok 12c, `shared/systems/fleet-ops.js`)
+
+Okręty łączą się w **grupy bojowe**. Grupa dostaje misję i prowadzi ją
+sama: „daj rozkaz i zapomnij”. Rozkazy wydaje się w zakładce **Operacje**
+(obok Floty; na telefonie pod przyciskiem *Flota* w dolnym pasku).
+
+```
+przelot (fałda) → zbiórka (godzina H) → akcja → powrót → raport → obrona bazy
+```
+
+| Misja | Co robi grupa | Cel |
+|---|---|---|
+| **Obrona pola** | trzyma szyk przy polu, odpowiada na wezwania wsparcia | twoje pole |
+| **Patrol** | krąży między twoimi polami w układzie, przechwytuje intruzów | twoje pole |
+| **Zwiad** | przelot, obserwacja, powrót; unika walki, nie wywołuje wojny | dowolne pole |
+| **Uderzenie na infrastrukturę** | rajd na wybrane stacje placówki, potem odwrót | pole rasy |
+| **Zdobycie pola** | rozbija całą placówkę, pole staje się wolne | pole rasy |
+
+**Cele uderzenia** (`STRIKE_TARGETS` w `shared/data/military.js`):
+
+- **wieże** osłabiają obronę pola o 60% na 4 min, co ułatwia późniejszy szturm (wieże ma placówka od poziomu 3),
+- **doki i przeładunek** dają polu połowę dochodu przez 5 min, a rasa traci kredyty,
+- **drony** to szybki rajd o małym ryzyku.
+
+Uderzenie na rasę, z którą nie ma wojny, wymaga potwierdzenia drugim
+kliknięciem i jest wypowiedzeniem wojny.
+
+**Szyki** (`FORMATIONS`) działają na żywo i zaocznie:
+
+| Szyk | Postawa | Na żywo | Zaocznie |
+|---|---|---|---|
+| Klin | natarcie | lot w V do kontaktu, potem walka | atak ×1,15 |
+| Linia | natarcie | wszystkie lufy do przodu | ×1,1, stacje ×1,25 |
+| Kleszcze | natarcie | skrzydła wychodzą na flanki celu (od 4 okr.) | ×1,2 |
+| Kolumna | przelot | ogień tylko okazyjny | przelot o 20% krótszy |
+| Jeż | obrona | kula wokół pola, ogień ze slotów | obrona ×1,3 |
+| Ściana | obrona | płaszczyzna obrócona frontem do wroga | obrona ×1,2 |
+
+**Zasady użycia siły** (ROE):
+
+- **agresywna** walczy do wykonania zadania,
+- **zrównoważona** wycofuje się po utracie połowy siły,
+- **ostrożna** wycofuje się wcześnie. Ranne okręty chowają się w szyku, a w starciu zaocznym grupa zrywa kontakt, zanim padnie.
+
+Szyk i ROE można zmienić grupie w locie.
+
+**Operacja skoordynowana.** Zaznacz kilka grup (albo grupę i wolne
+okręty). Szybsze grupy czekają na zbiórce na ostatnią. O godzinie H
+wszystkie ruszają naraz i podchodzą do celu z różnych stron. Zaocznie
+siły się sumują, a każda kolejna grupa daje +10% (najwyżej +20%).
+
+**Łączność** (`tactical-ai.js`, baza `'fleet'`):
+
+- Wszystkie okręty gracza, także garnizon, są w sieci **`flota`**. Cel widziany przez jedną eskadrę widzą wszystkie.
+- Eskadra, która przegrywa wymianę ognia, **wzywa wsparcia**. Najbliższa grupa z misją obrony albo patrolu leci na miejsce na 45 s, a potem wraca na posterunek.
+- Grupy meldują kontakt, trafienia, godzinę H i raporty. Meldunki trafiają do dziennika załogi i na listę „Łączność floty” w zakładce.
+
+**Wywiad.** Zwiad zapisuje stan pola: właściciela, poziom, obronę, flotę
+rasy, a na żywo także wieże, stacje i patrole. Zapis ma czas obserwacji.
+
+- Świeży wywiad (do 5 min) daje premię ×1,12 w starciu.
+- Przycisk *Dobierz skład* liczy siłę potrzebną na cel.
+- Pola układu, przez który przeleciał zwiad, odkrywają się przy wejściu gracza.
+
+**Raport.** Po misji wyskakuje karta z trzema wyborami: *Przyjąć*, *Powtórz
+zadanie* albo *Rozwiąż grupę*. Grupa wraca do siedziby i broni pola
+macierzystego w jeżu. *Obserwuj* przy grupie w układzie gracza przełącza
+na podgląd zdalny nad jej okrętami.
+
+Przycisk *Broń bazy* / *Poślij flotę* z karty nalotu rusza tylko okręty
+spoza grup. Grupy walczą według swoich misji i odpowiadają na wezwania.
+Ręczna zmiana rozkazu okrętu (zakładka Flota) wyjmuje go z grupy.
+
+| Plik | Co robi |
+|---|---|
+| `shared/data/military.js` | szyki, ROE, misje, cele uderzenia, czasy (jedno miejsce do strojenia) |
+| `shared/systems/fleet-ops.js` | grupy, misje, fazy, rama szyku, rozstrzygnięcie zaoczne, wsparcie, wywiad, raporty |
+| `shared/systems/fleet-ops-panel.js` | zakładka Operacje |
+| `shared/systems/tactical-ai.js` | baza `'fleet'`: sloty szyku (`formationSlot`), postawy, łącze danych, wezwania wsparcia |
+| `shared/systems/army.js` | hook `brainFor`, przeloty w fałdzie (`s.transit`), `rebrain`, `lose` |
+| `shared/systems/strategy.js` | `sabotage`: osłabiona obrona i dochód pola |
+| `shared/systems/rival-presence.js` | `outpostInfo`: stacje, wieże, drony i patrole placówki |
+
+Test: `node step12-dowodztwo/check-military.mjs`. Sprawdza szyki, rajd
+zaoczny z raportem i powrotem, zdobycie pola, odwrót wg ROE, zwiad
+i wywiad, godzinę H oraz na żywo: jeża, łącze danych, wezwanie wsparcia
+i rajd w układzie gracza.
+
 ## Testy
 
 ```
 node step12-dowodztwo/check.mjs
+node step12-dowodztwo/check-military.mjs   # krok 12c: grupy bojowe i operacje
 ```
 
 Test sprawdza siedzibę zwróconą do pasa, zasilanie i niedobór prądu,

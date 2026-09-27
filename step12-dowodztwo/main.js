@@ -34,6 +34,8 @@ import { createStrategy, PLAYER, rulingFaction } from '../shared/systems/strateg
 import { createRivalPresence } from '../shared/systems/rival-presence.js';
 import { createArmy } from '../shared/systems/army.js';
 import { createArmyTab, warshipModel } from '../shared/systems/army-panel.js';
+import { createFleetOps } from '../shared/systems/fleet-ops.js';       // krok 12c: grupy bojowe i operacje
+import { createOpsTab } from '../shared/systems/fleet-ops-panel.js';
 import { createStrategicMap } from '../shared/systems/strategic-map.js';
 import { racePortrait } from '../shared/data/race-portraits.js';
 import { STATION_ORDER } from '../shared/data/economy.js';
@@ -840,6 +842,9 @@ combat.register({
 
 // KROK 9: mózg NPC (tactical-ai.js). ?trudnosc=latwa|normalna|trudna
 const urlDifficulty = new URLSearchParams(location.search).get('trudnosc');
+// krok 12c: grupy bojowe floty (fleet-ops.js) - tworzone niżej, tu tylko miejsce,
+// bo zdarzenia taktyki (wezwania wsparcia, kontakt) trafiają też do nich
+let fleetOps = null;
 const tactics = createTactics({
   combat,
   difficulty: DIFFICULTY[urlDifficulty] ? urlDifficulty : 'normalna',
@@ -1384,6 +1389,7 @@ const PACK_BARKS = {
   'pincer-in': (e) => `${e.npc.callsign}: na flance, wchodzę!`,
 };
 function onTacticEvent(e) {
+  fleetOps?.onTacticEvent(e); // krok 12c: wezwania wsparcia, kontakt, schronienie
   missions?.onTacticEvent(e);
   if (e.npc?.tag !== 'pack') return;
   const text = PACK_BARKS[e.type]?.(e);
@@ -1697,10 +1703,20 @@ economy.hooks.discovered = (def) => {
 
 const rival = createRivalPresence({ scene, economy, strategy, combat, npcs, player: playerProxy, onEvent: onRivalEvent, quality: QUALITY });
 const army = createArmy({
+  tactics, brainFor: (s) => fleetOps?.brainFor(s), // krok 12c: mózg okrętów w grupach bojowych
   economy, strategy, npcs, player: playerProxy, playerRace: () => playerState.raceId,
   modelFor: (cls) => warshipModel(playerState.raceId, cls).id,
   mods: () => ({ power: command.mult('flota-dziala'), hull: command.mult('flota-kadlub') }), // krok 12: ulepszenia floty
   onEvent: (e) => dashboard.show(`army-${e.key}`, { crew: e.faction ? factionCrew(e.faction) : CREW.tactical, urgency: e.urgency, ttl: 7000, text: e.text }),
+});
+// krok 12c: grupy bojowe - misje "daj rozkaz i zapomnij", szyki, łączność, wywiad
+const FLEET_CREW = { role: 'Flota', initial: 'F', color: '#ff7a45' };
+fleetOps = createFleetOps({
+  army, strategy, economy, tactics, rival, systemName: sysName,
+  homeSystem: () => economy.state.command?.home ?? economy.systemId,
+  homeField: () => { const h = economy.state.command?.home ?? economy.systemId; return economy.fieldDefs(h)[0]?.id ?? null; },
+  onEvent: (e) => dashboard.show(e.key, { crew: FLEET_CREW, urgency: e.urgency, ttl: e.urgency === 'info' ? 5000 : 7500, text: e.text }),
+  onReport: (r) => opsReportCard(r),
 });
 const armyTab = createArmyTab({ army, strategy, economy, playerRace: () => playerState.raceId, systemName: sysName });
 
@@ -1806,6 +1822,7 @@ function updateDominion(delta) {
   strategy.update(delta);
   rival.update(delta);
   army.update(delta);
+  fleetOps.update(delta);
   stratMap.update(delta);
   scanT -= delta;
   if (scanT <= 0) {
@@ -1968,6 +1985,10 @@ const commandPanel = createCommandPanel(document.getElementById('command'), {
   exchange: createExchange({ economy, command }),
   onTactical: (o) => tacMap.show(o),
   compact: () => compactUI,
+  extraTabs: [createOpsTab({
+    ops: fleetOps, army, strategy, economy, playerRace: () => playerState.raceId, systemName: sysName,
+    homeSystem: () => command.state.home ?? economy.systemId, onWatch: (gid) => watchGroup(gid),
+  })],
 });
 
 // krok 12b: mapa taktyczna - wieże strażnicze i przydział dronów do pól
@@ -2240,14 +2261,48 @@ function battlePoint(fid) {
 function sendFleet(fieldId = null, { watch = true, watchOnly = false } = {}) {
   const fid = fieldId && strategy.defs.has(fieldId) && !strategy.foreignOwner(fieldId) ? fieldId : homeFieldId();
   const here = army.ships.filter((x) => x.sysId === economy.systemId);
+  const free = here.filter((x) => !x.group); // krok 12c: grupy bojowe zostają przy swoich misjach (odpowiadają na wezwania)
   if (!watchOnly) {
-    if (here.length) commandPanel.result(army.setOrder(here.map((x) => x.id), 'obrona', fid) ?? { ok: true, text: `Flota (${here.length}) broni: ${strategy.defs.get(fid).name}.` });
+    if (free.length) commandPanel.result(army.setOrder(free.map((x) => x.id), 'obrona', fid) ?? { ok: true, text: `Flota (${free.length}) broni: ${strategy.defs.get(fid).name}.` });
+    else if (here.length) commandPanel.toast('Okręty są w grupach bojowych — walczą według swoich misji (zakładka Operacje).');
     else commandPanel.toast('W tym układzie nie ma naszych okrętów — zbuduj stocznię i flotę. Pokazuję pole.', true);
   }
   if (!watch) return;
   spectateLabel.textContent = `Podgląd zdalny: ${strategy.defs.get(fid)?.name ?? 'pole'}${here.length ? ` · flota ${here.length} okr.` : ''}`;
   commandView.spectate(() => battlePoint(fid), { r: 2900 });
   setMode('podglad');
+}
+/** Krok 12c: podgląd zdalny grupy bojowej - kamera krąży nad środkiem jej okrętów. */
+function watchGroup(gid) {
+  const g = fleetOps.group(gid);
+  if (!g) return;
+  const last = new THREE.Vector3();
+  spectateLabel.textContent = `Podgląd zdalny: grupa ${g.name}`;
+  commandView.spectate(() => {
+    const pts = (fleetOps.group(gid)?.ships ?? []).map((id) => army.spawned.get(id)).filter((n) => n?.alive).map((n) => n.group.position);
+    if (pts.length) { last.set(0, 0, 0); for (const p of pts) last.add(p); last.multiplyScalar(1 / pts.length); }
+    else { const F = fleetOps.frame(gid); if (F) last.copy(F.anchor); }
+    return last.lengthSq() ? last : command.frame().pos;
+  }, { r: 2600 });
+  setMode('podglad');
+}
+/** Krok 12c: raport grupy po misji - karta decyzji (gra toczy się sama, gdy nikt nie kliknie). */
+function opsReportCard(r) {
+  const alive = !!fleetOps.group(r.group);
+  decisions.ask({
+    id: `ops-${r.group}-${Math.round(fleetOps.clock)}`, kind: 'info', urgency: r.ok ? 'info' : 'warning',
+    title: `Raport: grupa ${r.name}`, text: r.text,
+    choices: [
+      { label: 'Przyjąć', act: 'ok', primary: true },
+      ...(alive && r.mission.kind !== 'powrot' ? [{ label: 'Powtórz zadanie', act: 'repeat' }] : []),
+    ],
+    manage: alive ? [{ label: 'Rozwiąż grupę', act: 'disband' }] : [],
+    timeout: 20, defaultAct: 'ok',
+    onChoose: (act) => {
+      if (act === 'repeat') commandPanel.result(fleetOps.assign(r.group, { kind: r.mission.kind, field: r.mission.field, strike: r.mission.strike }));
+      if (act === 'disband') commandPanel.result(fleetOps.disband(r.group));
+    },
+  });
 }
 function watchExpedition(e) {
   const last = new THREE.Vector3();
@@ -2381,7 +2436,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     audio: getAudio(), gameAudio, goToBoard, replayMission, boardUrl, respawn, killPlayer, damagePlayer, engageWarp,
     economy, industryPanel, mining, holdCapacity, unloadNearby, shipAhead, raids,
     strategy, rival, army, stratMap, get waypoint() { return waypoint; },
-    command, commandView, commandPanel, decisions, tacMap, pauseMenu, saveSlots, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet,
+    command, commandView, commandPanel, decisions, tacMap, pauseMenu, saveSlots, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet, fleetOps, watchGroup,
   };
 }
 
