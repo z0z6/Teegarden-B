@@ -1537,6 +1537,37 @@ const gameStorage = safeStorage && {
 // krok 11: rasa gracza znana z adresu (statek z tablicy misji) - osobna
 // kampania (zapis) dla każdej rasy
 const PLAYER_RACE0 = raceForShip(SHIPS[urlShipIndex].id);
+
+// krok 12c: WŁĄCZENIE GRY = NOWA KAMPANIA OD STANU POCZĄTKOWEGO.
+// Autozapis nadal się robi (co kilka sekund), ale przy starcie gry bez
+// ?wczytaj nie jest wczytywany: trafia do listy zapisów jako „Ostatnia gra
+// (autozapis)” (można do niej wrócić), a gra rusza od zera. Wczytanie
+// zapisu podmienia autozapis i przeładowuje stronę z ?wczytaj=1.
+const LIVE_KEY = `teegarden-b.dowodztwo.v1.${PLAYER_RACE0}`;
+const saveSlots = createSaveSlots({ storage: safeStorage, prefix: 'teegarden-b.dowodztwo' });
+const RESUME = URLQ.has('wczytaj');
+if (RESUME) {
+  const q = new URLSearchParams(location.search); q.delete('wczytaj');
+  history.replaceState(null, '', `${location.pathname}?${q}`); // odświeżenie strony = znów nowa gra
+} else archiveAutosave();
+function archiveAutosave() {
+  let raw = null;
+  try { raw = safeStorage?.getItem(LIVE_KEY); } catch { /* jw. */ }
+  if (!raw) return;
+  try {
+    const st = JSON.parse(raw);
+    if ((st?.time ?? 0) > 20) {
+      const home = st.command?.home;
+      saveSlots.save({
+        id: `auto-${PLAYER_RACE0}`, name: `Ostatnia gra — ${RACES[PLAYER_RACE0].name} (autozapis)`, data: raw, liveKey: LIVE_KEY,
+        meta: { race: PLAYER_RACE0, raceName: RACES[PLAYER_RACE0].name, home, homeName: SYSTEMS[home]?.name ?? home, ship: SHIPS[urlShipIndex].id,
+          credits: Math.round(st.credits ?? 0), fleet: st.army?.ships?.length ?? 0, time: Math.round(st.time) },
+      });
+    }
+  } catch { /* uszkodzony autozapis - po prostu zaczynamy od nowa */ }
+  try { safeStorage.removeItem(LIVE_KEY); } catch { /* jw. */ }
+}
+
 const economy = createEconomy({
   scene, storage: gameStorage, quality: QUALITY,
   fieldsFor: (id, sp) => generateFields(id, sp), saveKey: `teegarden-b.dowodztwo.v1.${PLAYER_RACE0}`, // krok 12: osobna kampania (z siedzibą)
@@ -1801,7 +1832,7 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.code === 'KeyY' && playerState.alive) unloadNearby();
   if (e.code === 'KeyP') industryPanel.toggle();
-  if (e.code === 'Escape' && industryPanel.open) industryPanel.setOpen(false);
+  if (e.code === 'Escape' && industryPanel.open) { industryPanel.setOpen(false); e.preventDefault(); }
 });
 window.addEventListener('keyup', (e) => { if (e.code === 'KeyT') mining.held = false; });
 const touchMine = document.getElementById('touch-mine');
@@ -1933,7 +1964,7 @@ const commandPanel = createCommandPanel(document.getElementById('command'), {
   onFleet: (fid, o) => sendFleet(fid, o),
   onWatch: (e) => watchExpedition(e),
   onHover: (id) => { hoverTarget = id; },
-  onSaves: () => savePanel.toggle(),
+  onSaves: () => pauseMenu.show(),
   exchange: createExchange({ economy, command }),
   onTactical: (o) => tacMap.show(o),
   compact: () => compactUI,
@@ -1985,8 +2016,6 @@ for (const el of [logBtn, logPanel]) el.addEventListener('mousedown', (e) => e.s
 // Autozapis (economy.save) trzyma bieżący stan kampanii rasy. Sloty to
 // nazwane kopie: wczytanie podmienia autozapis i przeładowuje grę z adresem
 // zapisu (układ siedziby + statek, czyli rasa). Ctrl+S - szybki zapis.
-const LIVE_KEY = `teegarden-b.dowodztwo.v1.${PLAYER_RACE0}`;
-const saveSlots = createSaveSlots({ storage: safeStorage, prefix: 'teegarden-b.dowodztwo' });
 const fmtTime = (t) => { const m = Math.floor(t / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
 function captureSave() {
   economy.save();
@@ -2000,8 +2029,10 @@ function captureSave() {
   const stamp = new Date().toLocaleString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   return { data: safeStorage?.getItem(LIVE_KEY) ?? null, meta, liveKey: LIVE_KEY, name: `${meta.raceName} · ${meta.homeName} · ${stamp}` };
 }
-function gameUrl(meta) {
+function gameUrl(meta, { resume = false } = {}) {
   const p = new URLSearchParams({ uklad: meta.home ?? initialSystem, statek: meta.ship ?? SHIPS[urlShipIndex].id });
+  if (resume) p.set('wczytaj', '1');
+  if (URLQ.has('debug')) p.set('debug', ''); // testy: hak __game zostaje po przeładowaniu
   return `${location.pathname}?${p}`;
 }
 const savePanel = createSavePanel(document.getElementById('saves'), {
@@ -2011,7 +2042,7 @@ const savePanel = createSavePanel(document.getElementById('saves'), {
   onLoad: (slot) => {
     storageFrozen = true;
     if (!saveSlots.restore(slot.id)) { storageFrozen = false; commandPanel.toast('Nie udało się wczytać zapisu.', true); return; }
-    fadeThen(() => location.assign(gameUrl(slot.meta ?? {})), 350);
+    fadeThen(() => location.assign(gameUrl(slot.meta ?? {}, { resume: true })), 350);
   },
   onNewGame: () => {
     storageFrozen = true;
@@ -2024,6 +2055,57 @@ window.addEventListener('keydown', (e) => {
   e.preventDefault();
   const r = savePanel.quickSave();
   dashboard.show('quicksave', { crew: CREW.quartermaster, urgency: r.ok ? 'info' : 'warning', ttl: 3000, text: r.ok ? 'Szybki zapis gotowy (Zapis → lista).' : r.text });
+});
+
+// ============================================================
+// KROK 12c: MENU GRY (Esc) - pauza: Wróć / Zapisz / Wczytaj / Porzuć
+// ============================================================
+// Esc najpierw zamyka to, co jest otwarte (mapa taktyczna, panel przemysłu,
+// mapa sektora, dziennik, okno zapisu), a dopiero potem otwiera menu. Gdy menu
+// albo okno zapisu jest otwarte, symulacja stoi (pauza). Na telefonie menu
+// otwiera przycisk ☰ (i „Menu” w dolnym pasku mostka).
+const pauseMenu = (() => {
+  const root = document.getElementById('pause-menu');
+  const msg = root.querySelector('.pm-msg');
+  const quit = root.querySelector('[data-act="quit"]');
+  let open = false, armed = 0;
+  const say = (t, bad = false) => { msg.textContent = t; msg.classList.toggle('bad', bad); };
+  function show() { open = true; armed = 0; quit.textContent = 'Porzuć grę'; quit.classList.remove('armed'); say(''); root.classList.add('visible'); document.body.classList.add('paused'); root.querySelector('[data-act="resume"]').focus({ preventScroll: true }); }
+  function hide() { open = false; root.classList.remove('visible'); document.body.classList.remove('paused'); }
+  root.addEventListener('click', (e) => {
+    if (e.target === root) { hide(); return; }
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === 'resume') hide();
+    if (act === 'save') {
+      const c = captureSave();
+      const r = saveSlots.save({ name: c.name, data: c.data, meta: c.meta, liveKey: c.liveKey });
+      say(r.ok ? `${r.text} Wczytasz go z listy „Wczytaj grę”.` : r.text, !r.ok);
+    }
+    if (act === 'load') { hide(); savePanel.show(); }
+    if (act === 'quit') {
+      if (performance.now() - armed > 4000) { armed = performance.now(); quit.textContent = 'Na pewno? Niezapisany postęp przepadnie'; quit.classList.add('armed'); return; }
+      storageFrozen = true;
+      try { safeStorage?.removeItem(LIVE_KEY); } catch { /* jw. */ }
+      fadeThen(() => location.assign('../index.html'), 350);
+    }
+  });
+  for (const ev of ['mousedown', 'pointerdown']) root.addEventListener(ev, (e) => e.stopPropagation());
+  return { show, hide, toggle: () => (open ? hide() : show()), get open() { return open; } };
+})();
+document.getElementById('menu-btn').addEventListener('click', () => pauseMenu.toggle());
+document.getElementById('menu-btn').addEventListener('mousedown', (e) => e.stopPropagation());
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.repeat || e.defaultPrevented) return;
+  e.preventDefault();
+  if (pauseMenu.open) { pauseMenu.hide(); return; }
+  if (savePanel.open) { savePanel.hide(); pauseMenu.show(); return; }
+  if (stratMap.open) { stratMap.setOpen(false); return; }
+  if (mapEl.classList.contains('visible')) { mapEl.classList.remove('visible'); return; }
+  if (document.getElementById('log-panel').classList.contains('visible')) { document.querySelector('#log-panel [data-act="close"]')?.click(); return; }
+  if (document.exitPointerLock && document.pointerLockElement) document.exitPointerLock();
+  pauseMenu.show();
 });
 
 // cel z listy wyprawy (najechany albo wybrany) - pierścień nad skałą / złożem w widoku z mostka
@@ -2299,7 +2381,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     audio: getAudio(), gameAudio, goToBoard, replayMission, boardUrl, respawn, killPlayer, damagePlayer, engageWarp,
     economy, industryPanel, mining, holdCapacity, unloadNearby, shipAhead, raids,
     strategy, rival, army, stratMap, get waypoint() { return waypoint; },
-    command, commandView, commandPanel, decisions, tacMap, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet,
+    command, commandView, commandPanel, decisions, tacMap, pauseMenu, saveSlots, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet,
   };
 }
 
@@ -2335,7 +2417,7 @@ function adaptResolution(raw) {
 function animate() {
   const raw = clock.getDelta();
   adaptResolution(raw);
-  tick(Math.min(raw, 0.05));
+  if (!pauseMenu.open && !savePanel.open) tick(Math.min(raw, 0.05)); // krok 12c: menu gry = pauza
   renderer.render(scene, camera);
   if (mode === 'mostek') commandView.renderPip(); // krok 12: okienko podglądu wyprawy
 }

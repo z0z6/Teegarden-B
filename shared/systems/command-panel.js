@@ -101,7 +101,7 @@ export function createCommandPanel(root, {
       <div class="cp-res cp-sci" title="Badanie w toku">${scienceIcon(18)}${rs ? `<span><b>${esc(TECHS[rs.id].name)}</b><span class="cp-pbar"><i data-live="sci"></i></span></span>` : '<small>laboratoria wolne</small>'}</div>
       ${army ? `<button class="cp-res cp-fleetres" data-act="fleet-tab" title="Flota: okręty i stocznia">${warshipIcon('fregata', 18, '#ff7a45')}<b>${fleetN}</b><small>okr.</small></button>` : ''}
       <div class="cp-res cp-dom" title="Udział w wartości pól sektora">${fieldIcon(18, '#ffd36b')}<b>${share}%</b><small>sektora${war ? ' · <span class="war">WOJNA</span>' : ''}</small></div>
-      <button class="cp-savebtn" data-act="saves" title="Zapis i wczytanie gry (Ctrl+S — szybki zapis)">${saveIcon(18)}<span>Zapis</span></button>`);
+      <button class="cp-savebtn" data-act="saves" title="Menu gry: zapisz, wczytaj, porzuć (Esc; Ctrl+S — szybki zapis)">${saveIcon(18)}<span>Menu <kbd>Esc</kbd></span></button>`);
     const bar = R.top.querySelector('[data-live="sci"]');
     if (bar && rs) bar.style.width = `${(1 - rs.t / TECHS[rs.id].time) * 100}%`;
   }
@@ -404,7 +404,7 @@ export function createCommandPanel(root, {
       <button data-act="tactical" class="cp-mnav-tac">${fieldIcon(20, '#ff5a8a')}<span>Taktyka</span></button>
       <button data-act="map">${fieldIcon(20, '#ffd36b')}<span>Mapa</span></button>
       <button data-act="industry">${stationIcon('przeladunek', 20, '#4dd6a0')}<span>Przemysł</span></button>
-      <button data-act="saves">${saveIcon(20)}<span>Zapis</span></button>
+      <button data-act="saves">${saveIcon(20)}<span>Menu</span></button>
       <button data-act="pilot" class="cp-mnav-pilot">${pilotIcon(20)}<span>Za sterami</span></button>`);
   }
   function setSheet(k) {

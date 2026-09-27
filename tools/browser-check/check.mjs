@@ -63,6 +63,16 @@ console.log('\n1. Okładka (intro)');
   const href = await page.getAttribute('#play', 'href');
   ok(/^\.\/step12-dowodztwo\/\?uklad=teegarden&statek=/.test(href), `„Graj” prowadzi na mostek siedziby w wybranym układzie (${href})`);
   ok(/missions\.html\?uklad=/.test(await page.getAttribute('#board', 'href')), 'link „Misje i wybór statku” prowadzi na tablicę');
+  await page.click('#choose-race');
+  ok(await page.locator('#race-list .race').count() === 7, 'wybór rasy: 7 ras z portretami');
+  await page.click('#race-list .race[data-id="rezonanci"]');
+  const rh = await page.getAttribute('#play', 'href');
+  ok(/statek=[^&]*rezonanci/.test(rh) && /Rezonanci/.test(await page.textContent('#play-system')), `wybrana rasa idzie do gry: ${rh}`);
+  await page.reload({ waitUntil: 'load' });
+  ok(/statek=[^&]*rezonanci/.test(await page.getAttribute('#play', 'href')), 'wybór rasy zapamiętany po odświeżeniu');
+  await page.evaluate(() => localStorage.removeItem('teegarden-b:rasa'));
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(1500);
   ok(await page.locator('.au-btn').count() === 1, 'przycisk dźwięku jest');
   const locked = await page.getAttribute('.au', 'data-locked');
   ok(locked === 'true', 'przed gestem dźwięk czeka (wymóg przeglądarek)');
@@ -406,18 +416,20 @@ console.log('\n3e. Krok 12: garnizon, zapis i wczytanie gry, telefon (tryb kompa
   ok(await page.evaluate(() => document.querySelector('.cp-tabs button.on')?.dataset.tab === 'flota' && document.querySelectorAll('.cp-tab .cp-ship').length === 3), '„Buduj okręty” otwiera zakładkę Flota ze stocznią (3 klasy)');
   // zapis
   await page.click('.cp-savebtn');
-  ok(await page.evaluate(() => document.getElementById('saves').classList.contains('visible')), 'przycisk „Zapis” otwiera okno zapisu');
+  ok(await page.evaluate(() => __game.pauseMenu.open), 'przycisk „Menu” otwiera menu gry');
+  await page.click('#pause-menu [data-act="load"]');
+  await page.evaluate(() => { __game.economy.state.credits = 4242; });
   await page.fill('#saves input[type=text]', 'Test przeglądarki');
   await page.click('#saves button[type=submit]');
   ok(await page.locator('.sv-slot').count() === 1, 'zapis na liście');
   await page.evaluate(() => { __game.economy.state.credits = 7; __game.economy.save(); });
   await page.click('.sv-slot [data-act="load"]');
   ok(await page.locator('.sv-slot [data-act="load"].armed').count() === 1, 'wczytanie wymaga drugiego kliknięcia („Na pewno?”)');
-  await Promise.all([page.waitForURL(/step12-dowodztwo\/\?uklad=teegarden&statek=/, { waitUntil: 'load' }), page.click('.sv-slot [data-act="load"]')]);
-  await page.goto(page.url() + '&debug', { waitUntil: 'load' });
+  await Promise.all([page.waitForURL(/step12-dowodztwo\/\?uklad=teegarden&statek=.*wczytaj=1/, { waitUntil: 'load' }), page.click('.sv-slot [data-act="load"]')]);
   await page.waitForFunction(() => window.__game?.command?.hq(), null, { timeout: 90000 });
   const cr = await page.evaluate(() => __game.economy.state.credits);
-  ok(cr > 100, `po wczytaniu kredyty z zapisu (${Math.round(cr)}, a nie 7)`);
+  ok(Math.abs(cr - 4242) < 60, `po wczytaniu kredyty z zapisu (${Math.round(cr)}, a nie 7 ani 1500 z nowej gry)`);
+  ok(!page.url().includes('wczytaj'), 'adres bez ?wczytaj — odświeżenie strony to znów nowa gra');
   ok(await page.evaluate(() => __game.army.ships.length === 3), 'po wczytaniu nadal 3 okręty (bez drugiego garnizonu)');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.close();
@@ -499,6 +511,41 @@ console.log('\n3f. Krok 12b: wieże strażnicze, mapa taktyczna, sektory, trasy 
   ok(cr1 > cr0 + 100, `Giełda: 50 t żelaza → +${Math.round(cr1 - cr0)} kr`);
   await page.click('.cp-tabs button[data-tab="logistyka"]');
   ok(await page.locator('.cp-routes button.on').count() === 1, 'Logistyka: wybór domyślnej trasy urobku');
+  ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
+  await page.close();
+}
+
+// ------------------------------------------------------------
+console.log('\n3g. Krok 12c: nowa gra przy starcie, menu gry (Esc), pauza, porzucenie');
+{
+  const { page, errors } = await open('/step12-dowodztwo/?uklad=teegarden&debug');
+  await page.waitForFunction(() => window.__game?.command?.hq() && !document.body.classList.contains('intro'), null, { timeout: 90000 });
+  await page.evaluate(() => { __game.economy.state.credits = 99999; __game.economy.state.time = 600; __game.economy.save(); });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => window.__game?.command?.hq(), null, { timeout: 90000 });
+  const g = await page.evaluate(() => ({ cr: __game.economy.state.credits, t: __game.economy.state.time, auto: __game.saveSlots.list().find((s) => s.id.startsWith('auto-')) }));
+  ok(g.cr < 5000 && g.t < 60, `włączenie gry: nowa kampania od stanu początkowego (kredyty ${Math.round(g.cr)})`);
+  ok(g.auto && g.auto.meta.credits === 99999, `poprzednia gra na liście zapisów: „${g.auto?.name}”`);
+  await page.waitForFunction(() => !document.body.classList.contains('intro'), null, { timeout: 30000 });
+  await page.keyboard.press('Escape');
+  ok(await page.evaluate(() => __game.pauseMenu.open && document.getElementById('pause-menu').classList.contains('visible')), 'Esc: menu gry (Wróć / Zapisz / Wczytaj / Porzuć)');
+  const t0 = await page.evaluate(() => __game.economy.state.time);
+  await page.waitForTimeout(1200);
+  ok(await page.evaluate((t) => __game.economy.state.time === t, t0), 'menu otwarte = pauza (czas gry stoi)');
+  await page.click('#pause-menu [data-act="save"]');
+  ok(await page.evaluate(() => __game.saveSlots.list().filter((s) => !s.id.startsWith('auto-')).length >= 1), `„Zapisz grę”: ${await page.textContent('#pause-menu .pm-msg')}`);
+  await page.keyboard.press('Escape');
+  // bez GPU (swiftshader) gra ma kilka klatek/s - czekamy na klatkę, nie na zegar
+  const resumed = await page.waitForFunction((t) => !__game.pauseMenu.open && __game.economy.state.time > t, t0, { timeout: 10000 }).then(() => true, () => false);
+  ok(resumed, 'Esc drugi raz: powrót do gry, czas rusza');
+  await page.evaluate(() => __game.tacMap.show({}));
+  await page.keyboard.press('Escape');
+  ok(await page.evaluate(() => !__game.tacMap.open && !__game.pauseMenu.open), 'Esc przy otwartej mapie taktycznej najpierw ją zamyka');
+  await page.keyboard.press('Escape');
+  await page.click('#pause-menu [data-act="quit"]');
+  ok(await page.locator('#pause-menu [data-act="quit"].armed').count() === 1, '„Porzuć grę” pyta „Na pewno?”');
+  await Promise.all([page.waitForURL(/\/index\.html$/, { waitUntil: 'domcontentloaded' }), page.click('#pause-menu [data-act="quit"]')]);
+  ok(true, 'porzucenie: powrót na okładkę');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.close();
 }

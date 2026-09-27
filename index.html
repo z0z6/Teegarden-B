@@ -102,6 +102,21 @@
     .system b { font-weight: 600; font-size: 0.98rem; }
     .system span { grid-column: 2; font-size: 0.82rem; line-height: 1.45; color: var(--ink-dim); }
 
+
+    /* wybór rasy: jak wybór układu, z portretem przedstawiciela rasy */
+    .race-link b { color: var(--c, var(--ink)); }
+    .race {
+      display: grid; grid-template-columns: 52px 1fr; gap: 0.1rem 0.8rem; width: 100%; align-items: center;
+      padding: 0.45rem 0.7rem; margin: 0; text-align: left; cursor: pointer;
+      color: var(--ink); background: none; border: 0; border-left: 2px solid transparent; font: inherit;
+    }
+    .race:hover, .race[aria-pressed="true"] { background: var(--glass); border-left-color: var(--c); }
+    .race-pic { grid-row: span 2; width: 52px; height: 52px; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 60%, transparent), 0 0 14px -4px var(--c); }
+    .race-pic svg { display: block; width: 100%; height: 100%; }
+    .race b { font-weight: 600; font-size: 0.98rem; color: var(--c); }
+    .race span:last-child { font-size: 0.8rem; line-height: 1.4; color: var(--ink-dim); }
+    .races #race-list { max-height: 46vh; overflow-y: auto; }
+    .race:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
     footer {
       display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 0.6rem 2rem;
       font-size: 0.8rem; color: var(--ink-dim);
@@ -161,9 +176,14 @@
       </p>
       <div class="actions">
         <a class="play" id="play" href="./missions.html">Graj <small id="play-system"></small></a>
+        <button class="link race-link" id="choose-race" aria-expanded="false" aria-controls="races">Wybierz rasę</button>
         <button class="link" id="choose" aria-expanded="false" aria-controls="systems">Wybierz układ startowy</button>
         <a class="link" id="board" href="./missions.html">Misje i wybór statku</a>
         <button class="link" id="controls-open">Sterowanie</button>
+      </div>
+      <div class="systems races" id="races">
+        <p>Twoja rasa: siedziba, załoga, statki i stronnictwa. Każda rasa ma własną kampanię i zapisy.</p>
+        <div id="race-list"></div>
       </div>
       <div class="systems" id="systems">
         <p>Gwiazda w tle pokazuje wybrany układ.</p>
