@@ -134,6 +134,87 @@ w poziomie) strona dostaje klasę `body.ui-compact`. Adres `?ui=kompakt` albo
   komputerze też działa.
 - **Komunikator**: dotknięcie zamyka komunikat bez wyboru.
 
+## Wieże strażnicze i mapa taktyczna (`shared/systems/tactical-map.js`)
+
+**Wieża strażnicza** to autonomiczny dron obronny, piąty typ w hangarze. Na
+start są dwie. Ma lekkie działko (szybki ogień) i rakiety z naprowadzaniem
+(rzadko, mocno, wybuch obszarowy). Nie lata na wyprawy: rozstawia się ją
+w dowolnym punkcie układu siedziby na **mapie taktycznej** („Mapa taktyczna”
+na górze rozkazów, rozkaz „Rozstaw wieże”, a na telefonie przycisk
+*Taktyka* w dolnym pasku).
+
+- **Postaw wieżę**, potem dotknij mapy: wieża wylatuje z hangaru na to
+  miejsce. Podczas wybierania okrąg zasięgu idzie za kursorem albo palcem.
+- **Okrąg** wokół wieży (na mapie i w 3D, płaski pierścień pod wieżą) to
+  zasięg skutecznej osłony, domyślnie 1900 j. Wrogów w nim wieża
+  ostrzeliwuje. Górnicy i zwiadowcy pracujący w okręgu giną dużo wolniej
+  (każda wieża: −70% strat).
+- Wieżę na mapie można **przeciągnąć**: przelatuje na nowe miejsce.
+  *Wycofaj* odsyła ją do hangaru.
+- Wieża może zostać zestrzelona, bo wrogowie widzą ją jako cel. Na pozycji
+  sama się naprawia, gdy nikt do niej nie strzela.
+- Ulepszenie **Uzbrojenie wież** daje +20% obrażeń i +10% zasięgu na poziom.
+
+Mapa pokazuje układ z góry: siedzibę na dole i jej wylot w górę, jak widok
+z mostka. Widać na niej pola (nieznane jako „?”), skały (kolor = klasa,
+przerywana obwódka = niezbadana), stacje, frachtowiec, wyprawy w locie
+i wrogów. Kółko myszy albo `+`/`−` przybliża, `⌂` wraca do okolic siedziby,
+`⤢` pokazuje cały układ. Przeciąganie tła przesuwa mapę.
+
+## Sektory: ile dronów w którym polu
+
+Zakładka **Sektory** mapy taktycznej ma dla każdego pola liczniki
+**Zwiadowca / Górnik / Holownik** z przyciskami −/+. To stały przydział:
+zarządca (`command.js updateAlloc`) sam wysyła drony z hangaru, rozkłada
+grupy po najmniej obłożonych skałach, dosyła po powrocie i odwołuje
+nadmiar. Przy zmniejszeniu przydziału część grupy odłącza się i wraca.
+Wyprawy z przydziału nie pytają o nic, więc nie ma dla nich kart decyzji.
+
+- Zwiadowcy lecą na nieznane pole, a potem na niezbadane skały. Gdy
+  wszystko jest zbadane, wracają i przydział sam się zeruje.
+- Górnicy bez zbadanych skał czekają, a kwatermistrz podpowiada
+  „przydziel zwiadowców”.
+- Każde pole ma własną trasę urobku (Huta / Magazyn / Frachtowiec) oraz
+  licznik wież, które je osłaniają.
+- Alarm („Zaalarmuj wszystkich”) wstrzymuje dosyłanie.
+
+Na start hangar ma **12 górników** (było 6). Starsze kampanie dostają raz
++6 górników i 2 wieże przy pierwszym wczytaniu.
+
+## Logistyka urobku: decyzja uruchamia automatykę
+
+Przy wysłaniu górników wyskakuje karta **„Dokąd urobek?”**:
+
+| Trasa | Co się dzieje dalej, samo |
+|---|---|
+| **Huta** | urobek od razu do pieca. Gdy w kolejce jest ponad 900 t, karta „Huta nie nadąża” z przyciskami *Ulepsz piece* / *Nowy urobek do magazynu* / *…na frachtowiec* |
+| **Magazyn** | urobek do magazynu, a huta sama dobiera z magazynów, gdy ma wolne moce. Bez magazynu wyskakuje karta z gotowym *Zbuduj magazyn* (urobek idzie tymczasem do huty). **Magazyn pełny (95%)**: frachtowiec sam go opróżnia do połowy i sprzedaje urobek, a karta proponuje **Wielki magazyn** (nowa stacja, 2400 t urobku, 6000 t metalu) jednym kliknięciem |
+| **Frachtowiec** | urobek na frachtowiec przy siedzibie. Frachtowiec odlatuje, gdy ma pełną ładownię (400 t) albo dłużej nic nie dostaje, po czym sprzedaje urobek poza układem (55% wartości czystego metalu) i wraca. Gdy nie nadąża, karta *Kup frachtowiec* / *Urobek do huty* |
+
+Wybór w karcie staje się trasą domyślną. „Zawsze: …” wyłącza pytanie.
+Zakładka **Logistyka** pokazuje trasę domyślną i przełącznik pytania,
+kolejkę huty, zapełnienie magazynów (z budową magazynów), frachtowce
+(z dokupieniem kolejnego, najwyżej 4) i przydziały do pól.
+
+## Giełda (`shared/systems/exchange.js`)
+
+Zakładka **Giełda** wymienia dowolny zasób na inny: kredyty, żelazo,
+nikiel, kobalt, platynę oraz urobek (urobek tylko na sprzedaż). Wymiana
+idzie przez kredyty po kursie rynku z kroku 10:
+
+- sprzedaż: kurs × (1 − prowizja). Prowizja wynosi 8%, a z własnym
+  terminalem (stacja przeładunkowa przy siedzibie) 3%,
+- kupno metalu: kurs × 1,1,
+- sprzedaż metalu obniża jego kurs, a kupno podnosi (duże wymiany psują
+  sobie kurs),
+- urobek wyceniany jest na połowę wartości metali, które w nim są,
+- giełda nie sprzeda metalu, którego nie ma gdzie złożyć (miejsce w składzie
+  siedziby i magazynach).
+
+Wybierasz *Oddaję*, *Dostaję* i ilość (10 / 50 / 100 / 500, ½, wszystko),
+a wycena z kursem i prowizją widać przed kliknięciem **Wymień**. Pod spodem
+jest tabela kursów kupna, sprzedaży i trendu rynku.
+
 ## Decyzje zamiast klawiszologii (`shared/systems/decisions.js`)
 
 Karty wyskakują same. Każda ma 1–3 proste przyciski i czasem
@@ -184,6 +265,8 @@ straty), a pierwsze trafienie otwiera kartę z wyborem.
 | `shared/systems/save-slots.js` | nazwane zapisy w localStorage, wczytanie (podmiana autozapisu), eksport / import pliku |
 | `shared/systems/save-panel.js` | okno zapisu gry |
 | `shared/systems/dashboard.js` | meldunki załogi, limit kart naraz, dziennik |
+| `shared/systems/tactical-map.js` | mapa taktyczna: wieże (stawianie, przeciąganie, okręgi zasięgu), przydział dronów do pól |
+| `shared/systems/exchange.js` | giełda: wycena i wymiana zasobów |
 
 Zapis kampanii kroku 12 jest osobny od kroku 11
 (`teegarden-b.dowodztwo.v1.<rasa>`). Stan dowództwa (hangar, wyprawy,
@@ -222,6 +305,14 @@ i decyzję), górników (pełne ładownie, decyzję, hutę i odzysk), naukę
 (wymagania i odkrycia), ulepszenia (koszt, limit, mnożniki floty),
 autonomię rojów, wyprawę pod ostrzałem, budowę z mostka i zapis, garnizon
 (3 okręty, obrona pola, bez utrzymania, raz na kampanię) oraz zapisy gry
-(sloty, wczytanie, nadpisanie, eksport / import, brak miejsca).
-W przeglądarce: `node tools/browser-check/check.mjs`, sekcje „3d” i „3e”
-(garnizon, zapis → wczytanie z przeładowaniem, telefon 844×390).
+(sloty, wczytanie, nadpisanie, eksport / import, brak miejsca), a od 12b
+także start z 12 górnikami i wieżami (z dodatkiem dla starych zapisów),
+wieże (rozstawienie, zasięg, ogień działka i rakiet, osłona wypraw,
+przestawienie, wycofanie), przydział do pól (wysyłka, zmniejszenie,
+zwiad nieznanego pola), trasy urobku z automatyką (magazyn → huta, pełny
+magazyn → frachtowiec + karta, huta nie nadąża, drugi frachtowiec)
+i giełdę.
+W przeglądarce: `node tools/browser-check/check.mjs`, sekcje „3d”, „3e”
+(garnizon, zapis → wczytanie z przeładowaniem, telefon 844×390) i „3f”
+(mapa taktyczna: stawianie i przeciąganie wieży, sektory, karta trasy,
+giełda).

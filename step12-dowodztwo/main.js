@@ -44,6 +44,8 @@ import { createCommandPanel } from '../shared/systems/command-panel.js';
 import { createDecisions } from '../shared/systems/decisions.js';
 import { createSaveSlots } from '../shared/systems/save-slots.js';
 import { createSavePanel } from '../shared/systems/save-panel.js';
+import { createTacticalMap } from '../shared/systems/tactical-map.js';
+import { createExchange } from '../shared/systems/exchange.js';
 import { setSurfaceQuality } from '../shared/systems/surface-detail.js';
 
 // ============================================================
@@ -848,7 +850,7 @@ const npcs = createNpcManager(scene, combat, playerProxy, {
   // przeszkody do omijania: gwiazdy, planety, księżyce, planetoidy i gruz w pobliżu gracza
   getObstacles: () => collectSolidBodies(starSystem, debrisField, shipGroup.position)
     .concat(economy.solids()).concat(rival.solids()), // krok 10-11: NPC omijają planetoidy, stacje i placówki
-  getContacts: () => economy.contacts().concat(rival.contacts()), // krok 10-11: drony, stacje, placówki ras w wojnie
+  getContacts: () => economy.contacts().concat(rival.contacts(), command.contacts()), // krok 10-11: drony, stacje, placówki ras w wojnie; 12b: wieże strażnicze
 });
 const comms = createComms(document.getElementById('comms'));
 const labels = createTargetLabels(document.getElementById('targets'), camera);
@@ -1914,10 +1916,12 @@ else if (command.state.home !== starSystem.id && !urlMission) { swapSystem(comma
 // (raz na kampanię - stare zapisy też go dostają; army.grantGarrison)
 army.grantGarrison({ cls: 'eskorta', n: 3, sysId: command.state.home, field: economy.fieldDefs(command.state.home)[0].id });
 command.hooks.guardFire = (e, p) => gameAudio?.fire('pulse', p.clone(), 'ally');
+command.hooks.sentryFire = (x, p, kind) => gameAudio?.fire(kind === 'rocket' ? 'missile' : 'pulse', p.clone(), 'ally');
 command.hooks.fleet = (fid) => sendFleet(fid);
 command.hooks.result = (r) => commandPanel.result(r);
 
 const commandView = createCommandView({
+  getHostiles: () => npcs.hostiles(),
   scene, renderer, camera, cameraRig, command, economy, background, quality: QUALITY,
   pipEl: document.getElementById('pip'), pipLabel: document.querySelector('#pip .pip-label'),
 });
@@ -1930,7 +1934,15 @@ const commandPanel = createCommandPanel(document.getElementById('command'), {
   onWatch: (e) => watchExpedition(e),
   onHover: (id) => { hoverTarget = id; },
   onSaves: () => savePanel.toggle(),
+  exchange: createExchange({ economy, command }),
+  onTactical: (o) => tacMap.show(o),
   compact: () => compactUI,
+});
+
+// krok 12b: mapa taktyczna - wieże strażnicze i przydział dronów do pól
+const tacMap = createTacticalMap(document.getElementById('tac-map'), {
+  command, economy, getHostiles: () => npcs.hostiles(),
+  onResult: (r) => { if (r && !r.ok) getAudio().play?.('ui-hover', { force: true }); },
 });
 
 function applyCompact() {
@@ -2077,7 +2089,7 @@ function setMode(m, { intro = false } = {}) {
   }
   if (m !== 'podglad') commandView.stopSpectate();
   applyCompact(); // ile kart załogi naraz zależy od trybu
-  if (m !== 'mostek') savePanel.hide();
+  if (m !== 'mostek') { savePanel.hide(); tacMap.hide(); }
   if (m === 'mostek' && (prev !== 'mostek' || intro)) {
     commandView.startIntro(intro ? { dur: 6 } : { dur: 2.4, from: { pos: cameraRig.position.clone(), quat: cameraRig.quaternion.clone() } });
     if (intro) showIntroTitle();
@@ -2267,6 +2279,7 @@ function tick(delta) {
   if (mode !== 'lot') { fireInput.held = false; mining.held = false; }
   decisions.update(delta);
   if (mode === 'mostek') commandPanel.update(delta);
+  tacMap.update(delta);
   updateAimMark();
   background.update(camera); // tło "w nieskończoności": gwiazdy podążają za kamerą (zero paralaksy)
   updateStory(delta);
@@ -2286,7 +2299,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     audio: getAudio(), gameAudio, goToBoard, replayMission, boardUrl, respawn, killPlayer, damagePlayer, engageWarp,
     economy, industryPanel, mining, holdCapacity, unloadNearby, shipAhead, raids,
     strategy, rival, army, stratMap, get waypoint() { return waypoint; },
-    command, commandView, commandPanel, decisions, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet,
+    command, commandView, commandPanel, decisions, tacMap, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet,
   };
 }
 

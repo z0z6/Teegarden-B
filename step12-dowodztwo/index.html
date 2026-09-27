@@ -1377,6 +1377,140 @@
     body.ui-compact .sv-note { margin: 4px 0 8px; font-size: 11px; }
     body.ui-compact #industry { max-height: calc(100vh - 12px); }
     body.ui-compact #intro-title b { font-size: 44px; }
+
+    /* ============================================================
+       KROK 12b: MAPA TAKTYCZNA, LOGISTYKA, GIEŁDA
+       ============================================================ */
+    .cp-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .cp-side { bottom: 108px; } /* nad przyciskami akcji (Za sterami, Mapa, Przemysł) */
+    .cp-tabs button { border-radius: 8px; border-bottom: 1px solid var(--panel-line); }
+    .cp-tactical { display: flex; align-items: center; gap: 10px; text-align: left; padding: 9px 10px; border-radius: 10px;
+      background: linear-gradient(90deg, rgba(255, 90, 138, 0.26), rgba(255, 90, 138, 0.05)); border: 1px solid rgba(255, 90, 138, 0.6); box-shadow: 0 0 18px -8px #ff5a8a; }
+    .cp-tactical:hover { background: linear-gradient(90deg, rgba(255, 90, 138, 0.4), rgba(255, 90, 138, 0.08)); }
+    .cp-tactical b { display: block; font-size: 13px; }
+    .cp-tactical small { color: var(--ink-dim); font-weight: 400; font-size: 11px; }
+    .cp-routes { display: grid; gap: 5px; }
+    .cp-routes button { display: block; text-align: left; padding: 7px 9px; border-radius: 9px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--panel-line); }
+    .cp-routes button.on { background: rgba(255, 180, 92, 0.16); border-color: #ffb45c; }
+    .cp-routes b { display: block; font-size: 12.5px; }
+    .cp-routes small { display: block; color: var(--ink-dim); font-weight: 400; font-size: 11px; line-height: 1.4; }
+    .cp-row button { display: inline-flex; align-items: center; gap: 5px; }
+    .cp-goods { display: flex; flex-wrap: wrap; gap: 4px; }
+    .cp-goods button, .cp-amts button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 99px; background: rgba(159, 216, 255, 0.06); border: 1px solid var(--panel-line); font-size: 11.5px; }
+    .cp-goods button.on, .cp-amts button.on { background: rgba(255, 211, 107, 0.2); border-color: var(--gold); color: #fff3cf; }
+    .cp-amts { display: flex; flex-wrap: wrap; gap: 4px; }
+    .cp-quote { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 4px; padding: 10px; border-radius: 10px; background: rgba(77, 214, 160, 0.08); border: 1px solid rgba(77, 214, 160, 0.4); font-size: 13px; }
+    .cp-quote span { display: inline-flex; align-items: center; gap: 5px; }
+    .cp-quote b { font: 800 20px/1 var(--display); }
+    .cp-quote .cp-arrow { font-size: 18px; color: var(--friend); }
+    .cp-quote small { flex-basis: 100%; color: var(--ink-dim); font-size: 11px; }
+    .cp-quote.bad { background: rgba(255, 90, 77, 0.08); border-color: rgba(255, 90, 77, 0.4); }
+    .cp-quote.bad small { color: #ffb0a6; }
+    .cp-rates { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+    .cp-rates th { text-align: right; color: var(--ink-dim); font-weight: 600; font-size: 10px; padding: 3px 4px; }
+    .cp-rates td { text-align: right; padding: 4px; border-top: 1px solid rgba(159, 216, 255, 0.07); }
+    .cp-rates td:first-child { text-align: left; white-space: nowrap; }
+    .cp-rates .up { color: var(--friend); } .cp-rates .down { color: #ffb0a6; }
+
+    #tac-map { position: fixed; inset: 58px 12px 12px; z-index: 1340; display: none; grid-template-columns: minmax(0, 1fr) 360px; gap: 0; overflow: hidden;
+      color: var(--ink); font-family: var(--body); font-size: 13px;
+      background: linear-gradient(180deg, rgba(8, 14, 24, 0.97), rgba(3, 6, 11, 0.97)); border: 1px solid rgba(255, 90, 138, 0.3); border-top: 2px solid #ff5a8a; border-radius: 16px;
+      box-shadow: 0 40px 100px -30px #000; }
+    #tac-map.visible { display: grid; }
+    .tm-mapwrap { position: relative; min-width: 0; min-height: 0; background: radial-gradient(ellipse at 50% 80%, rgba(40, 60, 90, 0.35), transparent 70%); }
+    .tm-svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: grab; }
+    #tac-map.placing .tm-svg { cursor: crosshair; }
+    .tm-svg text { fill: var(--ink-dim); text-anchor: middle; font-family: var(--body); pointer-events: none; }
+    .tm-ring { fill: none; stroke: rgba(159, 216, 255, 0.08); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .tm-ringl { fill: rgba(159, 216, 255, 0.3) !important; text-anchor: start !important; }
+    .tm-field circle { fill: rgba(255, 211, 107, 0.05); stroke: rgba(255, 211, 107, 0.5); stroke-width: 1.4; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; cursor: pointer; }
+    .tm-field text { fill: #ffe2b0; font-weight: 600; }
+    .tm-field.unknown circle { fill: rgba(159, 216, 255, 0.03); stroke: rgba(159, 216, 255, 0.35); }
+    .tm-field.unknown text { fill: #9fd8ff; }
+    .tm-field .tm-q { fill: rgba(159, 216, 255, 0.5); font-weight: 800; }
+    .tm-field.foreign circle { stroke: rgba(255, 90, 77, 0.6); }
+    .tm-field.sel circle { stroke: #ffd36b; stroke-width: 2.6; stroke-dasharray: none; fill: rgba(255, 211, 107, 0.1); }
+    .tm-rock { pointer-events: none; }
+    .tm-station text { fill: #fff3cf; }
+    .tm-sentry .tm-range { fill: rgba(255, 90, 138, 0.07); stroke: rgba(255, 90, 138, 0.8); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .tm-sentry.moving .tm-range { stroke-dasharray: 6 5; fill: rgba(255, 90, 138, 0.03); }
+    .tm-sentry.sel .tm-range { stroke: #ffc2d6; stroke-width: 2.5; fill: rgba(255, 90, 138, 0.12); }
+    .tm-hex { fill: #ff5a8a; stroke: #fff; stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .tm-hit { fill: transparent; cursor: move; }
+    .tm-path { stroke: #ff9abb; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    .tm-hull { fill: var(--friend); }
+    .tm-range.ghost { fill: rgba(255, 90, 138, 0.1); stroke: #ffc2d6; stroke-width: 2; stroke-dasharray: 8 6; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .tm-hex.ghost { opacity: 0.7; }
+    .tm-exp text { font-weight: 700; text-anchor: start !important; }
+    .tm-foe { fill: var(--foe); stroke: #fff; stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .tm-freighter rect { fill: #4dd6a0; }
+    .tm-freighter text { fill: #bff5dd !important; }
+    .tm-hint { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); padding: 6px 14px; border-radius: 99px; background: rgba(255, 90, 138, 0.9); color: #fff; font-weight: 600; font-size: 12px; pointer-events: none; }
+    .tm-hint[hidden] { display: none; }
+    .tm-toast { position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 8px); max-width: 80%; padding: 7px 14px; border-radius: 10px; background: rgba(6, 14, 24, 0.94); border: 1px solid var(--panel-line); font-weight: 600; font-size: 12px; opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none; text-align: center; }
+    .tm-toast.on { opacity: 1; transform: translate(-50%, 0); }
+    .tm-toast.bad { border-color: rgba(255, 90, 77, 0.6); color: #ffc4bd; }
+    .tm-zoom { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 5px; }
+    .tm-zoom button { width: 38px; height: 38px; border-radius: 10px; font: 700 18px var(--body); color: var(--ink); background: rgba(6, 14, 24, 0.85); border: 1px solid var(--panel-line); cursor: pointer; }
+    .tm-side { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--panel-line); background: rgba(6, 12, 20, 0.6); }
+    .tm-head { display: flex; align-items: flex-start; padding: 12px 14px 8px; }
+    .tm-kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: #ff9abb; }
+    .tm-title { font: 800 26px/1 var(--display); letter-spacing: 0.02em; }
+    .tm-close { margin-left: auto; font: 28px/1 var(--body); color: var(--ink-dim); background: none; border: 0; cursor: pointer; }
+    .tm-tabs { display: flex; gap: 4px; padding: 0 12px 8px; }
+    .tm-tabs button { flex: 1; font: 600 12px var(--body); color: var(--ink-dim); padding: 7px 6px; border-radius: 99px; background: rgba(159, 216, 255, 0.06); border: 1px solid var(--panel-line); cursor: pointer; }
+    .tm-tabs button.on { color: #fff; background: rgba(255, 90, 138, 0.3); border-color: #ff5a8a; }
+    .tm-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 14px; }
+    .tm-body h4 { margin: 12px 0 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #ff9abb; }
+    .tm-note { margin: 4px 0 8px; color: var(--ink-dim); font-size: 12px; line-height: 1.5; }
+    .tm-note b { color: var(--ink); }
+    .tm-note.dim { font-size: 11px; opacity: 0.8; }
+    .tm-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tm-btn { display: inline-flex; align-items: center; gap: 5px; font: 600 12px var(--body); color: var(--ink); cursor: pointer; padding: 7px 11px; border-radius: 8px; background: rgba(159, 216, 255, 0.08); border: 1px solid var(--panel-line); }
+    .tm-btn small { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-dim); font-weight: 400; }
+    .tm-btn.primary { color: #fff; background: linear-gradient(180deg, #ff6f9b, #c83a66); border-color: #ff5a8a; }
+    .tm-btn.primary.on { animation: cpPulse 1s infinite; }
+    .tm-btn:disabled { opacity: 0.4; cursor: default; }
+    .tm-item { display: flex; align-items: center; gap: 9px; padding: 7px 8px; margin-bottom: 5px; border-radius: 9px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); cursor: pointer; }
+    .tm-item.sel { border-color: #ff5a8a; background: rgba(255, 90, 138, 0.1); }
+    .tm-item > div { flex: 1; min-width: 0; }
+    .tm-item b { font-size: 12.5px; } .tm-item small { display: block; color: var(--ink-dim); font-size: 11px; }
+    .tm-hbar { display: block; height: 3px; margin-top: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+    .tm-hbar i { display: block; height: 100%; background: var(--friend); }
+    .tm-sector { padding: 9px 10px; margin-bottom: 7px; border-radius: 11px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07); border-left: 3px solid rgba(255, 211, 107, 0.6); cursor: pointer; }
+    .tm-sector.sel { border-color: #ffd36b; background: rgba(255, 211, 107, 0.07); }
+    .tm-sector.foreign { border-left-color: var(--foe); }
+    .tm-sector header { display: flex; align-items: center; gap: 8px; }
+    .tm-sector header b { font-size: 13.5px; }
+    .tm-sector > small { display: block; margin: 2px 0 6px; color: var(--ink-dim); font-size: 11px; }
+    .tm-cover { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; color: #ffb3cb; }
+    .tm-cover.none { font-weight: 400; color: var(--ink-dim); }
+    .tm-step { display: grid; grid-template-columns: 20px 1fr 30px 26px 30px; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; }
+    .tm-step small { grid-column: 2 / -1; margin-top: -3px; color: var(--friend); font-size: 10.5px; }
+    .tm-step small:empty { display: none; }
+    .tm-step b { text-align: center; font: 800 17px/1 var(--display); }
+    .tm-step button { width: 30px; height: 30px; font: 700 16px var(--body); color: var(--ink); cursor: pointer; border-radius: 8px; background: rgba(159, 216, 255, 0.1); border: 1px solid var(--panel-line); touch-action: manipulation; }
+    .tm-step button:hover:not(:disabled) { border-color: var(--hud); }
+    .tm-step button:disabled { opacity: 0.35; cursor: default; }
+    .tm-step.locked { opacity: 0.5; }
+    .tm-route { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 11px; color: var(--ink-dim); }
+    .tm-route button { font: 600 11px var(--body); color: var(--ink); padding: 4px 8px; border-radius: 99px; background: rgba(159, 216, 255, 0.06); border: 1px solid var(--panel-line); cursor: pointer; }
+    .tm-route button.on { background: rgba(255, 180, 92, 0.22); border-color: #ffb45c; color: #fff3cf; }
+    @media (max-width: 900px) { #tac-map { grid-template-columns: minmax(0, 1fr) 300px; } }
+    body.ui-compact #tac-map { inset: 54px 4px 4px; grid-template-columns: minmax(0, 1fr) min(330px, 46vw); border-radius: 12px; }
+    body.ui-compact .tm-head { padding: 8px 10px 4px; }
+    body.ui-compact .tm-title { font-size: 20px; }
+    body.ui-compact .tm-kicker { display: none; }
+    body.ui-compact .tm-tabs { padding: 0 8px 6px; }
+    body.ui-compact .tm-body { padding: 2px 8px 10px; }
+    body.ui-compact .tm-note { font-size: 11px; margin: 2px 0 6px; }
+    body.ui-compact .tm-zoom { left: 6px; bottom: 6px; flex-direction: row; }
+    body.ui-compact .tm-zoom button { width: 34px; height: 34px; }
+    body.ui-compact .cp-tabs button { font-size: 10.5px; padding: 6px 2px; }
+    @media (orientation: portrait) and (max-width: 760px) {
+      #tac-map { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 46%); }
+      .tm-side { border-left: 0; border-top: 1px solid var(--panel-line); }
+    }
   </style>
 
   <!-- Importmap: three@0.184.0 (ta sama wersja co w narzędziach, którymi
@@ -1476,6 +1610,7 @@
   <div id="fade"></div>
   <div id="industry" role="dialog" aria-label="Panel przemysłu"></div>
   <div id="saves" role="dialog" aria-label="Zapis gry"></div>
+  <div id="tac-map" role="dialog" aria-label="Mapa taktyczna"></div>
   <button id="log-btn" type="button" title="Dziennik komunikatów" aria-label="Dziennik komunikatów"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true"><path d="M6 6 H26 V22 H14 L8 27 V22 H6 Z" fill="#9fd8ff" fill-opacity=".22" stroke="#9fd8ff" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 11 H22 M10 16 H19" stroke="#e8eef5" stroke-width="2" stroke-linecap="round"/></svg></button>
   <div id="log-panel" role="dialog" aria-label="Dziennik komunikatów"></div>
   <div id="strat-map" role="dialog" aria-label="Mapa strategiczna"></div>

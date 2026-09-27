@@ -27,7 +27,7 @@ const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _u = new THREE.Vector3
 const _m = new THREE.Matrix4(), _Y = new THREE.Vector3(0, 1, 0);
 const smooth = (t) => t * t * (3 - 2 * t);
 
-export function createCommandView({ scene, renderer, camera, cameraRig, command, economy, background, quality = 1, pipEl = null, pipLabel = null }) {
+export function createCommandView({ scene, renderer, camera, cameraRig, command, economy, background, quality = 1, pipEl = null, pipLabel = null, getHostiles = () => [] }) {
   const drones = createDroneRenderer(scene, 400);
   const ghosts = createDroneRenderer(scene, 60, { scale: 2.4 });
   for (const o of scene.children.slice(-2)) o.layers.set(GHOST_LAYER); // instancje + świetliki duchów
@@ -268,6 +268,107 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
   }
 
   // ------------------------------------------------------------
+  // WIEŻE STRAŻNICZE I FRACHTOWIEC (krok 12b)
+  // ------------------------------------------------------------
+  // Wieża: sześciokątny kadłub z obrotowym pierścieniem, działko i wyrzutnia;
+  // pod nią płaski pierścień zasięgu (ten sam okrąg co na mapie taktycznej).
+  const SENTRY_COL = new THREE.Color(DRONE_TYPES.wieza.color);
+  const sentryGeo = {
+    body: new THREE.CylinderGeometry(18, 22, 26, 6),
+    cap: new THREE.ConeGeometry(18, 14, 6),
+    ring: new THREE.TorusGeometry(30, 2.2, 6, 24),
+    gun: new THREE.BoxGeometry(4, 4, 34),
+    pod: new THREE.BoxGeometry(12, 10, 16),
+    range: new THREE.RingGeometry(0.985, 1, 96),
+    disc: new THREE.CircleGeometry(1, 64),
+  };
+  const sentryMat = {
+    hull: new THREE.MeshStandardMaterial({ color: 0x8e99a6, metalness: 0.6, roughness: 0.45 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x2a3038, metalness: 0.5, roughness: 0.6 }),
+    glow: new THREE.MeshStandardMaterial({ color: SENTRY_COL, emissive: SENTRY_COL, emissiveIntensity: 1.4 }),
+    range: new THREE.MeshBasicMaterial({ color: SENTRY_COL, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
+    disc: new THREE.MeshBasicMaterial({ color: SENTRY_COL, transparent: true, opacity: 0.045, side: THREE.DoubleSide, depthWrite: false }),
+  };
+  const sentryViews = new Map(); // id -> { group, spin, turret, range, disc }
+  function sentryView(x) {
+    let v = sentryViews.get(x.id);
+    if (v) return v;
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(sentryGeo.body, sentryMat.hull);
+    const cap = new THREE.Mesh(sentryGeo.cap, sentryMat.dark); cap.position.y = 20;
+    const spin = new THREE.Mesh(sentryGeo.ring, sentryMat.glow); spin.rotation.x = Math.PI / 2;
+    const turret = new THREE.Group(); turret.position.y = 8;
+    const gun = new THREE.Mesh(sentryGeo.gun, sentryMat.dark); gun.position.set(8, 0, 18);
+    const pod = new THREE.Mesh(sentryGeo.pod, sentryMat.hull); pod.position.set(-10, 2, 6);
+    turret.add(gun, pod);
+    const light = new THREE.PointLight(SENTRY_COL, 3000, 400, 2); light.position.y = 30;
+    group.add(body, cap, spin, turret, light);
+    const range = new THREE.Mesh(sentryGeo.range, sentryMat.range); range.rotation.x = -Math.PI / 2;
+    const disc = new THREE.Mesh(sentryGeo.disc, sentryMat.disc); disc.rotation.x = -Math.PI / 2;
+    scene.add(group, range, disc);
+    v = { group, spin, turret, range, disc };
+    sentryViews.set(x.id, v);
+    return v;
+  }
+  const _sp2 = new THREE.Vector3(), _aimT = new THREE.Vector3();
+  function drawSentries(dt, home) {
+    const alive = new Set();
+    if (home) {
+      const r = command.sentryRange();
+      const hostiles = getHostiles();
+      for (const x of command.sentries()) {
+        alive.add(x.id);
+        const v = sentryView(x);
+        command.sentryPose(x, _sp2);
+        v.group.position.copy(_sp2);
+        v.spin.rotation.z += dt * (x.phase === 'straz' ? 1.2 : 4);
+        // głowica: na najbliższego wroga w zasięgu, inaczej powolny obrót
+        let foe = null, best = r;
+        for (const h of hostiles) { if (!h.alive || h.hidden) continue; const d = h.group.position.distanceTo(_sp2); if (d < best) { best = d; foe = h; } }
+        if (foe) { _aimT.copy(foe.group.position); v.turret.lookAt(_aimT); } else v.turret.rotation.set(0, t * 0.4 + x.pos.x, 0);
+        const on = x.phase === 'straz';
+        v.range.visible = v.disc.visible = on;
+        if (on) {
+          v.range.position.set(x.pos.x, x.pos.y - 40, x.pos.z); v.range.scale.setScalar(r);
+          v.disc.position.copy(v.range.position); v.disc.scale.setScalar(r);
+        }
+      }
+    }
+    for (const [id, v] of sentryViews) {
+      if (alive.has(id)) continue;
+      scene.remove(v.group, v.range, v.disc);
+      sentryViews.delete(id);
+    }
+  }
+  // frachtowiec przy siedzibie (zadokowany = widoczny; w kursie znika w fałdzie)
+  const freighter = (() => {
+    const g = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(70, 46, 260), sentryMat.hull);
+    const bridgeM = new THREE.Mesh(new THREE.BoxGeometry(50, 30, 40), sentryMat.dark); bridgeM.position.set(0, 36, -110);
+    g.add(hull, bridgeM);
+    const cols = [0xb3462c, 0x2a8f86, 0xd9a93a, 0x39639e];
+    for (let i = 0; i < 8; i++) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(30, 22, 40), new THREE.MeshStandardMaterial({ color: cols[i % 4], metalness: 0.3, roughness: 0.7 }));
+      c.position.set(i % 2 ? 18 : -18, 34, -50 + Math.floor(i / 2) * 42);
+      g.add(c);
+    }
+    const eng = new THREE.Mesh(new THREE.CylinderGeometry(16, 20, 30, 12), new THREE.MeshStandardMaterial({ color: 0x9fd8ff, emissive: 0x9fd8ff, emissiveIntensity: 1.2 }));
+    eng.rotation.x = Math.PI / 2; eng.position.z = 140;
+    g.add(eng);
+    g.visible = false;
+    scene.add(g);
+    return g;
+  })();
+  function drawFreighter(home) {
+    const p = home ? command.freighterPos() : null;
+    freighter.visible = !!p && command.state.freighter.phase === 'dok';
+    if (!freighter.visible) return;
+    const f = command.frame();
+    freighter.position.copy(p).add(_sp2.set(0, Math.sin(t * 0.4) * 4, 0));
+    freighter.quaternion.copy(f.quat);
+  }
+
+  // ------------------------------------------------------------
   // PĘTLA
   // ------------------------------------------------------------
   let mode = 'mostek';
@@ -286,6 +387,8 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
     else if (mode === 'podglad' && spectate) updateSpectate(dt);
     if (economy.systemId === command.state.home) drawDrones(dt);
     else { drones.begin(); drones.end(); }
+    drawSentries(dt, home);
+    drawFreighter(home);
     if (!cine) { ghosts.begin(); ghosts.end(); }
     sparks.update(dt);
   }

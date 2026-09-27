@@ -349,7 +349,7 @@ console.log('\n3d. Dowództwo (krok 12): mostek, wyprawy, okienko, decyzje, tryb
     orders: document.querySelectorAll('.cp-order').length, tabs: document.querySelectorAll('.cp-tabs button').length, alive: __game.playerState.alive,
   }));
   ok(s0.mode === 'mostek' && s0.hq === 'siedziba' && s0.hudHidden, 'start na mostku siedziby, HUD lotu schowany');
-  ok(s0.orders === 4 && s0.tabs === 5, 'panel: 4 rozkazy wypraw, 5 zakładek (hangar, moduły, ulepszenia, nauka, flota)');
+  ok(s0.orders === 5 && s0.tabs === 7, 'panel: 5 rozkazów (z wieżami), 7 zakładek (hangar, moduły, logistyka, giełda, ulepszenia, nauka, flota)');
   await page.click('.cp-order[data-type="zwiadowca"]');
   ok(await page.locator('.cp-target').count() >= 4, 'wybór celu: nieznane złoża i niezbadane skały');
   await page.click('.cp-send button.primary');
@@ -438,6 +438,67 @@ console.log('\n3e. Krok 12: garnizon, zapis i wczytanie gry, telefon (tryb kompa
   await page.evaluate(() => { for (let i = 0; i < 4; i++) __game.decisions.ask({ id: `t${i}`, title: `Karta ${i}`, text: 'test', choices: [{ label: 'OK', act: 'ok' }], timeout: 60 }); });
   ok(await page.evaluate(() => [...document.querySelectorAll('#decisions .dc')].filter((d) => !d.hidden).length === 1), 'decyzje: jedna karta naraz, reszta czeka');
   await page.screenshot({ path: join(OUT, '3e-telefon.png') });
+  ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
+  await page.close();
+}
+
+// ------------------------------------------------------------
+console.log('\n3f. Krok 12b: wieże strażnicze, mapa taktyczna, sektory, trasy urobku, giełda');
+{
+  const { page, errors } = await open('/step12-dowodztwo/?uklad=teegarden&debug');
+  await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('teegarden-b.dowodztwo')) localStorage.removeItem(k); });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => window.__game?.command?.hq() && !document.body.classList.contains('intro'), null, { timeout: 90000 });
+  ok(await page.evaluate(() => __game.command.state.hangar.gornik === 12 && __game.command.state.hangar.wieza === 2), 'start: 12 górników i 2 wieże strażnicze w hangarze');
+  await page.click('.cp-tactical');
+  ok(await page.evaluate(() => document.getElementById('tac-map').classList.contains('visible')), '„Mapa taktyczna” otwiera widok z góry');
+  await page.click('#tac-map .tm-tabs [data-tab="wieze"]');
+  await page.click('#tac-map [data-act="place"]');
+  const box = await page.locator('#tac-map .tm-svg').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.4);
+  ok(await page.locator('#tac-map .tm-range.ghost').count() === 1, 'stawianie: okrąg zasięgu idzie za kursorem');
+  await page.mouse.click(box.x + box.width * 0.35, box.y + box.height * 0.4);
+  const st = await page.evaluate(() => ({ n: __game.command.sentries().length, h: __game.command.state.hangar.wieza }));
+  ok(st.n === 1 && st.h === 1, 'klik na mapie: wieża leci z hangaru na wskazane miejsce');
+  await page.evaluate(() => { for (let i = 0; i < 20 * 15; i++) __game.tick(1 / 20); });
+  await page.waitForTimeout(400);
+  ok(await page.locator('#tac-map .tm-sentry .tm-range').count() === 1, 'wieża na mapie z okręgiem zasięgu');
+  // przeciągnięcie wieży
+  const p0 = await page.evaluate(() => ({ ...__game.command.sentries()[0].pos }));
+  const hit = await page.locator('#tac-map .tm-hit').boundingBox();
+  await page.mouse.move(hit.x + hit.width / 2, hit.y + hit.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hit.x + hit.width / 2 + 80, hit.y + hit.height / 2 + 30, { steps: 6 });
+  await page.mouse.up();
+  const p1 = await page.evaluate(() => ({ ...__game.command.sentries()[0].pos, ph: __game.command.sentries()[0].phase }));
+  ok(Math.hypot(p1.x - p0.x, p1.z - p0.z) > 300 && p1.ph === 'lot', `przeciągnięcie: wieża przestawiona o ${Math.round(Math.hypot(p1.x - p0.x, p1.z - p0.z))} j.`);
+  await page.screenshot({ path: join(OUT, '3f-taktyka.png') });
+  // sektory: + górnik
+  await page.click('#tac-map .tm-tabs [data-tab="sektory"]');
+  const fid = await page.evaluate(() => __game.economy.fieldDefs(__game.command.state.home)[0].id);
+  for (let i = 0; i < 4; i++) await page.click(`#tac-map [data-act="alloc"][data-f="${fid}"][data-t="gornik"][data-d="1"]`);
+  await page.evaluate(() => { for (let i = 0; i < 20 * 2; i++) __game.tick(1 / 20); });
+  ok(await page.evaluate((f) => __game.command.allocCount(f, 'gornik') === 4, fid), 'Sektory: 4 × „+” przy górnikach = 4 górników pracuje w polu');
+  await page.click('#tac-map [data-act="close"]');
+  // trasa urobku przy wysyłce
+  await page.click('.cp-order[data-type="gornik"]');
+  await page.click('.cp-send button.primary');
+  await page.waitForFunction(() => __game.decisions.items.some((d) => d.id.startsWith('route-')), null, { timeout: 10000 });
+  ok(await page.locator('.dc-k-logistics .dc-btn[data-act="magazyn"]').count() === 1, 'wysłanie górników: karta „dokąd urobek?” (huta / magazyn / frachtowiec)');
+  await page.click('.dc-k-logistics .dc-btn[data-act="magazyn"]');
+  await page.waitForFunction(() => __game.decisions.items.some((d) => d.id === 'store-none'), null, { timeout: 10000 });
+  ok(true, 'magazyn bez magazynu: karta „Zbuduj magazyn”');
+  // giełda
+  await page.click('.cp-tabs button[data-tab="gielda"]');
+  const cr0 = await page.evaluate(() => __game.economy.state.credits);
+  await page.click('.cp-goods [data-act="ex-from"][data-g="zelazo"]');
+  await page.click('.cp-goods [data-act="ex-to"][data-g="kredyty"]');
+  await page.click('.cp-amts [data-a="50"]');
+  await page.click('[data-act="ex-trade"]');
+  const cr1 = await page.evaluate(() => __game.economy.state.credits);
+  ok(cr1 > cr0 + 100, `Giełda: 50 t żelaza → +${Math.round(cr1 - cr0)} kr`);
+  await page.click('.cp-tabs button[data-tab="logistyka"]');
+  ok(await page.locator('.cp-routes button.on').count() === 1, 'Logistyka: wybór domyślnej trasy urobku');
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.close();
 }

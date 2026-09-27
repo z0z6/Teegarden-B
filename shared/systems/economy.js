@@ -337,7 +337,7 @@ export function createEconomy({
   /** Stacje, z których holowniki biorą metal (magazyny najpierw, potem doki). */
   function poolStations(sysId) {
     // krok 12: skład siedziby rasy też jest pulą (po magazynach, przed dokami)
-    const rank = { magazyn: 0, siedziba: 1, dok: 2 };
+    const rank = { magazyn: 0, skladnica: 0, siedziba: 1, dok: 2 };
     return stationsOf(sysId).filter((s) => s.status === 'gotowa' && s.type in rank)
       .sort((a, b) => rank[a.type] - rank[b.type]);
   }

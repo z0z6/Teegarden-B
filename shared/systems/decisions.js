@@ -1,4 +1,4 @@
-import { scienceIcon, scanIcon, droneTypeIcon, pilotIcon, upgradeIcon } from '../ui/icons.js';
+import { scienceIcon, scanIcon, droneTypeIcon, pilotIcon, upgradeIcon, stationIcon } from '../ui/icons.js';
 
 /**
  * OKIENKA DECYZJI (krok 12): wyskakujące karty z prostym wyborem zamiast
@@ -21,6 +21,7 @@ const KIND_ICON = {
   threat: () => pilotIcon(26, '#ff5a4d'),
   fleet: () => pilotIcon(26, '#ff7a45'),
   info: () => upgradeIcon(26),
+  logistics: () => stationIcon('magazyn', 26, '#ffb45c'), // krok 12b: trasy urobku, magazyny, frachtowiec
 };
 
 export function createDecisions(root, { onShow = () => {}, onPick = () => {}, max: max0 = 3 } = {}) {
