@@ -63,6 +63,16 @@ console.log('\n1. Okładka (intro)');
   const href = await page.getAttribute('#play', 'href');
   ok(/^\.\/step12-dowodztwo\/\?uklad=teegarden&statek=/.test(href), `„Graj” prowadzi na mostek siedziby w wybranym układzie (${href})`);
   ok(/missions\.html\?uklad=/.test(await page.getAttribute('#board', 'href')), 'link „Misje i wybór statku” prowadzi na tablicę');
+  await page.click('#choose-race');
+  ok(await page.locator('#race-list .race').count() === 7, 'wybór rasy: 7 ras z portretami');
+  await page.click('#race-list .race[data-id="rezonanci"]');
+  const rh = await page.getAttribute('#play', 'href');
+  ok(/statek=[^&]*rezonanci/.test(rh) && /Rezonanci/.test(await page.textContent('#play-system')), `wybrana rasa idzie do gry: ${rh}`);
+  await page.reload({ waitUntil: 'load' });
+  ok(/statek=[^&]*rezonanci/.test(await page.getAttribute('#play', 'href')), 'wybór rasy zapamiętany po odświeżeniu');
+  await page.evaluate(() => localStorage.removeItem('teegarden-b:rasa'));
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(1500);
   ok(await page.locator('.au-btn').count() === 1, 'przycisk dźwięku jest');
   const locked = await page.getAttribute('.au', 'data-locked');
   ok(locked === 'true', 'przed gestem dźwięk czeka (wymóg przeglądarek)');
@@ -525,8 +535,9 @@ console.log('\n3g. Krok 12c: nowa gra przy starcie, menu gry (Esc), pauza, porzu
   await page.click('#pause-menu [data-act="save"]');
   ok(await page.evaluate(() => __game.saveSlots.list().filter((s) => !s.id.startsWith('auto-')).length >= 1), `„Zapisz grę”: ${await page.textContent('#pause-menu .pm-msg')}`);
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(600);
-  ok(await page.evaluate((t) => !__game.pauseMenu.open && __game.economy.state.time > t, t0), 'Esc drugi raz: powrót do gry, czas rusza');
+  // bez GPU (swiftshader) gra ma kilka klatek/s - czekamy na klatkę, nie na zegar
+  const resumed = await page.waitForFunction((t) => !__game.pauseMenu.open && __game.economy.state.time > t, t0, { timeout: 10000 }).then(() => true, () => false);
+  ok(resumed, 'Esc drugi raz: powrót do gry, czas rusza');
   await page.evaluate(() => __game.tacMap.show({}));
   await page.keyboard.press('Escape');
   ok(await page.evaluate(() => !__game.tacMap.open && !__game.pauseMenu.open), 'Esc przy otwartej mapie taktycznej najpierw ją zamyka');

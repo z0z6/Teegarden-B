@@ -12,9 +12,11 @@ przez wylot.
 step12-dowodztwo/?uklad=teegarden&statek=goniec-wybudzeni-hawk-7
 ```
 
-Rasę wyznacza statek, podobnie jak w krokach 9–11. Okładka bierze statek
-wybrany ostatnio na tablicy misji (link „Misje i wybór statku”), a gdy go
-nie ma, pierwszy z floty. Misja uruchomiona z tablicy (`&misja=...`)
+Rasę wyznacza statek, podobnie jak w krokach 9–11. Rasę wybierasz na
+okładce („Rasa: …”); okładka podaje wtedy pierwszy statek tej rasy (albo
+statek z tablicy misji, jeśli należy do wybranej rasy). Bez wyboru działa
+jak dotąd: statek wybrany ostatnio na tablicy misji, a gdy go nie ma,
+pierwszy z floty. Misja uruchomiona z tablicy (`&misja=...`)
 startuje od razu w locie.
 
 ## Tryby gry

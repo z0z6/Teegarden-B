@@ -6,6 +6,8 @@ import { SYSTEMS, SYSTEM_ORDER } from '../shared/systems/star-systems.js';
 import { getAudio } from '../shared/audio/audio.js';
 import { mountAudioControls } from '../shared/audio/audio-controls.js';
 import { SHIPS } from '../shared/ships/fleet.js';
+import { RACES, raceForShip } from '../shared/data/races.js';
+import { racePortrait } from '../shared/data/race-portraits.js';
 
 /**
  * OKŁADKA GRY: żywa Gwiazda Teegardena (ten sam shader co w grze -
@@ -45,14 +47,63 @@ function lastShip() {
   return SHIPS[0].id;
 }
 
+// ------------------------------------------------------------
+// Wybór rasy gracza. Rasę w grze wyznacza statek (?statek=), więc "Graj"
+// dostaje pierwszy statek wybranej rasy - albo statek z tablicy misji, jeśli
+// należy do tej rasy. Bez wyboru: rasa statku z tablicy misji (jak dotąd).
+// ------------------------------------------------------------
+const RACE_KEY = 'teegarden-b:rasa';
+const RACE_ORDER = Object.keys(RACES).filter((r) => SHIPS.some((x) => raceForShip(x.id) === r));
+const ATTR_NAME = { pilot: 'pilotaż', nav: 'nawigacja', sensors: 'czujniki', eng: 'inżynieria', tact: 'taktyka', infl: 'wpływy' };
+let race = raceForShip(lastShip());
+try { const r = localStorage.getItem(RACE_KEY); if (RACE_ORDER.includes(r)) race = r; } catch { /* bez zapisu */ }
+function shipFor(r) {
+  const last = lastShip();
+  return raceForShip(last) === r ? last : SHIPS.find((x) => raceForShip(x.id) === r)?.id ?? SHIPS[0].id;
+}
+const raceBtn = document.getElementById('choose-race');
+const racePanel = document.getElementById('races');
+const raceList = document.getElementById('race-list');
+function strengths(r) {
+  const a = RACES[r].attrs;
+  return Object.keys(a).sort((x, y) => a[y] - a[x]).slice(0, 2).map((k) => ATTR_NAME[k]).join(', ');
+}
+for (const r of RACE_ORDER) {
+  const d = RACES[r];
+  const b = document.createElement('button');
+  b.className = 'race';
+  b.dataset.id = r;
+  b.style.setProperty('--c', d.color);
+  b.innerHTML = `<span class="race-pic">${racePortrait(r, { seed: 1, size: 52 })}</span><b>${d.name}</b><span>Stronnictwa: ${Object.values(d.factions).join(', ')}. Mocne strony: ${strengths(r)}.</span>`;
+  b.addEventListener('click', () => { setRace(r); audio.play('ui-click'); });
+  raceList.appendChild(b);
+}
+function markRace(r) {
+  raceList.querySelectorAll('.race').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === r)));
+  raceBtn.innerHTML = `Rasa: <b>${RACES[r].name}</b>`;
+  raceBtn.style.setProperty('--c', RACES[r].color);
+}
+function setRace(r) {
+  race = r;
+  try { localStorage.setItem(RACE_KEY, r); } catch { /* bez zapisu */ }
+  markRace(r);
+  applySelection(selected, { preview: false });
+}
+markRace(race);
+raceBtn.addEventListener('click', () => {
+  const open = racePanel.classList.toggle('open');
+  raceBtn.setAttribute('aria-expanded', String(open));
+  if (open) { panel.classList.remove('open'); chooseBtn.setAttribute('aria-expanded', 'false'); }
+});
+
 function applySelection(id, { preview = true } = {}) {
   selected = id;
   try { localStorage.setItem(STORE_KEY, id); } catch { /* bez zapisu */ }
   // krok 12: "Graj" = od razu mostek siedziby w wybranym układzie (rasa = statek
   // wybrany ostatnio na tablicy misji, domyślnie pierwszy z floty)
-  play.href = `./step12-dowodztwo/?uklad=${id}&statek=${lastShip()}`;
+  play.href = `./step12-dowodztwo/?uklad=${id}&statek=${shipFor(race)}`;
   board.href = `./missions.html?uklad=${id}`;
-  playSystem.textContent = SYSTEMS[id].name;
+  playSystem.textContent = `${SYSTEMS[id].name} · ${RACES[race].name}`;
   caption.textContent = id === 'teegarden' ? CAPTION_DEFAULT : SYSTEMS[id].desc;
   list.querySelectorAll('.system').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
   if (preview) showStar(id);
@@ -73,6 +124,7 @@ for (const id of SYSTEM_ORDER) {
 chooseBtn.addEventListener('click', () => {
   const open = panel.classList.toggle('open');
   chooseBtn.setAttribute('aria-expanded', String(open));
+  if (open) { racePanel.classList.remove('open'); raceBtn.setAttribute('aria-expanded', 'false'); }
 });
 
 // ------------------------------------------------------------
@@ -208,4 +260,4 @@ try {
 }
 
 // testy automatyczne
-window.__cover = { applySelection: (id) => applySelection(id), get selected() { return selected; } };
+window.__cover = { applySelection: (id) => applySelection(id), setRace, get selected() { return selected; }, get race() { return race; } };
