@@ -1,5 +1,6 @@
 import { METALS, METAL_ORDER, STATIONS, WARSHIPS, WARSHIP_ORDER } from '../data/economy.js';
-import { DRONE_TYPES, DRONE_TYPE_ORDER, UPGRADES, UPGRADE_ORDER, TECHS, TECH_ORDER, POWER, EXPEDITION } from '../data/command.js';
+import { DRONE_TYPES, DRONE_TYPE_ORDER, UPGRADES, UPGRADE_ORDER, TECHS, TECH_ORDER, POWER, EXPEDITION, ORE_ROUTES, ORE_ROUTE_ORDER, FREIGHTER } from '../data/command.js';
+import { GOODS, GOOD_NAME } from './exchange.js';
 import { RACES } from '../data/races.js';
 import { PHASE_LABEL } from './command.js';
 import { PLAYER } from './strategy.js';
@@ -40,13 +41,14 @@ function costHtml(cost, can = true) {
   for (const m of METAL_ORDER) if (cost[m]) parts.push(`<span title="${METALS[m].name}">${metalIcon(m, 13)}${fmt(cost[m])}</span>`);
   return `<span class="cp-cost${can ? '' : ' short'}">${parts.join('')}</span>`;
 }
-const TABS = [['hangar', 'Hangar'], ['moduly', 'Moduły'], ['ulepszenia', 'Ulepszenia'], ['nauka', 'Nauka'], ['flota', 'Flota']];
-const BUILDABLE = ['huta', 'reaktor', 'magazyn', 'dok', 'wieza', 'stocznia', 'przeladunek'];
+const TABS = [['hangar', 'Hangar'], ['moduly', 'Moduły'], ['logistyka', 'Logistyka'], ['gielda', 'Giełda'], ['ulepszenia', 'Ulepszenia'], ['nauka', 'Nauka'], ['flota', 'Flota']];
+const BUILDABLE = ['huta', 'reaktor', 'magazyn', 'skladnica', 'dok', 'wieza', 'stocznia', 'przeladunek'];
+const goodIcon = (g, size = 16) => (g === 'kredyty' ? creditsIcon(size) : g === 'urobek' ? oreIcon(size) : metalIcon(g, size));
 
 export function createCommandPanel(root, {
   command, economy, strategy = null, army = null, raids = null, playerRace, systemName = (s) => s,
   onPilot = () => {}, onMap = () => {}, onIndustry = () => {}, onFleet = () => {}, onWatch = () => {}, onHover = () => {},
-  onSaves = () => {}, compact = () => false,
+  onSaves = () => {}, compact = () => false, exchange = null, onTactical = () => {},
 }) {
   root.innerHTML = `
     <header class="cp-top" data-r="top"></header>
@@ -61,6 +63,7 @@ export function createCommandPanel(root, {
   let tab = 'hangar';
   let picker = null; // { type, target, n }
   let sheet = null;  // tryb kompaktowy: 'orders' | 'exps' | 'side' | null (widok z mostka)
+  const ex = { from: 'zelazo', to: 'kredyty', amt: 50 }; // giełda: wybrana para i ilość
   const keys = {};
   let toastT = 0;
 
@@ -108,11 +111,15 @@ export function createCommandPanel(root, {
   // ------------------------------------------------------------
   function renderOrders() {
     const h = s().hangar;
-    const key = DRONE_TYPE_ORDER.map((t) => `${h[t]}:${command.droneTypeState(t).ok}`).join('|') + `|${s().auto.returns}|${command.has('automatyka')}|${economy.alert}|${picker?.type}`;
+    const nSent = command.sentries().length;
+    const key = DRONE_TYPE_ORDER.map((t) => `${h[t]}:${command.droneTypeState(t).ok}`).join('|') + `|${s().auto.returns}|${command.has('automatyka')}|${economy.alert}|${picker?.type}|${nSent}`;
     set('orders', key, () => `
       <h3>Rozkazy</h3>
+      <button class="cp-tactical" data-act="tactical" title="Wieże strażnicze i przydział dronów do pól">${fieldIcon(26, '#ff5a8a')}<span><b>Mapa taktyczna</b><small>wieże · sektory · ile dronów w polu</small></span></button>
       ${DRONE_TYPE_ORDER.map((t) => {
         const d = DRONE_TYPES[t], st = command.droneTypeState(t);
+        if (d.sentry) return `<button class="cp-order" data-act="tac-place" ${h[t] ? '' : 'disabled'} style="--c:${d.color}">
+          ${droneTypeIcon(t, 30, d.color)}<span><b>Rozstaw wieże</b><small>w hangarze: ${h[t]} · na pozycjach: ${nSent}</small></span></button>`;
         const verb = { zwiadowca: 'Wyślij zwiadowców', gornik: 'Wyślij górników', holownik: 'Wyślij holowniki', straznik: 'Postaw straż' }[t];
         return `<button class="cp-order${picker?.type === t ? ' on' : ''}" data-act="pick" data-type="${t}" ${st.ok && h[t] ? '' : 'disabled'} style="--c:${d.color}">
           ${droneTypeIcon(t, 30, d.color)}<span><b>${verb}</b><small>${st.ok ? `w hangarze: ${h[t]}` : esc(st.why)}</small></span></button>`;
@@ -240,6 +247,53 @@ export function createCommandPanel(root, {
       ${command.has('ogniwa') ? `<p class="cp-note">Ogniwa: ${costHtml(POWER.autonomyCost)} za stację.</p>` : ''}`];
   }
 
+  function tabLogistics() {
+    const o = command.oreStock(), f = s().freighter;
+    const stores = command.stores();
+    const route = s().route;
+    const allocs = Object.entries(s().alloc).filter(([, a]) => a.gornik || a.zwiadowca || a.holownik);
+    const key = `l|${route}|${s().askRoute}|${Math.round(o.huta)}|${stores.map((x) => `${x.id}:${Math.round(command.oreIn(x) / 10)}`).join()}|${f.n}|${f.phase}|${Math.round(sum(f.hold) / 5)}|${Math.round(sum(f.pending) / 5)}|${Math.round(f.earned)}|${can(STATIONS.skladnica.cost)}|${can(STATIONS.magazyn.cost)}|${can(FREIGHTER.cost)}|${allocs.map(([k, a]) => `${k}${a.gornik}${a.zwiadowca}${a.holownik}${a.route}`).join()}|${Math.round(command.smeltRate * 10)}`;
+    return [key, () => `
+      <p class="cp-note">Dokąd drony wiozą urobek. Wybór pada przy wysyłce górników (karta), a potem logistyka działa sama: huta dobiera z magazynów, pełne magazyny opróżnia frachtowiec.</p>
+      <h4>Urobek domyślnie</h4>
+      <div class="cp-routes">${ORE_ROUTE_ORDER.map((r) => `<button data-act="route" data-r="${r}" class="${route === r ? 'on' : ''}"><b>${ORE_ROUTES[r].name}</b><small>${esc(ORE_ROUTES[r].desc)}</small></button>`).join('')}</div>
+      <label class="cp-toggle"><input type="checkbox" data-act="ask-route" ${s().askRoute ? 'checked' : ''}/><span>Pytaj o trasę przy każdej wysyłce górników</span></label>
+      <h4>Huta</h4>
+      <div class="cp-st">${stationIcon('huta', 24, STATIONS.huta.accent)}<div><b>Kolejka do pieca: ${fmt(o.huta)} t</b><small>przetop ~${(command.smeltRate || 0).toFixed(1)} t/s${o.huta > 600 ? ' · kolejka rośnie — ulepsz piece albo kieruj nadmiar do magazynu' : ''}</small></div></div>
+      <h4>Magazyny urobku</h4>
+      ${stores.length ? stores.map((x) => `<div class="cp-st">${stationIcon(x.type, 24, STATIONS[x.type].accent)}<div><b>${esc(x.name)}</b><small>${fmt(command.oreIn(x))} / ${fmt(command.oreCap(x))} t${x.draining ? ' · frachtowiec opróżnia' : ''}</small><span class="cp-hullbar"><i style="width:${Math.round((command.oreIn(x) / command.oreCap(x)) * 100)}%;background:#ffb45c"></i></span></div></div>`).join('')
+        : '<p class="cp-note">Brak magazynów — trasa „Magazyn” wysyła wtedy urobek do huty.</p>'}
+      <div class="cp-row"><button data-act="station" data-type="magazyn" ${can(STATIONS.magazyn.cost) ? '' : 'disabled'}>${stationIcon('magazyn', 16, STATIONS.magazyn.accent)} Magazyn (${STATIONS.magazyn.oreCapacity} t)</button><button data-act="station" data-type="skladnica" ${can(STATIONS.skladnica.cost) ? '' : 'disabled'}>${stationIcon('skladnica', 16, STATIONS.skladnica.accent)} Wielki magazyn (${STATIONS.skladnica.oreCapacity} t)</button></div>
+      <h4>Frachtowiec</h4>
+      <div class="cp-st">${warshipIcon('eskorta', 24, '#4dd6a0')}<div><b>${f.n} × frachtowiec · ${f.phase === 'dok' ? 'przy siedzibie' : `w kursie (${Math.ceil(f.t)} s)`}</b><small>ładownia ${fmt(sum(f.hold))} / ${fmt(FREIGHTER.cap * f.n)} t · na nabrzeżu ${fmt(sum(f.pending))} t · sprzedał za ${fmt(f.earned)} kr</small></div>
+        <button data-act="buy-freighter" ${f.n < FREIGHTER.max && can(FREIGHTER.cost) ? '' : 'disabled'} title="${fmt(FREIGHTER.cost.credits)} kr">+1</button></div>
+      <h4>Przydziały do pól</h4>
+      ${allocs.length ? allocs.map(([fid, a]) => `<div class="cp-st">${fieldIcon(20, '#ffd36b')}<div><b>${esc(economy.fieldDefs(s().home).find((d) => d.id === fid)?.name ?? fid)}</b><small>${['gornik', 'zwiadowca', 'holownik'].filter((t) => a[t]).map((t) => `${DRONE_TYPES[t].plural} ${command.allocCount(fid, t)}/${a[t]}`).join(' · ')} · urobek → ${ORE_ROUTES[a.route ?? route].name.toLowerCase()}</small></div></div>`).join('')
+        : '<p class="cp-note">Brak stałych przydziałów. Ustaw je na mapie taktycznej (Sektory).</p>'}
+      <div class="cp-row"><button class="primary" data-act="tactical-sectors">Mapa taktyczna — sektory</button></div>`];
+  }
+
+  function tabExchange() {
+    if (!exchange) return ['x', () => '<p class="cp-note">Giełda niedostępna.</p>'];
+    const q = exchange.quote(ex.from, ex.to, ex.amt);
+    const rates = exchange.rates();
+    const unit = (g) => (g === 'kredyty' ? 'kr' : 't');
+    const r1 = (n) => (n >= 100 ? fmt(n) : (Math.round(n * 10) / 10).toLocaleString('pl-PL'));
+    const key = `x|${ex.from}|${ex.to}|${ex.amt}|${r1(q.out)}|${r1(q.amount)}|${q.ok}|${rates.map((r) => `${r.sell.toFixed(1)}:${Math.round(r.have)}`).join()}|${exchange.fee()}`;
+    const chips = (side) => GOODS.filter((g) => side === 'from' || g !== 'urobek').map((g) => `<button data-act="ex-${side}" data-g="${g}" class="${ex[side] === g ? 'on' : ''}" ${side === 'to' && g === ex.from ? 'disabled' : ''}>${goodIcon(g, 15)}<span>${esc(GOOD_NAME[g])}</span></button>`).join('');
+    return [key, () => `
+      <p class="cp-note">Wymień dowolny zasób na inny po kursie rynku. Prowizja ${Math.round(exchange.fee() * 100)}%${exchange.port() ? ' (własny terminal: stacja przeładunkowa)' : ' — stacja przeładunkowa obniża ją do 3%'}; kupno metalu z marżą 10%. Duże wymiany psują kurs.</p>
+      <h4>Oddaję</h4><div class="cp-goods">${chips('from')}</div>
+      <p class="cp-note">Masz: <b>${r1(exchange.available(ex.from))} ${unit(ex.from)}</b></p>
+      <div class="cp-amts">${(ex.from === 'kredyty' ? [100, 500, 1000, 5000] : [10, 50, 100, 500]).map((a) => `<button data-act="ex-amt" data-a="${a}" class="${ex.amt === a ? 'on' : ''}">${fmt(a)}</button>`).join('')}<button data-act="ex-amt" data-a="half">½</button><button data-act="ex-amt" data-a="all">wszystko</button></div>
+      <h4>Dostaję</h4><div class="cp-goods">${chips('to')}</div>
+      <div class="cp-quote${q.ok ? '' : ' bad'}">${q.ok ? `<span>${goodIcon(ex.from, 20)}<b>${r1(q.amount)}</b> ${unit(ex.from)}</span><span class="cp-arrow">→</span><span>${goodIcon(ex.to, 20)}<b>${r1(q.out)}</b> ${unit(ex.to)}</span><small>kurs 1 ${unit(ex.from)} = ${q.rate >= 1 ? r1(q.rate) : q.rate.toFixed(3).replace('.', ',')} ${unit(ex.to)} · prowizja ${fmt(q.fee)} kr${q.amount + 1e-6 < Math.min(ex.amt, exchange.available(ex.from)) ? ' · ograniczone miejscem w składzie' : ''}</small>` : `<small>${esc(q.why)}</small>`}</div>
+      <div class="cp-row"><button class="primary" data-act="ex-trade" ${q.ok ? '' : 'disabled'}>Wymień</button><button data-act="ex-swap">⇄ Odwróć</button></div>
+      <h4>Kursy (1 t)</h4>
+      <table class="cp-rates"><tr><th></th><th>sprzedaż</th><th>kupno</th><th>rynek</th><th>masz</th></tr>
+        ${rates.map((r) => `<tr><td>${goodIcon(r.id, 14)} ${esc(GOOD_NAME[r.id])}</td><td>${r.sell.toFixed(1)}</td><td>${r.buy ? r.buy.toFixed(1) : '—'}</td><td class="${r.market == null ? '' : r.market < 0.95 ? 'down' : r.market > 1.05 ? 'up' : ''}">${r.market == null ? '—' : `${Math.round(r.market * 100)}%`}</td><td>${fmt(r.have)}</td></tr>`).join('')}</table>`];
+  }
+
   function tabUpgrades() {
     const cats = [...new Set(UPGRADE_ORDER.map((id) => UPGRADES[id].cat))];
     const key = `u|${UPGRADE_ORDER.map((id) => `${command.lvl(id)}:${command.upgradeState(id).ok}`).join()}`;
@@ -314,7 +368,7 @@ export function createCommandPanel(root, {
   }
 
   function renderTab() {
-    const [key, html] = { hangar: tabHangar, moduly: tabModules, ulepszenia: tabUpgrades, nauka: tabScience, flota: tabFleet }[tab]();
+    const [key, html] = { hangar: tabHangar, moduly: tabModules, logistyka: tabLogistics, gielda: tabExchange, ulepszenia: tabUpgrades, nauka: tabScience, flota: tabFleet }[tab]();
     set('tab', key, html);
     const q = R.tab.querySelector('[data-live="queue"]');
     if (q && s().queue.length) { const d = DRONE_TYPES[s().queue[0]]; q.style.width = `${s().buildT > 0 ? (1 - s().buildT / (d.buildTime / (1 + 0.5 * command.lvl('hangar')))) * 100 : 0}%`; }
@@ -347,6 +401,7 @@ export function createCommandPanel(root, {
       <button data-act="sheet" data-sheet="exps" class="${on('exps') ? 'on' : ''}">${routeIcon(20)}<span>Wyprawy</span>${exps ? `<em>${exps}</em>` : ''}</button>
       <button data-act="sheet" data-sheet="base" class="${on('base') ? 'on' : ''}">${stationIcon('siedziba', 20, '#ffd36b')}<span>Baza</span></button>
       <button data-act="sheet" data-sheet="fleet" class="cp-mnav-fleet${on('fleet') ? ' on' : ''}${alarm ? ' alarm' : ''}">${warshipIcon('fregata', 20, '#ff7a45')}<span>Flota</span><em>${fleet}</em></button>
+      <button data-act="tactical" class="cp-mnav-tac">${fieldIcon(20, '#ff5a8a')}<span>Taktyka</span></button>
       <button data-act="map">${fieldIcon(20, '#ffd36b')}<span>Mapa</span></button>
       <button data-act="industry">${stationIcon('przeladunek', 20, '#4dd6a0')}<span>Przemysł</span></button>
       <button data-act="saves">${saveIcon(20)}<span>Zapis</span></button>
@@ -395,6 +450,7 @@ export function createCommandPanel(root, {
   root.addEventListener('mousedown', (e) => e.stopPropagation());
   root.addEventListener('change', (e) => {
     if (e.target.dataset.act === 'auto') { s().auto.returns = e.target.checked; economy.save(); keys.orders = null; }
+    if (e.target.dataset.act === 'ask-route') { s().askRoute = e.target.checked; economy.save(); keys.tab = null; }
     if (e.target.dataset.act === 'ship-order' && army) {
       const [kind, field] = e.target.value.split('|');
       result(army.setOrder([e.target.dataset.ship], kind, field || null));
@@ -436,6 +492,16 @@ export function createCommandPanel(root, {
       case 'fleet-tab': tab = 'flota'; sheet = 'side'; break;
       case 'build-ship': if (army) result(army.order(b.dataset.cls)); break;
       case 'saves': onSaves(); break;
+      case 'tactical': onTactical({}); break;
+      case 'tactical-sectors': onTactical({ tab: 'sektory' }); break;
+      case 'tac-place': onTactical({ place: true }); break;
+      case 'route': result(command.setRoute(b.dataset.r)); break;
+      case 'buy-freighter': result(command.buyFreighter()); break;
+      case 'ex-from': ex.from = b.dataset.g; if (ex.to === ex.from || (ex.from === 'kredyty' && ex.to === 'kredyty')) ex.to = ex.from === 'kredyty' ? 'zelazo' : 'kredyty'; ex.amt = ex.from === 'kredyty' ? 500 : 50; break;
+      case 'ex-to': ex.to = b.dataset.g; break;
+      case 'ex-amt': { const have = exchange?.available(ex.from) ?? 0; ex.amt = b.dataset.a === 'all' ? have : b.dataset.a === 'half' ? have / 2 : Number(b.dataset.a); break; }
+      case 'ex-swap': if (ex.from !== 'urobek') { [ex.from, ex.to] = [ex.to, ex.from]; ex.amt = ex.from === 'kredyty' ? 500 : 50; } break;
+      case 'ex-trade': if (exchange) { const r = exchange.trade(ex.from, ex.to, ex.amt); result(r); } break;
       case 'sheet': setSheet(b.dataset.sheet); break;
       case 'pilot': onPilot(); break;
       case 'map': onMap(); break;

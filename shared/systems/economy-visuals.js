@@ -215,19 +215,22 @@ export function buildStationModel(type, accentHex) {
     add(mesh(new THREE.CylinderGeometry(126, 126, 6, 32, 1, true), H, 0, 62, 0));
     add(mesh(new THREE.CylinderGeometry(126, 126, 6, 32, 1, true), H, 0, -62, 0));
     for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; beacon(Math.cos(a) * 128, 66, Math.sin(a) * 128, accentHex, group, i * 0.4); }
-  } else if (type === 'magazyn') {
-    // grzbiet i dwa wieńce zbiorników
-    add(mesh(new THREE.BoxGeometry(22, 22, 230), D));
-    for (const z of [-60, 60]) {
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-        const tank = add(mesh(new THREE.CylinderGeometry(26, 26, 80, 18), H, Math.cos(a) * 44, Math.sin(a) * 44, z));
+  } else if (type === 'magazyn' || type === 'skladnica') {
+    // grzbiet i wieńce zbiorników (wielki magazyn: trzy wieńce po sześć, dłuższy grzbiet)
+    const big = type === 'skladnica';
+    const rings = big ? [-110, 0, 110] : [-60, 60];
+    const per = big ? 6 : 4, rr = big ? 62 : 44;
+    add(mesh(new THREE.BoxGeometry(22, 22, big ? 330 : 230), D));
+    for (const z of rings) {
+      for (let i = 0; i < per; i++) {
+        const a = (i / per) * Math.PI * 2 + Math.PI / per;
+        const tank = add(mesh(new THREE.CylinderGeometry(26, 26, 80, 18), H, Math.cos(a) * rr, Math.sin(a) * rr, z));
         tank.rotation.x = Math.PI / 2;
-        const band = add(mesh(new THREE.TorusGeometry(26.6, 1.6, 6, 28), A, Math.cos(a) * 44, Math.sin(a) * 44, z));
+        const band = add(mesh(new THREE.TorusGeometry(26.6, 1.6, 6, 28), A, Math.cos(a) * rr, Math.sin(a) * rr, z));
         band.userData.noScale = true;
       }
     }
-    for (const z of [-120, 120]) {
+    for (const z of big ? [-170, 170] : [-120, 120]) {
       add(mesh(new THREE.CylinderGeometry(34, 34, 8, 16), D, 0, 0, z)).rotation.x = Math.PI / 2;
       beacon(0, 38, z, accentHex);
       beacon(0, -38, z, 0xff5a4d);

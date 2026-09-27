@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { METALS, METAL_ORDER, STATIONS } from '../data/economy.js';
 import {
   HQ, DRONE_TYPES, DRONE_TYPE_ORDER, EXPEDITION, POWER, SMELTER, UPGRADES, UPGRADE_TECH, TECHS, TECH_ORDER,
+  SENTRY, ORE_ROUTES, FREIGHTER, AUTOMATION,
 } from '../data/command.js';
 
 /**
@@ -27,6 +28,19 @@ import {
  * timeout, defaultAct, onChoose }). Brak odpowiedzi = domyślny wybór, więc
  * gra toczy się sama, a gracz tylko koryguje.
  *
+ * KROK 12b:
+ *  - WIEŻE STRAŻNICZE (sentries): drony obronne rozstawiane w dowolnym
+ *    punkcie (mapa taktyczna). Działko + rakiety, okrąg zasięgu; wyprawy
+ *    w zasięgu giną wolniej. Wrogowie mogą je zestrzelić.
+ *  - PRZYDZIAŁ DO SEKTORÓW (alloc): gracz mówi "na polu X ma pracować 8
+ *    górników i 2 zwiadowców", a zarządca sam wysyła, dosyła i odwołuje
+ *    grupy (bez kart decyzji - to jest automatyka).
+ *  - TRASY UROBKU (route): huta / magazyn / frachtowiec. Wybór przy wysyłce
+ *    górników, potem logistyka działa sama: huta dobiera z magazynów,
+ *    pełne magazyny opróżnia frachtowiec (sprzedaż poza układem), a karty
+ *    podpowiadają następny krok (większy magazyn, drugi frachtowiec,
+ *    szybsza huta) z gotowym przyciskiem.
+ *
  * Stan (economy.state.command) jest w zapisie gospodarki. Czysta logika:
  * działa też w Node (testy), bez DOM.
  */
@@ -51,6 +65,15 @@ export function freshCommand() {
     home: null, hq: null, hangar: Object.fromEntries(DRONE_TYPE_ORDER.map((t) => [t, 0])), queue: [], buildT: 0,
     expeditions: [], nextId: 1, ore: zero(), upgrades: {}, techs: [], research: null, surveyed: {}, autonomy: {},
     auto: { returns: false }, stats: { expeditions: 0, ore: 0, smelted: zero(), lost: 0, surveyed: 0 },
+    ...fresh12b(),
+  };
+}
+/** Pola kroku 12b - dokładane też do starszych zapisów (migrate). */
+function fresh12b() {
+  return {
+    sentries: [], alloc: {}, route: 'huta', askRoute: true, v2: true,
+    freighter: { n: 1, hold: zero(), pending: zero(), phase: 'dok', t: 0, idle: 0, earned: 0, trips: 0 },
+    stats12b: { sentryKills: 0, sentriesLost: 0, freighted: 0 },
   };
 }
 
@@ -58,7 +81,20 @@ export function createCommand({
   economy, onEvent = () => {}, onDecision = () => {}, getHostiles = () => [], combat = null,
   hqName = 'Siedziba', random = Math.random,
 }) {
-  const S = () => (economy.state.command ??= freshCommand());
+  const migrated = new WeakSet();
+  const S = () => {
+    const s = (economy.state.command ??= freshCommand());
+    if (!migrated.has(s)) { migrated.add(s); migrate(s); }
+    return s;
+  };
+  /** Starsze zapisy: brakujące pola 12b i jednorazowo więcej górników i dwie wieże. */
+  function migrate(s) {
+    const old = !s.v2;
+    const f = fresh12b();
+    for (const k of Object.keys(f)) if (s[k] === undefined) s[k] = f[k];
+    for (const t of DRONE_TYPE_ORDER) s.hangar[t] ??= 0;
+    if (old && s.home) for (const [t, n] of Object.entries(HQ.bonusDrones)) s.hangar[t] += n;
+  }
   const emit = (key, text, urgency = 'info') => onEvent({ key, text, urgency });
   let powerCache = new Map(), powerStamp = '';
   const runtime = new Map(); // expId -> { lossAcc, fireCd, flashAt } (poza zapisem)
@@ -215,7 +251,7 @@ export function createCommand({
   }
   /** Mnożnik pracy stacji (hook dla economy.js). */
   function efficiency(sysId, st) {
-    if (!st || S().autonomy[st.id] || st.type === 'siedziba' || st.type === 'reaktor' || st.type === 'magazyn') return 1;
+    if (!st || S().autonomy[st.id] || st.type === 'siedziba' || st.type === 'reaktor' || st.type === 'magazyn' || st.type === 'skladnica') return 1;
     return THREE.MathUtils.clamp(power(sysId).ratio, POWER.minEfficiency, 1);
   }
   const hqEff = () => (S().home ? THREE.MathUtils.clamp(power(S().home).ratio, POWER.minEfficiency, 1) : 1);
@@ -243,7 +279,7 @@ export function createCommand({
   const hangarCap = () => Math.round(EXPEDITION.maxHangar * mult('hangar'));
   const fleetCount = () => {
     const s = S();
-    return sum(s.hangar) + s.queue.length + s.expeditions.reduce((a, e) => a + e.n, 0);
+    return DRONE_TYPE_ORDER.reduce((a, t) => a + (s.hangar[t] ?? 0), 0) + s.queue.length + s.expeditions.reduce((a, e) => a + e.n, 0) + s.sentries.length;
   };
   function droneTypeState(type) {
     const d = DRONE_TYPES[type];
@@ -314,10 +350,11 @@ export function createCommand({
   const speedOf = (type) => DRONE_TYPES[type].speed * mult('drony-naped');
   const holdOf = (e) => DRONE_TYPES[e.type].hold * e.n * mult('drony-ladownie');
 
-  function dispatch(type, n, targetId, { auto = false, silent = false } = {}) {
+  function dispatch(type, n, targetId, { auto = false, silent = false, alloc = null, route = null } = {}) {
     const s = S();
     const d = DRONE_TYPES[type];
     if (!hq()) return { ok: false, text: 'Brak siedziby.' };
+    if (d.sentry) return { ok: false, text: 'Wieże strażnicze rozstawiasz na mapie taktycznej.' };
     n = Math.min(n, s.hangar[type]);
     if (n <= 0) return { ok: false, text: `W hangarze nie ma: ${d.name.toLowerCase()}. Zbuduj drony (Hangar).` };
     const isField = economy.fieldDefs(s.home).some((f) => f.id === targetId);
@@ -335,13 +372,15 @@ export function createCommand({
     }
     s.hangar[type] -= n;
     const e = {
-      id: `x${s.nextId++}`, type, n, n0: n, target, phase: 'wylot', t: 0, cargo: zero(), repeat: auto || !!s.auto.returns,
-      name: `${d.name} ${s.nextId - 1}`,
+      id: `x${s.nextId++}`, type, n, n0: n, target, phase: 'wylot', t: 0, cargo: zero(), repeat: !alloc && (auto || !!s.auto.returns),
+      name: `${d.name} ${s.nextId - 1}`, alloc,
+      route: d.hold > 0 ? (route ?? (alloc ? s.alloc[alloc]?.route : null) ?? s.route) : null,
     };
     s.expeditions.push(e);
     s.stats.expeditions++;
     economy.save();
     if (!silent) emit(`exp-${e.id}`, `${e.name}: ${n} × ${d.name.toLowerCase()} startuje — cel: ${targetInfo(e).name}.`);
+    if (d.hold > 0 && !auto && !silent && !alloc && !route && s.askRoute) askRoute(e);
     return { ok: true, exp: e, text: `${e.name} w drodze.` };
   }
 
@@ -411,6 +450,10 @@ export function createCommand({
       .map((m) => `${METALS[m].symbol} ${fmt(best.reserves[m])} t`).join(' · ');
     const foreign = field && !canMine(field.id);
     const miners = s.hangar.gornik;
+    if (e.alloc) { // przydział do sektora: bez karty, zarządca sam pośle górników, jeśli ich przydzielono
+      emit(`survey-${e.id}`, `Zwiad (${field?.name ?? 'pole'}): zbadano ${rocks.length} ${rocks.length === 1 ? 'skałę' : 'skał'}. Najbogatsza: ${best.name} — ${mix}.`);
+      return;
+    }
     onDecision({
       id: `survey-${e.id}`, kind: 'survey', urgency: 'info',
       title: `Zwiad: ${e.target.from === 'field' ? `odkryto pole ${field?.name ?? ''}` : best.name}`,
@@ -431,8 +474,8 @@ export function createCommand({
     const info = targetInfo(e);
     const cargo = sum(e.cargo);
     const depleted = info.ast && economy.remaining(info.ast) <= info.ast.total0 * 0.02;
-    if (has('automatyka')) e.repeat = true;
-    if (e.repeat) { setPhase(e, 'odlot'); emit(`full-${e.id}`, `${e.name}: ładownie pełne (${fmt(cargo)} t) — wracają do huty.`); return; }
+    if (has('automatyka') && !e.alloc) e.repeat = true;
+    if (e.repeat || e.alloc) { setPhase(e, 'odlot'); emit(`full-${e.id}`, `${e.name}: ładownie pełne (${fmt(cargo)} t) — wracają do huty.`); return; }
     onDecision({
       id: `full-${e.id}`, kind: 'return', urgency: 'info',
       title: `${e.name}: ładownie pełne`,
@@ -479,8 +522,15 @@ export function createCommand({
   // ------------------------------------------------------------
   /** Punkt dokowania: huta (z urobkiem) albo wylot hangaru. */
   function dockPoint(e) {
-    const h = huta();
-    if (h && DRONE_TYPES[e.type].hold > 0 && !e.aborted) return { pos: v3(h.pos), radius: STATIONS.huta.radius };
+    if (DRONE_TYPES[e.type].hold > 0 && !e.aborted) {
+      if (e.route === 'frachtowiec') { const p = freighterPos(); if (p) return { pos: p, radius: 90 }; }
+      if (e.route === 'magazyn') {
+        const st = (e.dropId && economy.stationById(S().home, e.dropId)) || pickStore();
+        if (st) { e.dropId = st.id; return { pos: v3(st.pos), radius: STATIONS[st.type].radius }; }
+      }
+      const h = huta();
+      if (h) return { pos: v3(h.pos), radius: STATIONS.huta.radius };
+    }
     return { pos: hangarPos(), radius: 20 };
   }
   const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -597,17 +647,17 @@ export function createCommand({
       case 'rozladunek':
         if (e.t >= dur) {
           const cargo = sum(e.cargo);
-          for (const m of METAL_ORDER) s.ore[m] += e.cargo[m];
+          const where = deliver(e);
           s.hangar[e.type] += e.n;
           s.expeditions.splice(s.expeditions.indexOf(e), 1);
           runtime.delete(e.id);
-          if (cargo > 0.5) emit(`home-${e.id}`, `${e.name}: ${fmt(cargo)} t urobku w ${huta() ? 'hucie' : 'siedzibie'}.`);
+          if (cargo > 0.5 && !e.alloc) emit(`home-${e.id}`, `${e.name}: ${fmt(cargo)} t urobku — ${where}.`);
           hooks.phase?.(e, 'koniec');
-          // pętla: następny kurs na to samo złoże (albo na wskazaną skałę)
+          // pętla: następny kurs na to samo złoże (albo na wskazaną skałę); przydział - zarządca sektora
           const next = e.next ?? (e.target.kind === 'ast' ? e.target.id : null);
           const a = next && astById(s.home, next);
-          if ((e.repeat || e.next) && a && economy.remaining(a) > a.total0 * 0.02 && d.hold > 0) {
-            dispatch(e.type, e.n, a.id, { auto: e.repeat, silent: true });
+          if (!e.alloc && (e.repeat || e.next) && a && economy.remaining(a) > a.total0 * 0.02 && d.hold > 0) {
+            dispatch(e.type, e.n, a.id, { auto: e.repeat, silent: true, route: e.route });
           }
           economy.save();
         }
@@ -629,7 +679,7 @@ export function createCommand({
     if (DRONE_TYPES[e.type].guard) return; // strażnicy sami walczą (guardFire)
     const guards = S().expeditions.filter((g) => g.type === 'straznik' && g.phase === 'straz' && targetInfo(g).field?.id === targetInfo(e).field?.id)
       .reduce((a, g) => a + g.n, 0);
-    const shield = mult('drony-pancerz') * (1 + guards * 0.5);
+    const shield = mult('drony-pancerz') * (1 + guards * 0.5) * (1 + coverAt(pos) * SENTRY.shield);
     r.lossAcc += dt / shield;
     if (!r.warned) {
       r.warned = true;
@@ -718,6 +768,525 @@ export function createCommand({
   let fullT = -99, lastSmelt = 0;
 
   // ------------------------------------------------------------
+  // WIEŻE STRAŻNICZE (krok 12b)
+  // ------------------------------------------------------------
+  const sentryRange = () => SENTRY.range * (1 + 0.1 * lvl('wieze'));
+  const sentryDur = (x) => Math.max(2, v3(x.from).distanceTo(v3(x.phase === 'powrot' ? plain(hangarPos()) : x.pos)) / speedOf('wieza'));
+  const sentryRt = new Map(); // id -> { gunCd, rocketCd, actor, contact, pos, lastHit }
+  const sentryById = (id) => S().sentries.find((x) => x.id === id) ?? null;
+
+  /** Wysokość rozstawienia: płaszczyzna najbliższego pola (albo siedziby) + zawis. */
+  function sentryAltitude(x, z) {
+    const s = S();
+    let y = frame()?.pos.y ?? 0, best = Infinity;
+    for (const d of economy.fieldDefs(s.home)) {
+      const dd = Math.hypot(d.center.x - x, d.center.z - z);
+      if (dd < best) { best = dd; if (dd < d.radius * 1.6) y = d.center.y; }
+    }
+    return y + SENTRY.hover;
+  }
+  /** Rozstawia wieżę z hangaru w punkcie (x, z) układu siedziby. */
+  function deploySentry(p) {
+    const s = S();
+    if (!hq()) return { ok: false, text: 'Brak siedziby.' };
+    if (!(s.hangar.wieza > 0)) return { ok: false, text: 'W hangarze nie ma wież strażniczych — zbuduj je (Hangar).' };
+    s.hangar.wieza--;
+    const pos = plain({ x: p.x, y: p.y ?? sentryAltitude(p.x, p.z), z: p.z });
+    const x = { id: `w${s.nextId++}`, pos, from: plain(hangarPos()), phase: 'lot', t: 0, hull: DRONE_TYPES.wieza.hull };
+    x.name = `Wieża ${x.id.slice(1)}`;
+    s.sentries.push(x);
+    economy.save();
+    return { ok: true, sentry: x, text: `${x.name} leci na pozycję.` };
+  }
+  /** Przestawia wieżę (leci z bieżącego miejsca na nowe). */
+  function moveSentry(id, p) {
+    const x = sentryById(id);
+    if (!x) return { ok: false, text: 'Brak wieży.' };
+    const cur = sentryPose(x, new THREE.Vector3());
+    x.from = plain(cur);
+    x.pos = plain({ x: p.x, y: p.y ?? sentryAltitude(p.x, p.z), z: p.z });
+    x.phase = 'lot'; x.t = 0;
+    economy.save();
+    return { ok: true, text: `${x.name}: nowa pozycja.` };
+  }
+  /** Wieża wraca do hangaru. */
+  function recallSentry(id) {
+    const x = sentryById(id);
+    if (!x) return { ok: false, text: 'Brak wieży.' };
+    x.from = plain(sentryPose(x, new THREE.Vector3()));
+    x.phase = 'powrot'; x.t = 0;
+    economy.save();
+    return { ok: true, text: `${x.name} wraca do hangaru.` };
+  }
+  function sentryPose(x, out = new THREE.Vector3()) {
+    if (x.phase === 'straz') return out.set(x.pos.x, x.pos.y + Math.sin(economy.state.time * 0.8 + x.pos.x) * 6, x.pos.z);
+    const to = x.phase === 'powrot' ? hangarPos() : v3(x.pos);
+    const k = Math.min(1, x.t / sentryDur(x));
+    const kk = k * k * (3 - 2 * k);
+    return out.copy(v3(x.from)).lerp(to, kk);
+  }
+  /** Ile wież (na pozycji) osłania punkt. */
+  function coverAt(pos, extra = 0) {
+    const r = sentryRange() + extra;
+    let n = 0;
+    for (const x of S().sentries) if (x.phase === 'straz' && Math.hypot(x.pos.x - pos.x, x.pos.y - pos.y, x.pos.z - pos.z) < r) n++;
+    return n;
+  }
+  function sentryRuntime(x) {
+    let r = sentryRt.get(x.id);
+    if (r) return r;
+    const pos = sentryPose(x, new THREE.Vector3());
+    const alive = () => S().sentries.includes(x) && x.hull > 0 && economy.systemId === S().home;
+    r = { gunCd: random() * 0.3, rocketCd: 1 + random() * 2, pos, lastHit: -99 };
+    r.contact = { id: `wz-${x.id}`, kind: 'station', side: 'ally', value: 0.8, position: pos, velocity: new THREE.Vector3(),
+      get hullFrac() { return x.hull / DRONE_TYPES.wieza.hull; }, radius: 26, recentAttackers: new Map(), isAlive: alive };
+    r.actor = { side: 'ally', position: pos, radius: 26, isAlive: alive, takeDamage: (a) => damageSentry(x, a) };
+    r.shooter = { callsign: x.name, contact: r.contact };
+    combat?.register(r.actor);
+    sentryRt.set(x.id, r);
+    return r;
+  }
+  function dropSentryRt(id) { const r = sentryRt.get(id); if (r) { combat?.unregister(r.actor); sentryRt.delete(id); } }
+  function damageSentry(x, a) {
+    x.hull -= a;
+    const r = sentryRt.get(x.id);
+    if (r) r.lastHit = economy.state.time;
+    if (x.hull > 0) return;
+    const s = S();
+    s.sentries.splice(s.sentries.indexOf(x), 1);
+    s.stats12b.sentriesLost++;
+    if (r) combat?.flash(r.pos, 90, 0xff5a8a, 0.8);
+    dropSentryRt(x.id);
+    emit(`sentry-lost-${x.id}`, `${x.name} zestrzelona. Zbuduj nową w hangarze i rozstaw na mapie taktycznej.`, 'danger');
+    economy.save();
+  }
+  const _sa = new THREE.Vector3(), _sd = new THREE.Vector3();
+  function updateSentries(dt) {
+    const s = S();
+    const here = economy.systemId === s.home;
+    for (const x of s.sentries.slice()) {
+      if (x.phase !== 'straz') {
+        x.t += dt;
+        if (x.t >= sentryDur(x)) {
+          if (x.phase === 'powrot') { s.sentries.splice(s.sentries.indexOf(x), 1); s.hangar.wieza++; dropSentryRt(x.id); economy.save(); continue; }
+          x.phase = 'straz'; x.t = 0;
+          emit(`sentry-${x.id}`, `${x.name} na pozycji — osłania ${fmt(sentryRange())} j. wokół.`);
+        }
+      }
+      if (!here || !combat) continue;
+      const r = sentryRuntime(x);
+      sentryPose(x, r.pos);
+      if (x.phase !== 'straz') continue;
+      if (economy.state.time - r.lastHit > 6) x.hull = Math.min(DRONE_TYPES.wieza.hull, x.hull + SENTRY.repair * dt);
+      sentryFire(x, r, dt);
+    }
+    if (!here) for (const id of [...sentryRt.keys()]) dropSentryRt(id);
+  }
+  function sentryFire(x, r, dt) {
+    r.gunCd -= dt; r.rocketCd -= dt;
+    if (r.gunCd > 0 && r.rocketCd > 0) return;
+    const range = sentryRange();
+    let t = null, best = range;
+    for (const h of getHostiles()) {
+      if (!h.alive || h.hidden || h.arriving) continue;
+      const dd = h.group.position.distanceTo(r.pos);
+      if (dd < best) { best = dd; t = h; }
+    }
+    if (!t) { r.gunCd = Math.max(r.gunCd, 0); r.rocketCd = Math.max(r.rocketCd, 0); return; }
+    const dmg = mult('wieze');
+    if (r.gunCd <= 0) {
+      const g = SENTRY.gun;
+      r.gunCd = g.every;
+      _sa.copy(r.pos).add(_sd.set(0, 14, 0));
+      _sd.copy(t.group.position).addScaledVector(t.velocity ?? _sd.set(0, 0, 0), best / g.speed).sub(_sa).normalize();
+      _sd.x += (random() - 0.5) * 0.03; _sd.y += (random() - 0.5) * 0.03; _sd.z += (random() - 0.5) * 0.03;
+      combat.fire({ origin: _sa.clone(), direction: _sd.normalize().clone(), side: 'ally', speed: g.speed, damage: g.damage * dmg,
+        color: 0xff7aa8, life: range / g.speed + 0.3, hitScale: 1.6, shooter: r.shooter });
+      hooks.sentryFire?.(x, r.pos, 'gun');
+    }
+    if (r.rocketCd <= 0) {
+      const k = SENTRY.rocket;
+      r.rocketCd = k.every;
+      _sa.copy(r.pos).add(_sd.set(0, 20, 0));
+      _sd.copy(t.group.position).sub(_sa).normalize();
+      const target = t.contact ?? { position: t.group.position, velocity: t.velocity, isAlive: () => t.alive && !t.hidden };
+      combat.fire({ origin: _sa.clone(), direction: _sd.clone(), side: 'ally', speed: k.speed, maxSpeed: k.maxSpeed, accel: k.accel,
+        damage: k.damage * dmg, color: 0xffc27a, life: range / k.speed + 1.5, size: 1.6, hitScale: 1.4, proximity: 30,
+        homing: { target, turnRate: k.turnRate }, aoe: { radius: k.aoe.radius, damage: k.aoe.damage * dmg }, shooter: r.shooter });
+      hooks.sentryFire?.(x, r.pos, 'rocket');
+    }
+  }
+  /** Cele dla mózgów wrogich NPC: wieże na pozycjach (można je zestrzelić). */
+  function contacts() {
+    const out = [];
+    for (const r of sentryRt.values()) if (r.contact.isAlive()) out.push(r.contact);
+    return out;
+  }
+
+  // ------------------------------------------------------------
+  // PRZYDZIAŁ DRONÓW DO SEKTORÓW (krok 12b)
+  // ------------------------------------------------------------
+  const ALLOC_TYPES = ['gornik', 'zwiadowca', 'holownik'];
+  const expField = (e) => (e.target.kind === 'field' ? e.target.id : astById(S().home, e.target.id)?.fieldId ?? null);
+  /** Ile dronów danego typu pracuje teraz z przydziału w polu (także w drodze powrotnej). */
+  const allocCount = (fid, type) => S().expeditions.filter((e) => e.alloc === fid && e.type === type).reduce((a, e) => a + e.n, 0);
+  function setAlloc(fid, type, n) {
+    const s = S();
+    if (!fieldById(s.home, fid)) return { ok: false, text: 'Nie ma takiego pola w układzie siedziby.' };
+    if (!ALLOC_TYPES.includes(type)) return { ok: false, text: 'Tego typu nie przydziela się do sektora.' };
+    const st = droneTypeState(type);
+    if (!st.ok) return { ok: false, text: `${DRONE_TYPES[type].name}: ${st.why}.` };
+    const a = (s.alloc[fid] ??= { gornik: 0, zwiadowca: 0, holownik: 0, route: s.route });
+    a[type] = Math.max(0, Math.min(99, Math.round(n)));
+    allocT = 0;
+    economy.save();
+    return { ok: true, text: `${fieldById(s.home, fid).name}: ${DRONE_TYPES[type].plural} — ${a[type]}.` };
+  }
+  function setAllocRoute(fid, route) {
+    const s = S();
+    if (!ORE_ROUTES[route]) return { ok: false, text: 'Nieznana trasa.' };
+    const a = (s.alloc[fid] ??= { gornik: 0, zwiadowca: 0, holownik: 0, route });
+    a.route = route;
+    for (const e of s.expeditions) if (e.alloc === fid && !['podejscie', 'rozladunek'].includes(e.phase)) e.route = route;
+    economy.save();
+    return { ok: true, text: `${fieldById(s.home, fid)?.name}: urobek → ${ORE_ROUTES[route].name.toLowerCase()}.` };
+  }
+  /** Stan pola dla mapy taktycznej. */
+  function fieldSummary(fid) {
+    const s = S();
+    const d = fieldById(s.home, fid);
+    const rocks = economy.asteroidsIn(s.home).filter((a) => a.fieldId === fid);
+    const live = rocks.filter((a) => economy.remaining(a) > a.total0 * 0.02);
+    const a = s.alloc[fid] ?? { gornik: 0, zwiadowca: 0, holownik: 0, route: s.route };
+    return {
+      def: d, id: fid, name: d?.name ?? fid, discovered: economy.isDiscovered(s.home, fid), foreign: !canMine(fid),
+      rocks: rocks.length, surveyed: rocks.filter((x) => surveyed(x.id)).length, live: live.length,
+      remaining: live.filter((x) => surveyed(x.id)).reduce((t, x) => t + economy.remaining(x), 0),
+      want: a, route: a.route ?? s.route,
+      now: Object.fromEntries(ALLOC_TYPES.map((t) => [t, allocCount(fid, t)])),
+      busy: Object.fromEntries(ALLOC_TYPES.map((t) => [t, s.expeditions.filter((e) => e.type === t && !e.alloc && expField(e) === fid).reduce((x, e) => x + e.n, 0)])),
+      cover: d ? coverAt(d.center, d.radius * 0.5) : 0,
+    };
+  }
+  /** Oddziela k dronów z grupy i odsyła je do domu (reszta pracuje dalej). */
+  function splitReturn(e, k) {
+    const s = S();
+    if (k >= e.n) { recall(e.id); e.alloc = null; return; }
+    const part = k / e.n;
+    const cargo = Object.fromEntries(METAL_ORDER.map((m) => [m, e.cargo[m] * part]));
+    for (const m of METAL_ORDER) e.cargo[m] -= cargo[m];
+    e.n -= k;
+    const back = { ...e, id: `x${s.nextId++}`, n: k, n0: k, cargo, alloc: null, repeat: false, t: 0, name: `${e.name}·${k}` };
+    if (e.phase === 'wylot' || e.phase === 'przelot') { back.phase = 'podejscie'; back.aborted = true; } else back.phase = 'odlot';
+    s.expeditions.push(back);
+  }
+  let allocT = 0;
+  const allocNoteT = new Map();
+  function allocNote(key, text, urgency = 'info') {
+    if (economy.state.time - (allocNoteT.get(key) ?? -1e9) < 90) return;
+    allocNoteT.set(key, economy.state.time);
+    emit(key, text, urgency);
+  }
+  function updateAlloc(dt) {
+    allocT -= dt;
+    if (allocT > 0) return;
+    allocT = 1;
+    const s = S();
+    for (const [fid, a] of Object.entries(s.alloc)) {
+      const d = fieldById(s.home, fid);
+      if (!d) continue;
+      for (const type of ALLOC_TYPES) {
+        const want = a[type] ?? 0;
+        let cur = allocCount(fid, type);
+        // nadmiar: odsyłamy z grup, które jeszcze pracują / lecą na pole
+        if (cur > want) {
+          for (const e of s.expeditions.filter((x) => x.alloc === fid && x.type === type && !['odlot', 'powrot', 'podejscie', 'rozladunek'].includes(x.phase)).sort((p, q) => p.n - q.n)) {
+            if (cur <= want) break;
+            const k = Math.min(e.n, cur - want);
+            splitReturn(e, k);
+            cur -= k;
+          }
+          continue;
+        }
+        if (cur >= want || !(s.hangar[type] > 0) || !droneTypeState(type).ok || economy.alert) continue; // alarm: nikogo nie dosyłamy
+        let left = Math.min(want - cur, s.hangar[type]);
+        if (type === 'zwiadowca') {
+          const busy = new Set(s.expeditions.filter((e) => e.type === 'zwiadowca').map((e) => e.target.id));
+          const goals = !economy.isDiscovered(s.home, fid) ? [fid]
+            : economy.asteroidsIn(s.home).filter((x) => x.fieldId === fid && !surveyed(x.id)).map((x) => x.id);
+          const free = goals.filter((g) => !busy.has(g));
+          if (!goals.length) { a.zwiadowca = 0; emit(`alloc-done-${fid}`, `${d.name}: wszystkie skały zbadane — zwiadowcy wracają do hangaru.`); continue; }
+          for (const g of free) {
+            if (left <= 0) break;
+            const n = Math.min(left, 2);
+            if (dispatch('zwiadowca', n, g, { alloc: fid, silent: true }).ok) left -= n;
+          }
+        } else {
+          if (!canMine(fid)) { allocNote(`alloc-foreign-${fid}`, `${d.name} należy do innej rasy — w czasie pokoju górnicy tam nie pracują.`, 'warning'); continue; }
+          const rocks = economy.asteroidsIn(s.home).filter((x) => x.fieldId === fid && surveyed(x.id) && economy.remaining(x) > x.total0 * 0.02);
+          if (!rocks.length) {
+            allocNote(`alloc-wait-${fid}`, `${d.name}: ${DRONE_TYPES[type].plural} czekają — brak zbadanych skał. Przydziel zwiadowców na to pole.`, 'warning');
+            continue;
+          }
+          // rozkładamy grupy po skałach: najpierw te, przy których pracuje najmniej dronów
+          const load = (x) => s.expeditions.filter((e) => e.target.id === x.id).reduce((t, e) => t + e.n, 0);
+          const val = (x) => METAL_ORDER.reduce((t, m) => t + x.reserves[m] * METALS[m].price * (recovery(m) > 0 ? 1 : 0.15), 0);
+          rocks.sort((p, q) => load(p) - load(q) || val(q) - val(p));
+          let i = 0;
+          while (left > 0 && i < rocks.length * 2) {
+            const n = Math.min(left, DRONE_TYPES[type].group);
+            if (dispatch(type, n, rocks[i % rocks.length].id, { alloc: fid, silent: true }).ok) left -= n; else break;
+            i++;
+          }
+        }
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
+  // LOGISTYKA UROBKU (krok 12b): huta / magazyn / frachtowiec
+  // ------------------------------------------------------------
+  const stores = () => (S().home ? economy.stationsIn(S().home).filter((x) => x.status === 'gotowa' && STATIONS[x.type].oreCapacity) : []);
+  const oreIn = (st) => sum(st.ore ?? {});
+  const oreCap = (st) => STATIONS[st.type].oreCapacity;
+  /** Magazyn z wolnym miejscem na urobek - najbliższy siedziby. */
+  function pickStore() {
+    const base = frame()?.pos;
+    let best = null, bd = Infinity;
+    for (const st of stores()) {
+      if (oreCap(st) - oreIn(st) < 1) continue;
+      const d = base ? v3(st.pos).distanceTo(base) : 0;
+      if (d < bd) { bd = d; best = st; }
+    }
+    return best;
+  }
+  function freighterPos() {
+    const f = frame();
+    if (!f) return null;
+    return f.pos.clone().addScaledVector(f.side, -1500).addScaledVector(f.fwd, 700).add(new THREE.Vector3(0, -120, 0));
+  }
+  const add = (to, from, k = 1) => { for (const m of METAL_ORDER) to[m] = (to[m] ?? 0) + (from[m] ?? 0) * k; };
+  /** Rozładunek wyprawy wg trasy. Zwraca opis "gdzie trafiło". */
+  function deliver(e) {
+    const s = S();
+    const cargo = { ...e.cargo };
+    if (sum(cargo) <= 1e-6) return 'pusto';
+    if (e.aborted || !e.route || e.route === 'huta') { add(s.ore, cargo); return huta() ? 'do huty' : 'do siedziby'; }
+    if (e.route === 'frachtowiec') { add(s.freighter.pending, cargo); return 'na frachtowiec'; }
+    // magazyn: do wskazanego (albo innego z miejscem); nadmiar do huty
+    let left = sum(cargo);
+    const tried = new Set();
+    let st = (e.dropId && economy.stationById(s.home, e.dropId)) || pickStore();
+    while (st && left > 1e-6 && !tried.has(st.id)) {
+      tried.add(st.id);
+      st.ore ??= zero();
+      const k = Math.min(left, oreCap(st) - oreIn(st));
+      if (k > 0) { const frac = k / sum(cargo); add(st.ore, cargo, frac); for (const m of METAL_ORDER) cargo[m] *= 1 - frac; left -= k; }
+      st = pickStore();
+    }
+    if (left > 1e-3) {
+      add(s.ore, cargo);
+      if (!stores().length) offerStore('none');
+      return 'do huty (brak miejsca w magazynach)';
+    }
+    return 'do magazynu';
+  }
+  /** Urobek w układzie siedziby: kolejka huty + magazyny + frachtowiec. */
+  function oreStock() {
+    const s = S();
+    const out = { huta: sum(s.ore), magazyn: 0, magazynCap: 0, frachtowiec: sum(s.freighter.hold) + sum(s.freighter.pending) };
+    for (const st of stores()) { out.magazyn += oreIn(st); out.magazynCap += oreCap(st); }
+    return out;
+  }
+  /** Zdejmuje urobek (najpierw z magazynów, potem z kolejki huty) - giełda. Zwraca skład zdjętego urobku. */
+  function takeOre(tons) {
+    const s = S();
+    const got = zero();
+    let left = tons;
+    const pools = [...stores().map((st) => (st.ore ??= zero())), s.ore];
+    for (const p of pools) {
+      const have = sum(p);
+      if (left <= 1e-9 || have <= 1e-9) continue;
+      const k = Math.min(left, have) / have;
+      for (const m of METAL_ORDER) { const t = p[m] * k; p[m] -= t; got[m] += t; }
+      left -= Math.min(left, have);
+    }
+    return got;
+  }
+  /** Wartość urobku w kredytach (czysty metal po kursie). */
+  const oreValue = (o) => METAL_ORDER.reduce((t, m) => t + (o[m] ?? 0) * economy.price(m), 0);
+
+  const autoT = new Map();
+  function autoCard(key, d) {
+    if (economy.state.time - (autoT.get(key) ?? -1e9) < AUTOMATION.cooldown) return;
+    autoT.set(key, economy.state.time);
+    onDecision(d);
+  }
+  /** Karta "postaw magazyn" z gotowym przyciskiem (why: 'none' | 'full'). */
+  function offerStore(why, st = null) {
+    const canBig = canPay(STATIONS.skladnica.cost), canSmall = canPay(STATIONS.magazyn.cost);
+    autoCard(`store-${why}`, {
+      id: `store-${why}`, kind: 'logistics', urgency: why === 'full' ? 'warning' : 'info',
+      title: why === 'full' ? `${st?.name ?? 'Magazyn'} pełny` : 'Brak magazynu na urobek',
+      text: why === 'full'
+        ? `Frachtowiec sam odbiera urobek z pełnego magazynu i sprzeda go poza układem. Żeby urobek szedł do huty zamiast na sprzedaż, potrzeba więcej miejsca — postawić większy magazyn?`
+        : 'Wyprawy wiozą urobek do magazynu, a w układzie siedziby żadnego nie ma — na razie trafia do huty. Postawić magazyn?',
+      choices: [
+        { label: `Zbuduj wielki magazyn (${fmt(STATIONS.skladnica.cost.credits)} kr)`, act: 'big', primary: canBig },
+        { label: 'Zbuduj magazyn', act: 'small', primary: !canBig && canSmall },
+        { label: 'Nie teraz', act: 'no' },
+      ],
+      timeout: 20, defaultAct: 'no',
+      onChoose: (act) => {
+        if (act === 'big') hooks.result(buildStation('skladnica'));
+        if (act === 'small') hooks.result(buildStation('magazyn'));
+      },
+    });
+  }
+  function buyFreighter() {
+    const f = S().freighter;
+    if (f.n >= FREIGHTER.max) return { ok: false, text: `Siedziba obsłuży najwyżej ${FREIGHTER.max} frachtowce.` };
+    if (!canPay(FREIGHTER.cost)) return { ok: false, text: 'Za mało zasobów na frachtowiec.' };
+    pay(FREIGHTER.cost);
+    f.n++;
+    economy.save();
+    return { ok: true, text: `Frachtowce: ${f.n} (ładownia ${fmt(FREIGHTER.cap * f.n)} t na kurs).` };
+  }
+  function setRoute(route, { ask = null } = {}) {
+    const s = S();
+    if (!ORE_ROUTES[route]) return { ok: false, text: 'Nieznana trasa.' };
+    s.route = route;
+    if (ask !== null) s.askRoute = ask;
+    economy.save();
+    return { ok: true, text: `Urobek domyślnie: ${ORE_ROUTES[route].long}.` };
+  }
+  /** Karta przy wysyłce górników: dokąd urobek? */
+  function askRoute(e) {
+    const s = S();
+    const noStore = !stores().length;
+    onDecision({
+      id: `route-${e.id}`, kind: 'logistics', urgency: 'info',
+      title: `${e.name}: dokąd urobek?`,
+      text: `Huta przetopi od razu. Magazyn zbuforuje (huta dobierze sama, pełny opróżni frachtowiec)${noStore ? ' — nie masz jeszcze magazynu' : ''}. Frachtowiec sprzeda surowiec poza układem.`,
+      choices: ['huta', 'magazyn', 'frachtowiec'].map((r) => ({ label: ORE_ROUTES[r].name, act: r, primary: r === s.route })),
+      manage: ['huta', 'magazyn', 'frachtowiec'].map((r) => ({ label: `Zawsze: ${ORE_ROUTES[r].name.toLowerCase()} (nie pytaj)`, act: `always-${r}` })),
+      timeout: 14, defaultAct: s.route,
+      onChoose: (act) => {
+        const r = act.replace('always-', '');
+        if (!ORE_ROUTES[r]) return;
+        const x = byId(e.id);
+        if (x && !['podejscie', 'rozladunek'].includes(x.phase)) { x.route = r; x.dropId = null; }
+        s.route = r;
+        if (act.startsWith('always-')) { s.askRoute = false; emit('route-always', `Urobek zawsze: ${ORE_ROUTES[r].long}. Zmienisz to w zakładce Logistyka.`); }
+        if (r === 'magazyn' && !stores().length) offerStore('none');
+        economy.save();
+      },
+    });
+  }
+  function updateLogistics(dt) {
+    const s = S();
+    const f = s.freighter;
+    const cap = FREIGHTER.cap * f.n;
+    // huta dobiera z magazynów, gdy ma wolne moce
+    if (sum(s.ore) < AUTOMATION.hutaFeed) {
+      let want = AUTOMATION.feedRate * dt;
+      for (const st of stores()) {
+        const have = oreIn(st);
+        if (want <= 0 || have <= 1e-6) continue;
+        const k = Math.min(want, have) / have;
+        for (const m of METAL_ORDER) { const t = st.ore[m] * k; st.ore[m] -= t; s.ore[m] += t; }
+        want -= Math.min(want, have);
+      }
+    }
+    // frachtowiec
+    if (f.phase === 'dok') {
+      let room = cap - sum(f.hold);
+      let loaded = 0;
+      const rate = FREIGHTER.load * f.n * dt;
+      const pend = sum(f.pending);
+      if (room > 0 && pend > 1e-6) {
+        const k = Math.min(rate, pend, room) / pend;
+        for (const m of METAL_ORDER) { const t = f.pending[m] * k; f.pending[m] -= t; f.hold[m] += t; loaded += t; }
+        room -= loaded;
+      }
+      // pełny magazyn: frachtowiec sam go opróżnia
+      for (const st of stores()) {
+        // histereza: od 95% frachtowiec opróżnia magazyn do połowy
+        if (oreIn(st) >= oreCap(st) * AUTOMATION.magazynFull && !st.draining) { st.draining = true; offerStore('full', st); }
+        if (st.draining && oreIn(st) <= oreCap(st) * 0.5) st.draining = false;
+        if (!st.draining) continue;
+        if (room <= 1e-6) continue;
+        const have = oreIn(st);
+        const k = Math.min(rate, have, room) / have;
+        for (const m of METAL_ORDER) { const t = st.ore[m] * k; st.ore[m] -= t; f.hold[m] += t; loaded += t; }
+        room = cap - sum(f.hold);
+      }
+      f.idle = loaded > 1e-6 ? 0 : f.idle + dt;
+      const hold = sum(f.hold);
+      if (hold >= cap * 0.98 || (hold > 1 && f.idle > FREIGHTER.idleDepart)) {
+        f.phase = 'kurs'; f.t = FREIGHTER.trip; f.idle = 0;
+        emit('freighter-out', `Frachtowiec odlatuje z ${fmt(hold)} t urobku na sprzedaż (kurs ${FREIGHTER.trip} s).`);
+      }
+    } else {
+      f.t -= dt;
+      if (sum(f.pending) > cap * 1.2) {
+        const can = f.n < FREIGHTER.max && canPay(FREIGHTER.cost);
+        autoCard('freighter-slow', {
+          id: 'freighter-slow', kind: 'logistics', urgency: 'warning',
+          title: 'Frachtowiec nie nadąża',
+          text: `Na nabrzeżu czeka ${fmt(sum(f.pending))} t urobku, a frachtowiec jest w kursie. Dokupić kolejny albo kierować urobek do huty?`,
+          choices: [
+            { label: `Kup frachtowiec (${fmt(FREIGHTER.cost.credits)} kr)`, act: 'buy', primary: can },
+            { label: 'Urobek do huty', act: 'huta', primary: !can },
+            { label: 'Nie', act: 'no' },
+          ],
+          timeout: 20, defaultAct: 'no',
+          onChoose: (act) => { if (act === 'buy') hooks.result(buyFreighter()); if (act === 'huta') hooks.result(setRoute('huta')); },
+        });
+      }
+      if (f.t <= 0) {
+        const kr = oreValue(f.hold) * FREIGHTER.price;
+        const tons = sum(f.hold);
+        economy.state.credits += kr;
+        economy.state.stats.earned += kr;
+        f.earned += kr; f.trips++;
+        s.stats12b.freighted += tons;
+        f.hold = zero(); f.phase = 'dok'; f.t = 0;
+        emit('freighter-in', `Frachtowiec wrócił: sprzedał ${fmt(tons)} t urobku za ${fmt(kr)} kr.`);
+        economy.save();
+      }
+    }
+    // huta nie nadąża
+    if (sum(s.ore) > AUTOMATION.hutaBacklog) {
+      const up = upgradeState('huta-piece');
+      autoCard('huta-backlog', {
+        id: 'huta-backlog', kind: 'logistics', urgency: 'warning',
+        title: 'Huta nie nadąża',
+        text: `W kolejce do pieca czeka ${fmt(sum(s.ore))} t urobku. Przyspieszyć hutę albo kierować nadmiar gdzie indziej?`,
+        choices: [
+          { label: 'Ulepsz piece', act: 'up', primary: up.ok },
+          { label: stores().length ? 'Nowy urobek do magazynu' : 'Postaw magazyn', act: 'store' },
+          { label: 'Nowy urobek na frachtowiec', act: 'ship' },
+        ],
+        timeout: 20, defaultAct: 'none',
+        onChoose: (act) => {
+          if (act === 'up') hooks.result(upgrade('huta-piece'));
+          if (act === 'store') { if (stores().length) hooks.result(setRoute('magazyn')); else offerStore('none'); }
+          if (act === 'ship') hooks.result(setRoute('frachtowiec'));
+        },
+      });
+    }
+  }
+
+  /** Budowa stacji z mostka: plac budowy w wolnym miejscu przy siedzibie. */
+  function buildStation(type) {
+    if (!inHome()) return { ok: false, text: 'Budowa z mostka tylko w układzie siedziby.' };
+    const base = hq();
+    const st = economy.placeNear(type, v3(base.pos), { from: 1300, to: 5200 });
+    return st ? { ok: true, text: `Plac budowy: ${st.name}. Holowniki dowiozą metal ze składu.` } : { ok: false, text: 'Nie udało się założyć placu budowy.' };
+  }
+
+  // ------------------------------------------------------------
   // PĘTLA
   // ------------------------------------------------------------
   // phase(e, phase), result(res), lost(e, pos), fleet(fieldId), guardFire(e, pos). result zawsze jest
@@ -734,6 +1303,9 @@ export function createCommand({
       if (s.research.t <= 0) finishResearch();
     }
     for (const e of s.expeditions.slice()) updateExpedition(e, dt);
+    updateAlloc(dt);
+    updateSentries(dt);
+    updateLogistics(dt);
     updateSmelter(dt);
   }
 
@@ -748,13 +1320,12 @@ export function createCommand({
     recovery, power, efficiency, autonomyState, setAutonomy, get smeltRate() { return lastSmelt; },
     // rozwój
     lvl, mult, has, upgradeCost, upgradeState, upgrade, techState, research,
-    /** Budowa stacji z mostka: plac budowy w wolnym miejscu przy siedzibie. */
-    buildStation(type) {
-      if (!inHome()) return { ok: false, text: 'Budowa z mostka tylko w układzie siedziby.' };
-      const base = hq();
-      const st = economy.placeNear(type, v3(base.pos), { from: 1300, to: 5200 });
-      return st ? { ok: true, text: `Plac budowy: ${st.name}. Holowniki dowiozą metal ze składu.` } : { ok: false, text: 'Nie udało się założyć placu budowy.' };
-    },
+    buildStation,
+    // krok 12b: wieże, sektory, logistyka
+    deploySentry, moveSentry, recallSentry, sentryPose, sentryRange, coverAt, contacts, sentryAltitude,
+    sentries: () => S().sentries,
+    setAlloc, setAllocRoute, fieldSummary, allocCount,
+    setRoute, buyFreighter, oreStock, takeOre, oreValue, stores, oreIn, oreCap, freighterPos, pickStore,
     update,
   };
 }

@@ -58,6 +58,13 @@ export const STATIONS = {
     name: 'Magazyn', short: 'MAG', accent: '#ffb45c',
     role: 'Składuje metal. Z magazynów i doków holowniki same zaopatrują budowy i produkcję dronów.',
     cost: { credits: 300, zelazo: 40 }, buildTime: 20, capacity: 2000, radius: 120, hull: 600,
+    oreCapacity: 600, // krok 12b: urobek z wypraw (bufor przed hutą)
+  },
+  skladnica: {
+    name: 'Wielki magazyn', short: 'WMG', accent: '#ffc978',
+    role: 'Trzy razy większy magazyn: metal i duży bufor urobku z wypraw. Stawiany, gdy zwykłe magazyny nie wystarczają.',
+    cost: { credits: 1100, zelazo: 150, nikiel: 40 }, buildTime: 35, capacity: 6000, radius: 170, hull: 1400,
+    oreCapacity: 2400,
   },
   przeladunek: {
     name: 'Stacja przeładunkowa', short: 'PRZ', accent: '#4dd6a0',

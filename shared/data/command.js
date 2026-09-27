@@ -26,7 +26,9 @@ export const HQ = {
   bridge: { x: 0, y: 62, z: 30 },    // kamera: głąb zatoki hangaru, widok przez wylot (z = 318)
   launch: { x: 0, y: 70, z: 440 },   // myśliwiec "Za sterami" - tuż za wylotem
   start: { zelazo: 260, nikiel: 70, kobalt: 8 }, // metal na start w składzie siedziby
-  startDrones: { zwiadowca: 3, gornik: 6 },
+  startDrones: { zwiadowca: 3, gornik: 12, wieza: 2 },
+  // krok 12b: kampanie sprzed zmian dostają raz tę różnicę (command.js migrate)
+  bonusDrones: { gornik: 6, wieza: 2 },
 };
 
 /**
@@ -59,8 +61,75 @@ export const DRONE_TYPES = {
     cost: { credits: 120, zelazo: 18, nikiel: 8, kobalt: 3 }, buildTime: 8, speed: 700, hull: 80,
     hold: 0, mine: 0, guard: { range: 1600, damage: 7, every: 0.55 }, group: 4,
   },
+  // krok 12b: wieża strażnicza - autonomiczny dron obronny rozstawiany w dowolnym
+  // punkcie mapy taktycznej (nie leci na wyprawę, tylko na wskazaną pozycję)
+  wieza: {
+    name: 'Wieża strażnicza', plural: 'wież strażniczych', color: '#ff5a8a',
+    role: 'Autonomiczny dron obronny z lekkim działkiem i rakietami. Rozstawiasz go na mapie taktycznej, okrąg pokazuje zasięg osłony.',
+    cost: { credits: 150, zelazo: 24, nikiel: 10, kobalt: 2 }, buildTime: 9, speed: 650, hull: 160,
+    hold: 0, mine: 0, sentry: true, group: 1,
+  },
 };
-export const DRONE_TYPE_ORDER = ['zwiadowca', 'gornik', 'holownik', 'straznik'];
+export const DRONE_TYPE_ORDER = ['zwiadowca', 'gornik', 'holownik', 'straznik', 'wieza'];
+
+/**
+ * Wieże strażnicze (krok 12b). range - promień skutecznej osłony (okrąg na
+ * mapie i w 3D): wrogów w tym promieniu wieża ostrzeliwuje, a drony wypraw
+ * pracujące w nim giną wolniej (shield). Dwie bronie: działko (szybkie, lekkie)
+ * i rakiety z naprowadzaniem (rzadko, mocno, wybuch obszarowy).
+ */
+export const SENTRY = {
+  range: 1900,
+  hover: 260,          // j. nad płaszczyzną pola (wieże nie siedzą w skałach)
+  gun: { damage: 6, every: 0.32, speed: 1600 },
+  rocket: { damage: 22, every: 4.2, speed: 480, maxSpeed: 1500, accel: 900, turnRate: 2.6, aoe: { radius: 70, damage: 14 } },
+  shield: 0.7,         // każda wieża obejmująca wyprawę: straty wolniej o 70%
+  repair: 4,           // kadłub/s na pozycji, gdy nikt nie strzela (drony serwisowe)
+};
+
+/**
+ * Dokąd drony wiozą urobek (krok 12b). Wybór przy wysyłce górników albo
+ * domyślny w zakładce Logistyka; dalej wszystko dzieje się samo.
+ */
+export const ORE_ROUTES = {
+  huta: { name: 'Huta', long: 'Huta — od razu przetop', desc: 'Urobek od razu do pieca. Najprościej, ale gdy huta nie nadąża, kolejka rośnie.' },
+  magazyn: { name: 'Magazyn', long: 'Magazyn — bufor', desc: 'Urobek do magazynów; huta sama dobiera z nich, gdy ma wolne moce. Pełny magazyn odbiera frachtowiec.' },
+  frachtowiec: { name: 'Frachtowiec', long: 'Frachtowiec — sprzedaż', desc: 'Urobek prosto na frachtowiec, który sam kursuje i sprzedaje surowiec poza układem (taniej niż metal z huty).' },
+};
+export const ORE_ROUTE_ORDER = ['huta', 'magazyn', 'frachtowiec'];
+
+/** Frachtowiec siedziby: ładownia, kurs poza układ, cena urobku (część wartości metalu). */
+export const FREIGHTER = {
+  cap: 400,            // t na frachtowiec
+  trip: 40,            // s kursu (odlot, sprzedaż, powrót)
+  load: 25,            // t/s załadunku
+  price: 0.55,         // urobek sprzedaje się za 55% wartości czystego metalu
+  idleDepart: 45,      // s bez nowego ładunku = odlot z tym, co jest
+  cost: { credits: 2200, zelazo: 180, nikiel: 50 }, // kolejny frachtowiec
+  max: 4,
+};
+
+/** Kiedy automatyka pyta i podpowiada (s między tymi samymi kartami). */
+export const AUTOMATION = {
+  magazynFull: 0.95,   // zapełnienie magazynu, przy którym frachtowiec go opróżnia
+  hutaBacklog: 900,    // t urobku w kolejce huty = karta "huta nie nadąża"
+  hutaFeed: 60,        // gdy w kolejce huty mniej niż tyle, huta dobiera z magazynów
+  feedRate: 8,         // t/s z magazynów do huty
+  cooldown: 120,
+};
+
+/**
+ * GIEŁDA (krok 12b): wymiana zasobów na inne zasoby po kursie rynku.
+ * Sprzedaż po kursie minus prowizja, kupno po kursie plus marża. Stacja
+ * przeładunkowa w układzie siedziby obniża prowizję (własny terminal).
+ */
+export const EXCHANGE = {
+  fee: 0.08, feePort: 0.03,
+  markup: 1.1,
+  oreValue: 0.5,       // urobek: tyle wartości metali, które w nim są
+  impactBuy: 0.0006,   // kupno podbija kurs metalu
+  ceiling: 1.8,
+};
 
 /** Wyprawa w czasie (s). Przelot jest "w skrócie": okienko podglądu zamiast minut lotu. */
 export const EXPEDITION = {
@@ -79,7 +148,7 @@ export const EXPEDITION = {
 /** Zasilanie: podaż i pobór w MW (umowne). */
 export const POWER = {
   supply: { siedziba: 40, reaktor: 45 },
-  demand: { magazyn: 2, przeladunek: 5, dok: 8, wieza: 6, stocznia: 12, huta: 14, siedziba: 0, reaktor: 0 },
+  demand: { magazyn: 2, skladnica: 3, przeladunek: 5, dok: 8, wieza: 6, stocznia: 12, huta: 14, siedziba: 0, reaktor: 0 },
   hangar: 4,        // produkcja dronów w siedzibie
   lab: 5,           // badania w toku
   minEfficiency: 0.25, // nawet bez prądu stacja robi coś na akumulatorach
@@ -108,6 +177,7 @@ export const UPGRADES = {
   'reaktor-rdzen': { cat: 'Energia', name: 'Rdzenie reaktorów', max: 4, per: 0.25, desc: '+25% mocy reaktorów i siedziby na poziom', cost: { credits: 700, zelazo: 50, nikiel: 30, kobalt: 5 } },
   'flota-kadlub':  { cat: 'Flota', name: 'Kadłuby okrętów', max: 5, per: 0.15, desc: '+15% wytrzymałości okrętów floty', cost: { credits: 900, zelazo: 90, nikiel: 30, kobalt: 6 } },
   'flota-dziala':  { cat: 'Flota', name: 'Uzbrojenie okrętów', max: 5, per: 0.15, desc: '+15% siły ognia floty (także w bitwach zaocznych)', cost: { credits: 1000, zelazo: 60, nikiel: 30, kobalt: 10 } },
+  'wieze':         { cat: 'Wieże strażnicze', name: 'Uzbrojenie wież', max: 4, per: 0.2, desc: '+20% obrażeń i +10% zasięgu wież strażniczych na poziom', cost: { credits: 600, zelazo: 50, nikiel: 20, kobalt: 4 } },
   'mysliwiec-oslony': { cat: 'Twój myśliwiec', name: 'Osłony myśliwca', max: 5, per: 0.12, desc: '+12% kadłuba twojego statku, gdy siadasz za sterami', cost: { credits: 500, zelazo: 40, nikiel: 16, kobalt: 2 } },
   'mysliwiec-dziala': { cat: 'Twój myśliwiec', name: 'Działa myśliwca', max: 5, per: 0.1, desc: '+10% obrażeń twoich broni', cost: { credits: 550, zelazo: 30, nikiel: 20, kobalt: 4 } },
 };

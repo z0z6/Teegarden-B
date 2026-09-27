@@ -22,6 +22,8 @@ const { seededRng } = await import('../shared/systems/asteroid-belt.js');
 const { METAL_ORDER, STATIONS, WARSHIPS } = await import('../shared/data/economy.js');
 const { HQ, DRONE_TYPES, EXPEDITION, TECHS, UPGRADES } = await import('../shared/data/command.js');
 const { createSaveSlots } = await import('../shared/systems/save-slots.js');
+const { createExchange } = await import('../shared/systems/exchange.js');
+const { SENTRY, FREIGHTER, AUTOMATION } = await import('../shared/data/command.js');
 
 let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? '  ok ' : ' FAIL'}  ${msg}`); if (!cond) fails++; };
@@ -135,7 +137,7 @@ console.log('\n4. Górnicy: pełne ładownie → decyzja → huta → metal');
   const fe0 = W.cmd.hq().storage.zelazo, co0 = W.cmd.hq().storage.kobalt;
   W.answer(d.id, 'return');
   W.runUntil(() => !W.cmd.expedition(e.id), 60);
-  ok(W.cmd.state.hangar.gornik === 6, 'górnicy w hangarze');
+  ok(W.cmd.state.hangar.gornik === HQ.startDrones.gornik, 'górnicy w hangarze');
   const ore = sum(W.cmd.state.ore);
   ok(ore > 0 || W.cmd.hq().storage.zelazo > fe0, `urobek w hucie (${ore.toFixed(1)} t czeka na przetop)`);
   W.tick(40);
@@ -333,5 +335,192 @@ console.log('\n11. Zapisy gry: sloty, wczytanie, eksport i import');
   ok(!full.save({ name: 'x', data: '{}', liveKey: 'k' }).ok, 'brak miejsca w pamięci: czytelny błąd zamiast wyjątku');
 }
 
+
+// ------------------------------------------------------------
+console.log('\n12. Więcej górników i wieże strażnicze na start');
+{
+  const W = makeWorld();
+  ok(W.cmd.state.hangar.gornik === HQ.startDrones.gornik && HQ.startDrones.gornik >= 12, `hangar: ${W.cmd.state.hangar.gornik} górników (było 6)`);
+  ok(W.cmd.state.hangar.wieza === 2, 'hangar: 2 wieże strażnicze');
+  // stary zapis (bez pól 12b): jednorazowy dodatek
+  const memory = new Map();
+  const W0 = makeWorld({ memory });
+  const c = W0.eco.state.command;
+  delete c.v2; delete c.sentries; delete c.alloc; delete c.freighter; c.hangar.gornik = 6; delete c.hangar.wieza;
+  W0.eco.save();
+  const W1 = makeWorld({ memory });
+  ok(W1.cmd.state.hangar.gornik === 12 && W1.cmd.state.hangar.wieza === 2 && Array.isArray(W1.cmd.state.sentries), 'stary zapis: +6 górników i 2 wieże, raz');
+  W1.eco.save();
+  const W2 = makeWorld({ memory });
+  ok(W2.cmd.state.hangar.gornik === 12, 'dodatek nie powtarza się przy kolejnym wczytaniu');
+}
+
+// ------------------------------------------------------------
+console.log('\n13. Wieże strażnicze: rozstawienie, zasięg, ogień, osłona wypraw');
+{
+  const hostiles = [];
+  const W = makeWorld({ hostiles });
+  const rock = W.cmd.bestRock();
+  const r = W.cmd.deploySentry({ x: rock.position.x + 300, z: rock.position.z });
+  ok(r.ok && W.cmd.state.hangar.wieza === 1 && W.cmd.sentries().length === 1, `rozstawienie: ${r.text}`);
+  const x = r.sentry;
+  W.runUntil(() => x.phase === 'straz', 30);
+  ok(x.phase === 'straz' && Math.abs(x.pos.y - (W.eco.fieldDefs('teegarden').find((d) => d.id === rock.fieldId).center.y + SENTRY.hover)) < 1, `na pozycji, ${SENTRY.hover} j. nad płaszczyzną pola`);
+  ok(W.cmd.coverAt(rock.position) === 1 && W.cmd.coverAt(rock.position.clone().add(new THREE.Vector3(SENTRY.range + 900, 0, 0))) === 0, `okrąg zasięgu ${W.cmd.sentryRange()} j.: skała w środku, dalej już nie`);
+  const shots = { gun: 0, rocket: 0 };
+  W.cmd.hooks.sentryFire = (s, p, kind) => { shots[kind]++; };
+  const foe = { alive: true, hidden: false, arriving: false, group: { position: new THREE.Vector3(x.pos.x + 900, x.pos.y, x.pos.z) }, velocity: new THREE.Vector3() };
+  foe.contact = { position: foe.group.position, velocity: foe.velocity, isAlive: () => foe.alive };
+  hostiles.push(foe);
+  W.tick(9);
+  ok(shots.gun > 15 && shots.rocket >= 2, `wróg w zasięgu: działko ${shots.gun} strzałów, rakiety ${shots.rocket}`);
+  ok(W.cmd.contacts().length === 1, 'wieża jest celem dla wrogów (kontakt)');
+  // osłona: ta sama wyprawa pod ostrzałem traci drony wolniej w zasięgu wieży
+  const loss = (cover) => {
+    const h2 = [];
+    const V = makeWorld({ hostiles: h2 });
+    const rr = V.cmd.bestRock();
+    if (cover) { const d = V.cmd.deploySentry({ x: rr.position.x, z: rr.position.z }).sentry; V.runUntil(() => d.phase === 'straz', 30); }
+    const e = V.cmd.dispatch('gornik', 6, rr.id).exp;
+    V.runUntil(() => e.phase === 'praca', 40);
+    const p = V.cmd.pose(e, new THREE.Vector3());
+    h2.push({ alive: true, hidden: false, arriving: false, group: { position: p.clone().add(new THREE.Vector3(5000, 0, 0)) }, velocity: new THREE.Vector3() });
+    h2[0].group.position.copy(p).add(new THREE.Vector3(600, 0, 0));
+    V.tick(12);
+    return V.cmd.state.stats.lost;
+  };
+  const bare = loss(false), covered = loss(true);
+  ok(covered < bare, `osłona wieży: strata dronów ${bare} → ${covered} w tym samym czasie`);
+  const mv = W.cmd.moveSentry(x.id, { x: x.pos.x + 2000, z: x.pos.z });
+  ok(mv.ok && x.phase === 'lot', 'przestawienie: wieża leci na nowe miejsce');
+  hostiles.length = 0;
+  W.cmd.recallSentry(x.id);
+  W.runUntil(() => !W.cmd.sentries().length, 40);
+  ok(W.cmd.state.hangar.wieza === 2, 'wycofanie: wieża wraca do hangaru');
+  const d = W.cmd.deploySentry({ x: 0, z: 0 }).sentry;
+  W.runUntil(() => d.phase === 'straz', 40);
+  W.cmd.contacts();
+  const rt = [...Array(1)].map(() => W.cmd.contacts()[0])[0];
+  ok(!!rt, 'wieża na pozycji ma kontakt');
+}
+
+// ------------------------------------------------------------
+console.log('\n14. Przydział dronów do sektorów (pól)');
+{
+  const W = makeWorld();
+  const home = W.eco.fieldDefs('teegarden')[0];
+  const r1 = W.cmd.setAlloc(home.id, 'gornik', 8);
+  W.tick(2);
+  ok(r1.ok && W.cmd.allocCount(home.id, 'gornik') === 8 && W.cmd.state.hangar.gornik === 4, `„${home.name}: 8 górników” — zarządca wysłał 8 (w hangarze zostało ${W.cmd.state.hangar.gornik})`);
+  ok(W.cmd.expeditions().filter((e) => e.alloc === home.id).every((e) => W.eco.asteroidsIn('teegarden').find((a) => a.id === e.target.id)?.fieldId === home.id), 'wszyscy pracują na skałach tego pola');
+  ok(!W.decisions.some((d) => d.kind === 'logistics'), 'przydział nie pyta o trasę (automatyka)');
+  W.cmd.setAlloc(home.id, 'gornik', 3);
+  W.tick(2);
+  const working = W.cmd.expeditions().filter((e) => e.alloc === home.id).reduce((a, e) => a + e.n, 0);
+  ok(working === 3, `zmniejszenie do 3: nadmiar odesłany (pracuje ${working})`);
+  W.runUntil(() => W.cmd.state.hangar.gornik === 9, 60);
+  ok(W.cmd.state.hangar.gornik === 9, 'odesłani górnicy wrócili do hangaru');
+  // pełne ładownie w przydziale: bez karty, sami wracają i zarządca dosyła
+  const full = W.runUntil(() => W.cmd.expeditions().some((e) => e.alloc && e.phase === 'odlot'), 120);
+  ok(full >= 0 && !W.decisions.some((d) => d.kind === 'return'), 'pełne ładownie: powrót bez pytania');
+  const ore0 = W.cmd.state.stats.ore;
+  W.tick(60);
+  ok(W.cmd.allocCount(home.id, 'gornik') === 3 && W.cmd.state.stats.ore > ore0, 'zarządca trzyma 3 górników w pracy, urobek płynie');
+  // zwiadowcy na nieznane pole
+  const unknown = W.cmd.targets().unknown[0];
+  const r2 = W.cmd.setAlloc(unknown.id, 'zwiadowca', 2);
+  W.tick(2);
+  ok(r2.ok && W.cmd.allocCount(unknown.id, 'zwiadowca') === 2, `zwiadowcy (2) lecą na nieznane pole ${unknown.def.name}`);
+  W.runUntil(() => W.eco.isDiscovered('teegarden', unknown.id) && W.cmd.fieldSummary(unknown.id).surveyed > 0, 90);
+  const fs = W.cmd.fieldSummary(unknown.id);
+  ok(fs.discovered && fs.surveyed > 0, `pole odkryte, zbadane skały: ${fs.surveyed}/${fs.rocks}`);
+  ok(W.cmd.setAlloc(home.id, 'wieza', 2).ok === false, 'wież nie przydziela się do sektorów (rozstawia się je na mapie)');
+}
+
+// ------------------------------------------------------------
+console.log('\n15. Trasy urobku i automatyka logistyki');
+{
+  const W = makeWorld();
+  W.eco.state.credits = 20000;
+  const rock = W.cmd.bestRock();
+  W.cmd.dispatch('gornik', 6, rock.id);
+  const card = W.decisions.find((d) => d.id.startsWith('route-'));
+  ok(card && card.choices.map((c) => c.act).join() === 'huta,magazyn,frachtowiec', `wysłanie górników: karta „${card?.title}” [${card?.choices.map((c) => c.label).join(' / ')}]`);
+  W.answer(card.id, 'magazyn');
+  ok(W.cmd.state.route === 'magazyn' && W.decisions.some((d) => d.id === 'store-none'), 'magazyn bez magazynu: karta z gotowym „Zbuduj magazyn”');
+  W.answer('store-none', 'small');
+  W.runUntil(() => W.cmd.stores().length > 0, 120);
+  ok(W.cmd.stores().length === 1, 'magazyn postawiony z karty');
+  W.runUntil(() => W.decisions.some((d) => d.kind === 'return'), 200);
+  W.answer(W.decisions.find((d) => d.kind === 'return').id, 'return');
+  W.runUntil(() => !W.cmd.expeditions().length, 200);
+  const mag = W.cmd.stores()[0];
+  mag.ore ??= Object.fromEntries(METAL_ORDER.map((m) => [m, 0]));
+  ok(W.cmd.oreIn(mag) > 1 || W.cmd.state.stats.smelted.zelazo > 0, `urobek trafił do magazynu (${fmt(W.cmd.oreIn(mag))} t) i huta dobiera z niego`);
+  // huta dobiera z magazynu, gdy ma wolne moce
+  mag.ore.zelazo += 300;
+  const m0 = W.cmd.oreIn(mag);
+  W.tick(10);
+  ok(W.cmd.oreIn(mag) < m0 - 20, `huta sama dobiera urobek z magazynu (${fmt(m0)} → ${fmt(W.cmd.oreIn(mag))} t)`);
+  // pełny magazyn: frachtowiec odbiera + karta "większy magazyn"
+  mag.ore.zelazo = W.cmd.oreCap(mag);
+  const cr = W.eco.state.credits;
+  W.tick(3);
+  ok(W.decisions.some((d) => d.id === 'store-full' && d.choices[0].act === 'big'), 'pełny magazyn: karta „Zbuduj wielki magazyn”');
+  ok(W.cmd.oreIn(mag) < W.cmd.oreCap(mag) * AUTOMATION.magazynFull && W.cmd.state.freighter.hold.zelazo > 0, 'frachtowiec sam odbiera urobek z pełnego magazynu');
+  W.runUntil(() => W.cmd.state.freighter.phase === 'kurs', 120);
+  W.runUntil(() => W.cmd.state.freighter.phase === 'dok', FREIGHTER.trip + 5);
+  ok(W.eco.state.credits > cr && W.cmd.state.freighter.trips === 1, `frachtowiec sprzedał urobek: +${fmt(W.eco.state.credits - cr)} kr`);
+  W.answer('store-full', 'big');
+  W.runUntil(() => W.cmd.stores().some((x) => x.type === 'skladnica'), 200);
+  ok(W.cmd.stores().some((x) => x.type === 'skladnica'), `wielki magazyn z karty (urobek: ${W.cmd.oreStock().magazynCap} t miejsca)`);
+  // trasa frachtowiec
+  W.cmd.setRoute('frachtowiec', { ask: false });
+  const e = W.cmd.dispatch('gornik', 6, W.cmd.bestRock().id).exp;
+  ok(e.route === 'frachtowiec' && !W.decisions.some((d) => d.id === `route-${e.id}`), '„zawsze frachtowiec”: bez pytania');
+  W.runUntil(() => W.decisions.some((d) => d.id === `full-${e.id}`), 200);
+  W.answer(`full-${e.id}`, 'return');
+  W.runUntil(() => !W.cmd.expedition(e.id), 200);
+  ok(W.cmd.oreStock().frachtowiec > 1, `urobek na frachtowcu (${fmt(W.cmd.oreStock().frachtowiec)} t)`);
+  // huta nie nadąża
+  W.cmd.state.ore.zelazo = AUTOMATION.hutaBacklog + 100;
+  W.tick(1);
+  ok(W.decisions.some((d) => d.id === 'huta-backlog' && d.choices.some((c) => c.act === 'up')), 'huta nie nadąża: karta „Ulepsz piece / do magazynu / na frachtowiec”');
+  W.cmd.hq().storage.zelazo += 300; W.cmd.hq().storage.nikiel += 100;
+  const b = W.cmd.buyFreighter();
+  ok(b.ok && W.cmd.state.freighter.n === 2, `drugi frachtowiec: ${b.text}`);
+}
+
+// ------------------------------------------------------------
+console.log('\n16. Giełda: wymiana zasobów');
+{
+  const W = makeWorld();
+  W.eco.state.credits = 5000;
+  const ex = createExchange({ economy: W.eco, command: W.cmd });
+  const pool = () => W.eco.poolOf('teegarden').reduce((a, s) => { for (const m of METAL_ORDER) a[m] += s.storage[m]; return a; }, Object.fromEntries(METAL_ORDER.map((m) => [m, 0])));
+  const fe0 = pool().zelazo, ni0 = pool().nikiel;
+  const q = ex.quote('zelazo', 'nikiel', 100);
+  ok(q.ok && q.out > 0 && q.out < 100 * 4 / 9, `wycena: 100 t Fe → ${q.out.toFixed(1)} t Ni (prowizja ${fmt(q.fee)} kr)`);
+  const t = ex.trade('zelazo', 'nikiel', 100);
+  ok(t.ok && Math.abs(pool().zelazo - (fe0 - 100)) < 1e-6 && Math.abs(pool().nikiel - (ni0 + q.out)) < 0.01, `wymiana: ${t.text}`);
+  ok(W.eco.state.market.zelazo < 1 && W.eco.state.market.nikiel > 1, 'sprzedaż obniża kurs Fe, kupno podnosi kurs Ni');
+  const c0 = W.eco.state.credits;
+  const t2 = ex.trade('kredyty', 'kobalt', 1000);
+  ok(t2.ok && W.eco.state.credits === c0 - 1000 && pool().kobalt > 8, `kredyty → metal: ${t2.text}`);
+  const t3 = ex.trade('platyna', 'kredyty', 50);
+  ok(!t3.ok, `bez platyny: „${t3.text}”`);
+  W.cmd.state.ore.nikiel = 40; W.cmd.state.ore.zelazo = 60;
+  const c1 = W.eco.state.credits;
+  const t4 = ex.trade('urobek', 'kredyty', 100);
+  ok(t4.ok && W.eco.state.credits > c1 && W.cmd.oreStock().huta < 1, `urobek na sprzedaż: ${t4.text}`);
+  ok(!ex.quote('kredyty', 'urobek', 10).ok && !ex.quote('zelazo', 'zelazo', 10).ok, 'nie da się kupić urobku ani wymienić towaru na ten sam');
+  const fee0 = ex.fee();
+  W.eco.placeReady('przeladunek', W.cmd.hq().pos.x !== undefined ? { x: W.cmd.hq().pos.x + 3000, y: W.cmd.hq().pos.y, z: W.cmd.hq().pos.z } : null, { temp: false });
+  ok(ex.fee() < fee0, `stacja przeładunkowa obniża prowizję (${fee0 * 100}% → ${ex.fee() * 100}%)`);
+  // pełny skład: metal, który się nie mieści, nie jest kupowany
+  for (const s of W.eco.poolOf('teegarden')) s.storage.zelazo += W.eco.freeSpace(s);
+  const q5 = ex.quote('kredyty', 'zelazo', 3000);
+  ok(!q5.ok || q5.out < 1, 'pełny skład: giełda nie sprzeda metalu, którego nie ma gdzie złożyć');
+}
 console.log(fails ? `\n${fails} błędów` : '\nWszystko działa.');
 process.exit(fails ? 1 : 0);
