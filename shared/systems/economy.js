@@ -3,6 +3,7 @@ import {
   METALS, METAL_ORDER, STATIONS, DRONE, PLAYER_MINING, MARKET, LOGISTICS, START, SWARM_NAMES, BELT, ASTEROID_CLASSES, RAIDS,
 } from '../data/economy.js';
 import { REPAIR } from '../data/military.js';
+import { sanitizeState } from './save-sanitize.js';
 import {
   generateBelt, createAsteroidBelt, surfacePoint, markMined, markDepleted, remaining, hashString,
 } from './asteroid-belt.js';
@@ -124,8 +125,11 @@ export function createEconomy({
     try {
       const raw = storage?.getItem(saveKey);
       if (!raw) return null;
-      const s = JSON.parse(raw);
-      if (s?.version !== 1) return null;
+      // sanityzacja: nieznane id z zapisu (plik od gracza, stara wersja) nie
+      // wywracają paneli - patrz save-sanitize.js
+      const { state: s, fixes } = sanitizeState(JSON.parse(raw));
+      if (!s) return null;
+      if (fixes.length) console.warn(`Zapis gry: naprawiono ${fixes.length} wpis(ów):`, fixes.slice(0, 20));
       // zapis sprzed rabusiów: brakujące pola z nowego stanu
       const f = freshState();
       s.stats = { ...f.stats, ...s.stats };

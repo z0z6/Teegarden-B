@@ -85,6 +85,37 @@ export function createCombat(scene) {
 
   const emit = (type, payload) => listeners[type].forEach((fn) => fn(payload));
 
+  // WYDAJNOŚĆ: PULE OBIEKTÓW. Każdy strzał tworzył nowy Mesh + Sprite, a każde
+  // trafienie nowy materiał błysku (potem dispose). Przy działku i watahach to
+  // setki alokacji na sekundę i przycięcia od GC. Meshe pocisków tworzone TU
+  // (bez `mesh` od wołającego) i błyski wracają do puli i są używane ponownie.
+  // Rekordy pocisków (bolt) NIE są recyklingowane - weapons.js trzyma do nich
+  // referencje (naprowadzanie), więc ponowne użycie byłoby niebezpieczne.
+  const POOL_MAX = 256;
+  const boltPool = new Map(); // kolor -> Mesh[]
+  const flashPool = [];       // { mesh, mat }
+  function takeBoltMesh(color, size) {
+    let mesh = boltPool.get(color)?.pop();
+    if (!mesh) {
+      mesh = new THREE.Mesh(BOLT_GEO, boltMaterial(color));
+      mesh.add(new THREE.Sprite(glowMaterial(color)));
+      mesh.userData.poolColor = color;
+    }
+    mesh.visible = true;
+    mesh.scale.setScalar(size);
+    const g = 0.024 * Math.sqrt(size);
+    mesh.children[0].scale.set(g, g, 1).divideScalar(size); // sprite dziedziczy skalę rodzica - kompensujemy
+    return mesh;
+  }
+  function releaseBoltMesh(mesh) {
+    scene.remove(mesh);
+    const color = mesh.userData.poolColor;
+    if (color === undefined) return; // mesh od wołającego (rakiety) - nie nasz
+    let list = boltPool.get(color);
+    if (!list) boltPool.set(color, (list = []));
+    if (list.length < POOL_MAX) list.push(mesh);
+  }
+
   function boltMaterial(color) {
     if (!boltMaterials.has(color)) {
       boltMaterials.set(color, new THREE.MeshBasicMaterial({ color, toneMapped: false }));
@@ -107,14 +138,7 @@ export function createCombat(scene) {
     size = 1, mesh = null, homing = null, accel = 0, maxSpeed = null, aoe = null, proximity = 0,
     onUpdate = null, onEnd = null,
   }) {
-    if (!mesh) {
-      mesh = new THREE.Mesh(BOLT_GEO, boltMaterial(color));
-      mesh.scale.setScalar(size);
-      const glow = new THREE.Sprite(glowMaterial(color));
-      glow.scale.set(0.024 * Math.sqrt(size), 0.024 * Math.sqrt(size), 1);
-      glow.scale.divideScalar(size); // sprite dziedziczy skalę rodzica - kompensujemy
-      mesh.add(glow);
-    }
+    if (!mesh) mesh = takeBoltMesh(color, size);
     mesh.position.copy(origin);
     mesh.quaternion.setFromUnitVectors(Z_AXIS, direction);
     mesh.frustumCulled = false;
@@ -224,13 +248,19 @@ export function createCombat(scene) {
   function endBolt(i, reason, point) {
     const b = bolts[i];
     b.onEnd?.(b, reason, point);
-    scene.remove(b.mesh);
+    releaseBoltMesh(b.mesh);
     bolts.splice(i, 1);
   }
 
   function flash(position, size, color = 0xffc36b, duration = 0.45) {
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, toneMapped: false, depthWrite: false });
-    const mesh = new THREE.Mesh(FLASH_GEO, mat);
+    let fx = flashPool.pop();
+    if (!fx) {
+      const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, toneMapped: false, depthWrite: false });
+      fx = { mat: m, mesh: new THREE.Mesh(FLASH_GEO, m) };
+    }
+    const { mat, mesh } = fx;
+    mat.color.set(color);
+    mat.opacity = 0.95;
     mesh.position.copy(position);
     mesh.scale.setScalar(size * 0.3);
     mesh.frustumCulled = false;
@@ -302,7 +332,7 @@ export function createCombat(scene) {
       const e = effects[i];
       e.age += dt;
       const k = e.age / e.duration;
-      if (k >= 1) { scene.remove(e.mesh); e.mat.dispose(); effects.splice(i, 1); continue; }
+      if (k >= 1) { endFlash(e); effects.splice(i, 1); continue; }
       e.mesh.scale.setScalar(e.size * (0.3 + 0.7 * k));
       e.mat.opacity = 0.95 * (1 - k);
     }
@@ -371,10 +401,16 @@ export function createCombat(scene) {
     return best;
   }
 
+  function endFlash(e) {
+    scene.remove(e.mesh);
+    if (flashPool.length < 64) flashPool.push({ mesh: e.mesh, mat: e.mat });
+    else e.mat.dispose();
+  }
+
   function clear() {
-    for (const b of bolts) scene.remove(b.mesh);
+    for (const b of bolts) releaseBoltMesh(b.mesh);
     bolts.length = 0;
-    for (const e of effects) { scene.remove(e.mesh); e.mat.dispose(); }
+    for (const e of effects) endFlash(e);
     effects.length = 0;
   }
 
@@ -382,5 +418,7 @@ export function createCombat(scene) {
     register, unregister, fire, flash, update, clear, raycast, explode, incoming, threats, breakGuidance,
     on(type, fn) { listeners[type].push(fn); },
     get boltCount() { return bolts.length; },
+    /** Diagnostyka / testy: ile obiektów leży w pulach. */
+    get pooled() { let n = 0; for (const l of boltPool.values()) n += l.length; return { bolts: n, flashes: flashPool.length }; },
   };
 }

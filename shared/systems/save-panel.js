@@ -47,10 +47,10 @@ export function createSavePanel(root, { slots, capture, describe = () => '', onL
       <article class="sv-slot">
         <div class="sv-slot-b"><b>${esc(s.name)}</b><small>${esc(when(s.savedAt))}${describe(s.meta) ? ` · ${esc(describe(s.meta))}` : ''}</small></div>
         <div class="sv-slot-a">
-          <button class="sv-btn primary${armed === `load:${s.id}` ? ' armed' : ''}" data-act="load" data-id="${s.id}">${confirmLabel(`load:${s.id}`, 'Wczytaj')}</button>
-          <button class="sv-btn ghost${armed === `over:${s.id}` ? ' armed' : ''}" data-act="over" data-id="${s.id}">${confirmLabel(`over:${s.id}`, 'Nadpisz')}</button>
-          <button class="sv-btn ghost" data-act="export" data-id="${s.id}" title="Pobierz plik zapisu">Pobierz</button>
-          <button class="sv-btn ghost danger${armed === `del:${s.id}` ? ' armed' : ''}" data-act="del" data-id="${s.id}">${confirmLabel(`del:${s.id}`, 'Usuń')}</button>
+          <button class="sv-btn primary${armed === `load:${s.id}` ? ' armed' : ''}" data-act="load" data-id="${esc(s.id)}">${confirmLabel(`load:${s.id}`, 'Wczytaj')}</button>
+          <button class="sv-btn ghost${armed === `over:${s.id}` ? ' armed' : ''}" data-act="over" data-id="${esc(s.id)}">${confirmLabel(`over:${s.id}`, 'Nadpisz')}</button>
+          <button class="sv-btn ghost" data-act="export" data-id="${esc(s.id)}" title="Pobierz plik zapisu">Pobierz</button>
+          <button class="sv-btn ghost danger${armed === `del:${s.id}` ? ' armed' : ''}" data-act="del" data-id="${esc(s.id)}">${confirmLabel(`del:${s.id}`, 'Usuń')}</button>
         </div>
       </article>`).join('') : '<p class="sv-empty">Brak zapisów. Nadaj nazwę i kliknij „Zapisz”.</p>';
     const nb = root.querySelector('[data-act="new"]');
@@ -92,6 +92,7 @@ export function createSavePanel(root, { slots, capture, describe = () => '', onL
     const f = R.file.files?.[0];
     R.file.value = '';
     if (!f) return;
+    if (f.size > 5_000_000) { say('Plik jest za duży jak na zapis gry.', true); return; }
     const r = slots.importText(await f.text());
     say(r.ok ? `Wczytano plik jako nowy zapis. ${r.text}` : r.text, !r.ok);
     render();

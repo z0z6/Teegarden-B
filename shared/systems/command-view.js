@@ -184,9 +184,11 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
       if (command.expedition(q.e.id) && (q.e.phase === 'przelot' || q.e.phase === 'odlot')) { cine = { e: q.e, kind: q.e.phase === 'przelot' ? 'out' : 'back', t: 0 }; open(true); break; }
     }
   }
+  let pipRectDirty = true, pipRectAge = 0; // cache prostokąta PiP (renderPip niżej)
   function open(v) {
     if (!pipEl) return;
     pipEl.classList.toggle('open', v);
+    pipRectDirty = true;
     if (v && pipLabel) pipLabel.textContent = cine ? `${cine.e.name} · ${cine.kind === 'out' ? 'wylot' : 'powrót'}` : '';
   }
 
@@ -247,23 +249,50 @@ export function createCommandView({ scene, renderer, camera, cameraRig, command,
     return true;
   }
 
+  // WYDAJNOŚĆ: prostokąt okienka i rozmiar canvasu czytamy z DOM tylko po
+  // zmianie (resize, koniec animacji otwarcia, ResizeObserver), a nie co klatkę.
+  // getBoundingClientRect() po zmianach HUD w tick() wymuszał synchroniczne
+  // przeliczenie layoutu w każdej klatce na mostku. Zapasowo odświeżamy co ~1 s
+  // (gdyby okienko przesunęło się bez zmiany rozmiaru, np. przez inny panel).
+  const pipRect = { left: 0, bottom: 0, width: 0, height: 0, W: 0, H: 0 };
+  const pipScreen = pipEl?.querySelector('.pip-screen') ?? pipEl;
+  const markPip = () => { pipRectDirty = true; };
+  if (pipEl && typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', markPip);
+    window.addEventListener('orientationchange', markPip);
+    pipEl.addEventListener('transitionend', markPip);
+    pipEl.addEventListener('animationend', markPip);
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(markPip);
+      ro.observe(pipScreen);
+      ro.observe(renderer.domElement);
+    }
+  }
+  function measurePip() {
+    const r = pipScreen.getBoundingClientRect();
+    pipRect.left = r.left; pipRect.bottom = r.bottom; pipRect.width = r.width; pipRect.height = r.height;
+    pipRect.W = renderer.domElement.clientWidth; pipRect.H = renderer.domElement.clientHeight;
+    pipRectDirty = false; pipRectAge = 0;
+  }
+
   function renderPip() {
     if (!cine || !pipEl) return;
     if (!command.expedition(cine.e.id)) { close(); return; }
     if (!shot()) return;
-    const r = pipEl.querySelector('.pip-screen')?.getBoundingClientRect() ?? pipEl.getBoundingClientRect();
+    if (pipRectDirty || ++pipRectAge > 60) measurePip();
+    const r = pipRect;
     if (r.width < 10 || r.height < 10) return;
-    pipCam.aspect = r.width / r.height;
-    pipCam.updateProjectionMatrix();
+    const aspect = r.width / r.height;
+    if (pipCam.aspect !== aspect) { pipCam.aspect = aspect; pipCam.updateProjectionMatrix(); }
     pipCam.updateMatrixWorld();
-    const H = renderer.domElement.clientHeight;
+    const H = r.H;
     background.update(pipCam);
     renderer.setScissorTest(true);
     renderer.setViewport(r.left, H - r.bottom, r.width, r.height);
     renderer.setScissor(r.left, H - r.bottom, r.width, r.height);
     renderer.render(scene, pipCam);
     renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, renderer.domElement.clientWidth, H);
+    renderer.setViewport(0, 0, r.W, H);
     background.update(camera);
   }
 

@@ -15,6 +15,16 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const fmt = (n) => Math.round(n).toLocaleString('pl-PL');
 
 /** Model statku dla klasy okrętu: kolejne modele rasy gracza (mały -> duży). */
+// CSP: bez atrybutu inline onerror (blokowany przez Content-Security-Policy).
+// Jeden nasłuch w fazie przechwytywania (zdarzenie error nie bąbelkuje):
+// brak miniatury okrętu -> ramka dostaje klasę .none, jak wcześniej.
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('error', (e) => {
+    const t = e.target;
+    if (t?.tagName === 'IMG' && t.dataset?.fallback === 'hide-parent') t.parentElement?.classList.add('none');
+  }, true);
+}
+
 export function warshipModel(raceId, cls) {
   const own = SHIPS.filter((s) => raceForShip(s.id) === raceId);
   const list = own.length ? own : SHIPS;
@@ -55,7 +65,7 @@ export function createArmyTab({ army, strategy, economy, playerRace, systemName 
         const d = WARSHIPS[cls];
         const model = warshipModel(race, cls);
         return `<div class="fp-class">
-          <div class="fp-thumb"><img src="${thumbUrl(model)}" alt="" onerror="this.parentElement.classList.add('none')"/><span class="fp-badge">${warshipIcon(cls, 20, RACES[race].color)}</span></div>
+          <div class="fp-thumb"><img src="${thumbUrl(model)}" alt="" data-fallback="hide-parent"/><span class="fp-badge">${warshipIcon(cls, 20, RACES[race].color)}</span></div>
           <div class="fp-class-b"><b>${d.name}</b><small>${esc(d.role)}</small>
             <div class="fp-stats"><span>siła <b>${d.power}</b></span><span>kadłub <b>${d.hull}</b></span><span>budowa <b>${d.buildTime} s</b></span><span>utrzymanie <b>${d.upkeep * 6} kr/min</b></span></div>
             ${costHtml(d.cost)}

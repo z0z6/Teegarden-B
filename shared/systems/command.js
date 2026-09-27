@@ -533,20 +533,40 @@ export function createCommand({
     }
     return { pos: hangarPos(), radius: 20 };
   }
-  const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _d = new THREE.Vector3();
+  const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
+  // WYDAJNOŚĆ: pose() jest wołane co klatkę dla każdej wyprawy (widok, PiP,
+  // kontakty). frame() + hangarPos() alokowały ~12 obiektów na wywołanie, choć
+  // siedziba stoi. Tu trzymamy ramę TYLKO DO ODCZYTU, przeliczaną, gdy zmieni
+  // się siedziba, jej pozycja albo obrót. Publiczne frame() zostaje bez zmian
+  // (wołający mogą modyfikować zwrócone wektory).
+  const roFrame = { key: '', ok: false, pos: new THREE.Vector3(), quat: new THREE.Quaternion(), fwd: new THREE.Vector3(), hang: new THREE.Vector3() };
+  function frameRO() {
+    const st = hq();
+    if (!st) { roFrame.ok = false; roFrame.key = ''; return null; }
+    const key = `${st.id}|${st.pos.x}|${st.pos.y}|${st.pos.z}|${st.yaw ?? 0}`;
+    if (key !== roFrame.key) {
+      roFrame.key = key; roFrame.ok = true;
+      roFrame.pos.set(st.pos.x, st.pos.y, st.pos.z);
+      roFrame.quat.setFromAxisAngle(_Y, st.yaw ?? 0);
+      roFrame.fwd.set(0, 0, 1).applyQuaternion(roFrame.quat);
+      roFrame.hang.set(HQ.hangar.x, HQ.hangar.y, HQ.hangar.z).applyQuaternion(roFrame.quat).add(roFrame.pos);
+    }
+    return roFrame;
+  }
   /**
    * Środek grupy wyprawy w świecie (albo null, gdy "w skrócie" - poza
    * przestrzenią). dir - kierunek lotu.
    */
   function pose(e, out = new THREE.Vector3(), dir = null) {
-    const f = frame();
+    const f = frameRO();
     const info = targetInfo(e);
     if (!f || !info.pos) return null;
-    const hang = hangarPos();
+    const hang = f.hang;
     const tgt = info.pos;
     const k = Math.min(1, e.t / Math.max(0.01, phaseDur(e)));
     _d.copy(tgt).sub(hang).normalize();
     const setDir = (v) => { if (dir) dir.copy(v).normalize(); };
+    const setDirNeg = (v) => { if (dir) dir.copy(v).negate().normalize(); };
     switch (e.phase) {
       case 'wylot': {
         // najpierw prosto z hangaru, potem łuk na cel i przyspieszenie
@@ -562,14 +582,14 @@ export function createCommand({
       case 'dolot': {
         _a.copy(hang).sub(tgt).normalize();
         const far = _b.copy(tgt).addScaledVector(_a, info.radius + 2400);
-        out.copy(far).lerp(_a.clone().multiplyScalar(info.radius + 90).add(tgt), easeOut(k));
-        setDir(_a.clone().negate());
+        out.copy(far).lerp(_c.copy(_a).multiplyScalar(info.radius + 90).add(tgt), easeOut(k));
+        setDirNeg(_a);
         return out;
       }
       case 'praca': case 'pelne': case 'straz': {
         _a.copy(hang).sub(tgt).normalize();
         out.copy(tgt).addScaledVector(_a, info.radius + (e.phase === 'straz' ? 380 : 90));
-        setDir(_a.clone().negate());
+        setDirNeg(_a);
         return out;
       }
       case 'odlot': {
@@ -583,9 +603,9 @@ export function createCommand({
         const dp = dockPoint(e);
         _a.copy(tgt).sub(dp.pos).normalize(); // od doku w stronę złoża
         const far = _b.copy(dp.pos).addScaledVector(_a, 2600).addScaledVector(f.fwd, 400);
-        const near = dp.pos.clone().addScaledVector(_a, dp.radius + 40);
+        const near = _c.copy(dp.pos).addScaledVector(_a, dp.radius + 40);
         if (e.phase === 'rozladunek') out.copy(near); else out.copy(far).lerp(near, easeOut(k));
-        setDir(_a.clone().negate());
+        setDirNeg(_a);
         return out;
       }
       default: return null; // przelot / powrót: w skrócie (okienko podglądu)
@@ -735,7 +755,7 @@ export function createCommand({
     r.fireCd = g.every;
     _mz.x += (random() - 0.5) * 60; _mz.y += (random() - 0.5) * 30; _mz.z += (random() - 0.5) * 60;
     _fd.copy(t.group.position).addScaledVector(t.velocity ?? _fd.set(0, 0, 0), best / 1400).sub(_mz).normalize();
-    combat.fire({ origin: _mz.clone(), direction: _fd.clone(), side: 'ally', speed: 1400, damage: g.damage * mult('drony-pancerz'), color: 0xff9a5a, life: g.range / 1400 + 0.3, hitScale: 1.6 });
+    combat.fire({ origin: _mz, direction: _fd, side: 'ally', speed: 1400, damage: g.damage * mult('drony-pancerz'), color: 0xff9a5a, life: g.range / 1400 + 0.3, hitScale: 1.6 });
     hooks.guardFire?.(e, _mz);
   }
 
@@ -900,7 +920,7 @@ export function createCommand({
       _sa.copy(r.pos).add(_sd.set(0, 14, 0));
       _sd.copy(t.group.position).addScaledVector(t.velocity ?? _sd.set(0, 0, 0), best / g.speed).sub(_sa).normalize();
       _sd.x += (random() - 0.5) * 0.03; _sd.y += (random() - 0.5) * 0.03; _sd.z += (random() - 0.5) * 0.03;
-      combat.fire({ origin: _sa.clone(), direction: _sd.normalize().clone(), side: 'ally', speed: g.speed, damage: g.damage * dmg,
+      combat.fire({ origin: _sa, direction: _sd.normalize(), side: 'ally', speed: g.speed, damage: g.damage * dmg,
         color: 0xff7aa8, life: range / g.speed + 0.3, hitScale: 1.6, shooter: r.shooter });
       hooks.sentryFire?.(x, r.pos, 'gun');
     }
@@ -910,7 +930,7 @@ export function createCommand({
       _sa.copy(r.pos).add(_sd.set(0, 20, 0));
       _sd.copy(t.group.position).sub(_sa).normalize();
       const target = t.contact ?? { position: t.group.position, velocity: t.velocity, isAlive: () => t.alive && !t.hidden };
-      combat.fire({ origin: _sa.clone(), direction: _sd.clone(), side: 'ally', speed: k.speed, maxSpeed: k.maxSpeed, accel: k.accel,
+      combat.fire({ origin: _sa, direction: _sd, side: 'ally', speed: k.speed, maxSpeed: k.maxSpeed, accel: k.accel,
         damage: k.damage * dmg, color: 0xffc27a, life: range / k.speed + 1.5, size: 1.6, hitScale: 1.4, proximity: 30,
         homing: { target, turnRate: k.turnRate }, aoe: { radius: k.aoe.radius, damage: k.aoe.damage * dmg }, shooter: r.shooter });
       hooks.sentryFire?.(x, r.pos, 'rocket');

@@ -5,6 +5,10 @@ import { buildStationModel, setStationProgress, animateStation, disposeObject, c
 import { surfacePoint, seededRng, hashString } from './asteroid-belt.js';
 import { PLAYER } from './strategy.js';
 
+// kolor rasy jako liczba - raz na rasę, nie nowy THREE.Color przy każdym strzale wieży
+const RACE_HEX = new Map();
+const raceHex = (id) => { let h = RACE_HEX.get(id); if (h === undefined) RACE_HEX.set(id, (h = new THREE.Color(RACES[id].color).getHex())); return h; };
+
 /**
  * PLACÓWKI RAS W UKŁADZIE GRACZA (krok 11).
  *
@@ -179,8 +183,8 @@ export function createRivalPresence({ scene, economy, strategy, combat, npcs, pl
       _v.copy(best.position).addScaledVector(best.velocity ?? _d.set(0, 0, 0), bd / TOWER.speed);
       if (st.model?.turret) { st.model.group.updateMatrixWorld(); st.model.turret.lookAt(_v); st.model.turret.updateMatrixWorld(); if (st.model.muzzles.length) { _m.copy(st.model.muzzles[st.muzzle++ % st.model.muzzles.length]); st.model.turret.localToWorld(_m); } }
       _d.copy(_v).sub(_m).normalize();
-      combat.fire({ origin: _m.clone(), direction: _d.clone(), side: 'hostile', speed: TOWER.speed, damage: TOWER.damage,
-        color: new THREE.Color(RACES[o.owner].color).getHex(), life: TOWER.range / TOWER.speed + 0.3, hitScale: 1.8, shooter: { contact: st.contact } });
+      combat.fire({ origin: _m, direction: _d, side: 'hostile', speed: TOWER.speed, damage: TOWER.damage,
+        color: raceHex(o.owner), life: TOWER.range / TOWER.speed + 0.3, hitScale: 1.8, shooter: { contact: st.contact } });
     }
   }
 
