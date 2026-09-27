@@ -21,6 +21,7 @@ const { createNpcManager } = await import('../shared/systems/npc-ships.js');
 const { seededRng } = await import('../shared/systems/asteroid-belt.js');
 const { METAL_ORDER, STATIONS, WARSHIPS } = await import('../shared/data/economy.js');
 const { HQ, DRONE_TYPES, EXPEDITION, TECHS, UPGRADES } = await import('../shared/data/command.js');
+const { createSaveSlots } = await import('../shared/systems/save-slots.js');
 
 let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? '  ok ' : ' FAIL'}  ${msg}`); if (!cond) fails++; };
@@ -262,6 +263,74 @@ console.log('\n9. Hangar, budowa z mostka, zapis');
   const W2 = makeWorld({ memory });
   ok(W2.cmd.hq()?.id === W.cmd.hq().id && W2.eco.stations().filter((x) => x.type === 'siedziba').length === 1, 'po wczytaniu ta sama siedziba (bez duplikatu)');
   ok(W2.cmd.has('flotacja') && W2.cmd.expeditions().length === 1 && W2.cmd.state.hangar.gornik === n0 + 3, 'zapis: nauka, wyprawy i hangar');
+}
+
+// ------------------------------------------------------------
+console.log('\n10. Garnizon: trzy okręty bronią bazy od początku');
+{
+  const memory = new Map();
+  const W = makeWorld({ memory });
+  const scene = new THREE.Scene();
+  const combat = createCombat(scene);
+  const mkArmy = (eco) => {
+    const strategy = createStrategy({ economy: eco, playerRace: 'wybudzeni', systems: SYSTEM_ORDER, spawnOf, seed: 3,
+      hooks: { playerFieldIds: () => [], playerPower: () => 1, playerFieldDefense: () => 1, attackPlayer: () => {}, systemName: (x) => x } });
+    strategy.ensure('teegarden');
+    const player = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), getVelocity: (o) => o.set(0, 0, 0), isAlive: () => true };
+    const npcs = createNpcManager(scene, combat, player, {});
+    return { strategy, npcs, army: createArmy({ economy: eco, strategy, npcs, player, playerRace: () => 'wybudzeni' }) };
+  };
+  const { army, strategy } = mkArmy(W.eco);
+  const field = W.eco.fieldDefs('teegarden')[0].id;
+  const got = army.grantGarrison({ cls: 'eskorta', n: 3, sysId: W.cmd.state.home, field });
+  ok(got.length === 3 && army.ships.length === 3 && army.ships.every((x) => x.cls === 'eskorta' && x.order === 'obrona' && x.field === field),
+    `3 × ${WARSHIPS.eskorta.name}, rozkaz: obrona pola macierzystego (${strategy.defs.get(field)?.name})`);
+  ok(army.power() === 3 * WARSHIPS.eskorta.power && army.fieldDefense(field) >= 3 * WARSHIPS.eskorta.power, `siła ${army.power()} liczy się do obrony pola`);
+  ok(army.upkeepPerMin() === 0, 'garnizon bez utrzymania (siedziba go opłaca)');
+  const cr = W.eco.state.credits;
+  for (let t = 0; t < 12; t += 0.25) army.update(0.25);
+  ok(W.eco.state.credits === cr, 'kredyty nie maleją przez garnizon');
+  ok(army.spawned.size === 3, `okręty stoją w układzie jako NPC (${army.spawned.size})`);
+  ok(army.grantGarrison({ cls: 'eskorta', n: 3, sysId: W.cmd.state.home, field }).length === 0 && army.ships.length === 3, 'garnizon tylko raz na kampanię');
+  W.eco.save();
+  const W2 = makeWorld({ memory });
+  const { army: army2 } = mkArmy(W2.eco);
+  ok(army2.ships.length === 3 && army2.grantGarrison({ sysId: 'teegarden', field }).length === 0, 'po wczytaniu: te same 3 okręty, bez drugiego garnizonu');
+}
+
+// ------------------------------------------------------------
+console.log('\n11. Zapisy gry: sloty, wczytanie, eksport i import');
+{
+  const memory = new Map();
+  const storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k) => memory.delete(k) };
+  const W = makeWorld({ memory });
+  W.eco.state.credits = 4321;
+  W.cmd.state.techs.push('flotacja');
+  W.eco.save();
+  let clock = 1000;
+  const slots = createSaveSlots({ storage, prefix: 'tst', now: () => clock });
+  const a = slots.save({ name: 'Przed wojną', data: memory.get('test12'), meta: { home: 'teegarden', ship: 'x', credits: 4321 }, liveKey: 'test12' });
+  ok(a.ok && slots.list().length === 1 && slots.list()[0].name === 'Przed wojną', `zapis w slocie: ${a.text}`);
+  // gra toczy się dalej i autozapis się zmienia
+  W.eco.state.credits = 10;
+  W.cmd.state.techs.length = 0;
+  W.eco.save();
+  clock = 2000;
+  const b = slots.save({ name: 'Bieda', data: memory.get('test12'), meta: {}, liveKey: 'test12' });
+  ok(b.ok && slots.list()[0].id === b.id, 'lista: najnowszy zapis na górze');
+  const r = slots.restore(a.id);
+  const W2 = makeWorld({ memory });
+  ok(r && W2.eco.state.credits === 4321 && W2.cmd.has('flotacja'), `wczytanie slotu przywraca stan (kredyty ${W2.eco.state.credits}, nauka)`);
+  ok(W2.cmd.hq()?.id === W.cmd.hq().id && W2.eco.stations().filter((x) => x.type === 'siedziba').length === 1, 'po wczytaniu jedna, ta sama siedziba');
+  const over = slots.save({ name: 'Przed wojną', data: memory.get('test12'), meta: {}, liveKey: 'test12', id: a.id });
+  ok(over.ok && slots.list().length === 2, 'nadpisanie nie dubluje slotu');
+  const file = slots.exportText(a.id);
+  const imp = slots.importText(file);
+  ok(imp.ok && slots.list().length === 3 && slots.read(imp.id).data === slots.read(a.id).data, 'eksport → import pliku daje ten sam stan');
+  ok(!slots.importText('{"x":1}').ok && !slots.importText('nie json').ok, 'import odrzuca obce pliki');
+  ok(slots.remove(b.id).ok && slots.list().length === 2 && !memory.has(`tst.slot.${b.id}`), 'usunięcie slotu czyści pamięć');
+  const full = createSaveSlots({ storage: { getItem: () => null, setItem: () => { throw new Error('quota'); }, removeItem: () => {} }, prefix: 'q' });
+  ok(!full.save({ name: 'x', data: '{}', liveKey: 'k' }).ok, 'brak miejsca w pamięci: czytelny błąd zamiast wyjątku');
 }
 
 console.log(fails ? `\n${fails} błędów` : '\nWszystko działa.');

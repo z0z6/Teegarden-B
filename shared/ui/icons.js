@@ -133,3 +133,13 @@ export function pilotIcon(size = 18, color = '#ff7a45') {
 export function eyeIcon(size = 18, color = '#9fd8ff') {
   return wrap(size, `<path d="M3 16 C8 8 24 8 29 16 C24 24 8 24 3 16 Z" fill="none" stroke="${color}" stroke-width="2"/><circle cx="16" cy="16" r="4.5" fill="${color}"/><circle cx="17.5" cy="14.5" r="1.4" fill="#fff"/>`, 'ico-eye');
 }
+// krok 12: zapis gry, dziennik komunikatów, lista wypraw, baza
+export function saveIcon(size = 18, color = '#9fd8ff') {
+  return wrap(size, `<path d="M5 4 H23 L28 9 V28 H5 Z" fill="${color}" fill-opacity=".22" stroke="${color}" stroke-width="1.8" stroke-linejoin="round"/><rect x="9" y="4" width="12" height="8" rx="1" fill="${color}"/><rect x="9" y="17" width="15" height="11" rx="1.5" fill="#e8eef5" fill-opacity=".85"/>`, 'ico-save');
+}
+export function logIcon(size = 18, color = '#9fd8ff') {
+  return wrap(size, `<path d="M6 6 H26 V22 H14 L8 27 V22 H6 Z" fill="${color}" fill-opacity=".22" stroke="${color}" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 11 H22 M10 16 H19" stroke="#e8eef5" stroke-width="2" stroke-linecap="round"/>`, 'ico-log');
+}
+export function routeIcon(size = 18, color = '#4dd6a0') {
+  return wrap(size, `<path d="M6 25 C12 25 10 16 16 16 C22 16 20 7 26 7" fill="none" stroke="${color}" stroke-width="2.2" stroke-dasharray="3 3" stroke-linecap="round"/><circle cx="6" cy="25" r="3" fill="#e8eef5"/><path d="M22 4 L29 7 L22 11 Z" fill="${color}"/>`, 'ico-route');
+}

@@ -375,8 +375,8 @@ console.log('\n3d. Dowództwo (krok 12): mostek, wyprawy, okienko, decyzje, tryb
   await page.evaluate(() => __game.raids.trigger());
   await page.waitForFunction(() => __game.decisions.items.some((d) => d.id === 'raid'), null, { timeout: 60000 });
   await page.screenshot({ path: join(OUT, '3d-raid.png') });
-  await page.click('.dc-danger .dc-btn[data-act="watch"]');
-  ok(await page.evaluate(() => __game.mode === 'podglad' && getComputedStyle(document.getElementById('spectate-bar')).display !== 'none'), 'nalot → „Obserwuj”: podgląd zdalny');
+  await page.click('.dc-danger .dc-btn[data-act="fleet"]');
+  ok(await page.evaluate(() => __game.mode === 'podglad' && getComputedStyle(document.getElementById('spectate-bar')).display !== 'none'), 'nalot → „Poślij flotę” (garnizon): podgląd zdalny');
   await page.click('#spectate-pilot');
   await page.waitForFunction(() => __game.mode === 'lot', null, { timeout: 20000 });
   await page.waitForTimeout(600);
@@ -386,6 +386,58 @@ console.log('\n3d. Dowództwo (krok 12): mostek, wyprawy, okienko, decyzje, tryb
   await page.keyboard.press('Tab');
   await page.waitForFunction(() => __game.mode === 'mostek', null, { timeout: 20000 });
   ok(await page.evaluate(() => !__game.shipGroup.visible), 'Tab: powrót na mostek, statek w hangarze');
+  ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
+  await page.close();
+}
+
+// ------------------------------------------------------------
+console.log('\n3e. Krok 12: garnizon, zapis i wczytanie gry, telefon (tryb kompaktowy)');
+{
+  const { page, errors } = await open('/step12-dowodztwo/?uklad=teegarden&debug');
+  await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('teegarden-b.dowodztwo')) localStorage.removeItem(k); });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => window.__game?.command?.hq() && !document.body.classList.contains('intro'), null, { timeout: 90000 });
+  const g = await page.evaluate(() => ({ n: __game.army.ships.length, def: __game.army.ships.filter((x) => x.order === 'obrona').length, npc: __game.army.spawned.size, box: document.querySelector('.cp-fleet-n')?.textContent }));
+  ok(g.n === 3 && g.def === 3, `nowa kampania: garnizon ${g.n} okr., ${g.def} broni pola macierzystego`);
+  await page.waitForTimeout(1500);
+  ok(await page.evaluate(() => __game.army.spawned.size === 3), 'okręty garnizonu latają w układzie siedziby');
+  ok(g.box === '3', 'blok „Flota” pod rozkazami pokazuje liczbę okrętów');
+  await page.click('.cp-fleet button[data-act="fleet-tab"]');
+  ok(await page.evaluate(() => document.querySelector('.cp-tabs button.on')?.dataset.tab === 'flota' && document.querySelectorAll('.cp-tab .cp-ship').length === 3), '„Buduj okręty” otwiera zakładkę Flota ze stocznią (3 klasy)');
+  // zapis
+  await page.click('.cp-savebtn');
+  ok(await page.evaluate(() => document.getElementById('saves').classList.contains('visible')), 'przycisk „Zapis” otwiera okno zapisu');
+  await page.fill('#saves input[type=text]', 'Test przeglądarki');
+  await page.click('#saves button[type=submit]');
+  ok(await page.locator('.sv-slot').count() === 1, 'zapis na liście');
+  await page.evaluate(() => { __game.economy.state.credits = 7; __game.economy.save(); });
+  await page.click('.sv-slot [data-act="load"]');
+  ok(await page.locator('.sv-slot [data-act="load"].armed').count() === 1, 'wczytanie wymaga drugiego kliknięcia („Na pewno?”)');
+  await Promise.all([page.waitForURL(/step12-dowodztwo\/\?uklad=teegarden&statek=/, { waitUntil: 'load' }), page.click('.sv-slot [data-act="load"]')]);
+  await page.goto(page.url() + '&debug', { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__game?.command?.hq(), null, { timeout: 90000 });
+  const cr = await page.evaluate(() => __game.economy.state.credits);
+  ok(cr > 100, `po wczytaniu kredyty z zapisu (${Math.round(cr)}, a nie 7)`);
+  ok(await page.evaluate(() => __game.army.ships.length === 3), 'po wczytaniu nadal 3 okręty (bez drugiego garnizonu)');
+  ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
+  await page.close();
+}
+{
+  const { page, errors } = await open('/step12-dowodztwo/?uklad=teegarden&debug', { width: 844, height: 390 });
+  await page.waitForFunction(() => window.__game?.command?.hq() && !document.body.classList.contains('intro'), null, { timeout: 90000 });
+  const c = await page.evaluate(() => ({
+    compact: document.body.classList.contains('ui-compact'),
+    nav: getComputedStyle(document.querySelector('.cp-mnav')).display,
+    panels: ['.cp-orders', '.cp-side', '.cp-exps', '.cp-actions'].filter((q) => getComputedStyle(document.querySelector(q)).display !== 'none'),
+  }));
+  ok(c.compact && c.nav === 'flex' && c.panels.length === 0, `telefon (844×390): tryb kompaktowy, dolny pasek, panele schowane${c.panels.length ? ' — widać: ' + c.panels.join(', ') : ''}`);
+  await page.click('.cp-mnav [data-sheet="fleet"]');
+  ok(await page.evaluate(() => getComputedStyle(document.querySelector('.cp-side')).display !== 'none' && document.querySelector('.cp-tabs button.on')?.dataset.tab === 'flota'), 'Flota: arkusz ze stocznią');
+  await page.click('.cp-mnav [data-sheet="orders"]');
+  ok(await page.evaluate(() => getComputedStyle(document.querySelector('.cp-side')).display === 'none' && getComputedStyle(document.querySelector('.cp-orders')).display !== 'none'), 'jeden arkusz naraz (Rozkazy zamiast Floty)');
+  await page.evaluate(() => { for (let i = 0; i < 4; i++) __game.decisions.ask({ id: `t${i}`, title: `Karta ${i}`, text: 'test', choices: [{ label: 'OK', act: 'ok' }], timeout: 60 }); });
+  ok(await page.evaluate(() => [...document.querySelectorAll('#decisions .dc')].filter((d) => !d.hidden).length === 1), 'decyzje: jedna karta naraz, reszta czeka');
+  await page.screenshot({ path: join(OUT, '3e-telefon.png') });
   ok(errors.length === 0, `bez błędów w konsoli${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
   await page.close();
 }

@@ -49,6 +49,29 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     return { ok: true, text: `${def.name}: stępka położona (${def.buildTime} s).` };
   }
 
+  /**
+   * Garnizon siedziby (krok 12): kampania zaczyna się z kilkoma najprostszymi
+   * okrętami, które od razu bronią pola macierzystego. Raz na kampanię (flaga
+   * w zapisie, więc stare zapisy też go dostają). Utrzymanie garnizonu pokrywa
+   * siedziba - nie obciąża kredytów na starcie.
+   */
+  function grantGarrison({ cls = 'eskorta', n = 3, sysId, field = null }) {
+    const st = state();
+    if (st.garrison || !sysId) return [];
+    st.garrison = true;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const s = { id: `ok${st.nextId++}`, cls, hull: WARSHIPS[cls].hull, sysId, order: field ? 'obrona' : 'eskorta', field,
+        model: modelFor?.(cls) ?? null, callsign: `Straż-${i + 1}`, garrison: true };
+      st.ships.push(s);
+      out.push(s);
+    }
+    syncT = 0;
+    economy.save();
+    return out;
+  }
+  const upkeepOf = (s) => (s.garrison ? 0 : WARSHIPS[s.cls].upkeep);
+
   // ------------------------------------------------------------
   // SIŁA (dla strategii)
   // ------------------------------------------------------------
@@ -159,7 +182,7 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
     // utrzymanie (kr/min)
     upkeepAcc += dt;
     if (upkeepAcc >= 10) {
-      const cost = st.ships.reduce((a, s) => a + WARSHIPS[s.cls].upkeep, 0) * (upkeepAcc / 60) * 6;
+      const cost = st.ships.reduce((a, s) => a + upkeepOf(s), 0) * (upkeepAcc / 60) * 6;
       economy.state.credits -= cost;
       upkeepAcc = 0;
     }
@@ -214,9 +237,9 @@ export function createArmy({ economy, strategy, npcs, playerRace, player, onEven
   }
 
   return {
-    update, order, setOrder, beforeJump, power, fieldDefense, sync,
+    update, order, setOrder, beforeJump, power, fieldDefense, sync, grantGarrison,
     get ships() { return state().ships; }, get queue() { return state().queue; },
     get lost() { return state().lost; }, yardHere, spawned,
-    upkeepPerMin: () => state().ships.reduce((a, s) => a + WARSHIPS[s.cls].upkeep, 0) * 6,
+    upkeepPerMin: () => state().ships.reduce((a, s) => a + upkeepOf(s), 0) * 6,
   };
 }
