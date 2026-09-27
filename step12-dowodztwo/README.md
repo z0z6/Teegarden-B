@@ -406,7 +406,72 @@ Ręczna zmiana rozkazu okrętu (zakładka Flota) wyjmuje go z grupy.
 Test: `node step12-dowodztwo/check-military.mjs`. Sprawdza szyki, rajd
 zaoczny z raportem i powrotem, zdobycie pola, odwrót wg ROE, zwiad
 i wywiad, godzinę H oraz na żywo: jeża, łącze danych, wezwanie wsparcia
-i rajd w układzie gracza.
+i rajd w układzie gracza, a także raport z potyczki (werdykty, przypisanie
+zestrzeleń w prawdziwym nalocie rasy na siedzibę).
+
+
+## Raport z potyczki i strefa obrony (krok 12c)
+
+Po każdym nalocie albo ataku rasy wyskakuje karta **„Raport z potyczki”**
+z werdyktem (`shared/systems/battle-report.js`):
+
+| Werdykt | Kiedy |
+|---|---|
+| **Wróg rozbity** | zestrzeleni wszyscy |
+| **Wróg przegoniony** | część zestrzelona, reszta uciekła bez większego łupu |
+| **Wróg się wycofał** | odlecieli bez strat po obu stronach |
+| **Wróg odleciał z łupem** | zabrali, po co przylecieli |
+| **Obrona złamana** | łup i ponad połowa siły naszej floty w układzie stracona |
+
+Pierwsze zdanie odpowiada wprost na pytanie, czy flota przegoniła wroga.
+Pod nim jest tabelka:
+
+- wróg: liczba i stronnictwo,
+- zestrzeleni i uciekinierzy,
+- **kto strzelał**: flota, ty, wataha, wieże i platformy,
+- nasza flota: stracone okręty z nazwami, uszkodzenia w procentach,
+- gospodarka: stracone drony, zrabowany urobek, złupione stacje,
+- **flota rasy przed → po** i stan wojny.
+
+Skutek strategiczny to porównanie sił po walce. Przy przewadze karta
+proponuje **Kontratak →**: otwiera zakładkę Operacje z gotowym celem (pole
+tej rasy, najpierw w układzie siedziby) i dobranym składem. Przy stratach
+albo słabości proponuje *Buduj okręty*. Ataki rozegrane zaocznie dostają
+krótszy raport. Na telefonie tabelka jest zwinięta pod „Szczegóły ▾”.
+
+Fakty zbiera `raids.js`:
+- migawka okrętów i stacji przy wejściu wroga i po walce (hook `snapshot`),
+- zestrzelenia według ostatniego strzelca (`npc.lastShooter` w `npc-ships.js`, `classifyKiller`),
+- uciekinierzy.
+
+**Strefa obrony.** Rozkaz obrony pola (garnizon, *Broń bazy*, grupy
+bojowe) trzymał się dotąd środka pasa na smyczy 4500 j. Siedziba, huta
+i reaktor stoją 5,5–7,4 tys. j. od środka pola, więc wróg łupiący stacje
+był **poza zasięgiem obrońców**. Teraz `army.defenseZone(fid)` obejmuje pas
+i stacje przy nim: szyk stoi między nimi, a smycz sięga najdalszej stacji
+z zapasem.
+
+## Płynność walki: rozgrzewka shaderów (`shared/systems/warmup.js`)
+
+Przycięcia przy ataku nie brały się z logiki. AI, walka i gospodarka to
+poniżej 1 ms na klatkę, także w bitwie. Brały się z **kompilacji shaderów
+w środku walki**:
+
+- **pierwsze użycie**: modele statków wrogiej rasy, brama, fala i blizna fałdy, pociski, błyski i wybuchy kompilują się dopiero wtedy, gdy pierwszy raz trafiają do kadru,
+- **ponowna kompilacja po każdej ciszy**: efekty (np. implozja torpedy, brama fałdy) tworzą materiał na ułamek sekundy i go niszczą. Gdy znika ostatni materiał danego rodzaju, three.js zwalnia program, a następny efekt kompiluje go od nowa. Torpedy Wybudzonych robiły to przy **każdym trafieniu**.
+
+Naprawa składa się z dwóch części:
+
+- **Próba generalna pod animacją wejścia na mostek.** Daleko poza kadrem wychodzi z fałdy po jednym statku z każdego modelu floty, każda broń strzela, jest wybuch i implozja torpedy (`weapons.demoEffects`). Co chwilę `renderer.compile(scene, camera)` kompiluje wszystko bez względu na kadr.
+- **Kotwice.** Dla każdego programu zostaje kopia materiału na niewidocznej siatce (`shader-anchors`). Jest widoczna tylko na czas kompilacji i nigdy nie jest niszczona, więc programy żyją całą sesję. Programy, które pojawią się później (rzadki efekt), dostają kotwicę przy pierwszym użyciu.
+
+Pomiar w headless Chromium, walka z 8 okrętami rasy:
+
+| | przed | po |
+|---|---|---|
+| kompilacje shaderów w trakcie walki | 6–9 (każda to przycięcie) | **0** |
+
+Logika gry i koszt rysowania się nie zmieniły.
 
 ## Testy
 

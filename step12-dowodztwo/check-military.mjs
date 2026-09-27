@@ -23,6 +23,9 @@ const { createFleetOps } = await import('../shared/systems/fleet-ops.js');
 const { seededRng } = await import('../shared/systems/asteroid-belt.js');
 const { WARSHIPS } = await import('../shared/data/economy.js');
 const { FORMATIONS, FORMATION_ORDER, OPS } = await import('../shared/data/military.js');
+const { buildBattleReport } = await import('../shared/systems/battle-report.js');
+const { createRaids } = await import('../shared/systems/raids.js');
+const { createWeapons } = await import('../shared/systems/weapons.js');
 
 let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? '  ok ' : ' FAIL'}  ${msg}`); if (!cond) fails++; };
@@ -46,7 +49,9 @@ function makeWorld({ seed = 3, live = false } = {}) {
   const events = [];
   const tactics = live ? createTactics({ combat, onEvent: (e) => { events.push(e); ops?.onTacticEvent(e); } }) : null;
   const player = { position: new THREE.Vector3(0, 0, 90000), quaternion: new THREE.Quaternion(), getVelocity: (o) => o.set(0, 0, 0), isAlive: () => true };
-  const npcs = createNpcManager(scene, combat, player, { tactics, getContacts: () => [] });
+  const camera = new THREE.PerspectiveCamera(60, 16 / 9, 1, 1e7);
+  const weapons = live ? createWeapons({ scene, combat, camera }) : null; // jak w grze: bronie ras (torpedy Wybudzonych)
+  const npcs = createNpcManager(scene, combat, player, { tactics, weapons, getContacts: () => [] });
   let ops = null;
   const army = createArmy({ economy: eco, strategy, npcs, player, playerRace: () => 'wybudzeni', tactics, brainFor: (s) => ops?.brainFor(s) });
   const radio = [], reports = [];
@@ -63,7 +68,7 @@ function makeWorld({ seed = 3, live = false } = {}) {
   };
   const tick = (sec, dt = 0.25) => {
     for (let t = 0; t < sec; t += dt) {
-      if (live) npcs.update(dt);
+      if (live) { npcs.update(dt); combat.update(dt); weapons.update(dt); }
       army.update(dt); ops.update(dt); strategy.update(dt);
     }
   };
@@ -253,6 +258,64 @@ console.log('\n7. Na żywo: uderzenie na placówkę w układzie gracza');
     ops2.update(0.1);
     ok(g.mission?.kind === 'obrona' && W.strategy.state.fields[fid].suppressed, `wieże zniszczone → powrót do obrony bazy i osłabiona obrona pola (${g.mission?.kind})`);
     ok(W.reports.some((x) => x.group === g.id && x.ok), `raport: ${W.reports.find((x) => x.group === g.id)?.text}`);
+  }
+}
+
+
+// ------------------------------------------------------------
+console.log('\n8. Raport z potyczki: werdykty');
+{
+  const ships = (ids) => ids.map((id) => ({ id, callsign: id, cls: 'fregata', hull: 420 }));
+  const base = { n: 6, raceName: 'Rezonanci', faction: 'Kworum', killsBy: { flota: 4, obrona: 2 }, dronesLost: 0, stolen: 0,
+    before: { ships: ships(['a', 'b', 'c']), stations: [] }, after: { ships: ships(['a', 'b', 'c']), stations: [] },
+    race: { name: 'Rezonanci', shipsBefore: 12, shipsAfter: 6, ourPower: 14, theirPower: 7, atWar: true } };
+  const r1 = buildBattleReport({ ...base, kills: 6, fled: 0 });
+  ok(r1.verdict === 'rozbity' && r1.advantage && /rozbiła/.test(r1.text), `wszyscy zestrzeleni: „${r1.title}” — ${r1.text}`);
+  const r2 = buildBattleReport({ ...base, kills: 3, fled: 3, stolen: 20, race: { ...base.race, ourPower: 8, theirPower: 9 } });
+  ok(r2.verdict === 'przegoniony' && /przegoniła/.test(r2.text) && !r2.advantage, `część uciekła bez łupu: „${r2.title}” — ${r2.text}`);
+  const r3 = buildBattleReport({ ...base, kills: 1, fled: 5, sated: true, dronesLost: 6, stolen: 300, after: { ships: ships(['a']).map((x) => ({ ...x, hull: 100 })), stations: [] } });
+  ok(r3.verdict === 'porazka' && r3.lostShips.length === 2 && r3.tone === 'danger', `łup i ciężkie straty: „${r3.title}” (stracone ${r3.lostShips.join(', ')})`);
+  const r4 = buildBattleReport({ ...base, kills: 0, fled: 6, sated: true, stolen: 200, before: { ships: [], stations: [] }, after: { ships: [], stations: [] } });
+  ok(r4.verdict === 'lup' && /Floty nie było/.test(r4.text), `bez floty: ${r4.text}`);
+  const r5 = buildBattleReport({ offline: true, repelled: true, n: 4, kills: 4, raceName: 'Heliotropi', systemName: 'Bliźnięta' });
+  ok(r5.verdict === 'rozbity' && /bez nas/.test(r5.text), `zaocznie: ${r5.text}`);
+  ok(r1.rows.some((x) => x.label === 'Kto strzelał' && /flota 4/.test(x.value)) && r1.rows.some((x) => /Flota rasy/.test(x.label) && /12 → 6/.test(x.value)), 'wiersze: kto strzelał, flota rasy przed → po');
+}
+
+// ------------------------------------------------------------
+console.log('\n9. Nalot rasy na siedzibę: flota broni, raport z przypisaniem zestrzeleń');
+{
+  const W = makeWorld({ seed: 13, live: true });
+  const g = W.ops.createGroup([...W.addShips('krazownik', 3), ...W.addShips('fregata', 2)], { name: 'Tarcza' }).group;
+  W.ops.assign(g.id, { kind: 'obrona', field: W.homeField, formation: 'jez' });
+  const reports = [];
+  const raids = createRaids({ economy: W.eco, npcs: W.npcs, rng: seededRng(3),
+    snapshot: (sys) => ({ ships: W.army.ships.filter((s) => s.sysId === sys).map((s) => ({ id: s.id, callsign: s.callsign, cls: s.cls, hull: s.hull })), stations: [] }),
+    onReport: (r) => reports.push(r) });
+  W.tick(5);
+  const shots = { ally: 0, hostile: 0 }, hits = { n: 0 };
+  const of = W.combat.fire; W.combat.fire = (o) => { shots[o.side] = (shots[o.side] ?? 0) + 1; return of(o); };
+  W.npcs.on('hit', () => hits.n++);
+  const c = W.strategy.defs.get(W.homeField).center;
+  raids.launch({ sysId: 'teegarden', raceId: 'heliotropi', factionKey: 'hawk', n: 4, target: c, defense: 3 });
+  for (let t = 0; t < 240 && !reports.length; t += 0.25) {
+    W.tick(0.25); raids.update(0.25);
+    if (process.env.DBG && Math.round(t * 4) % 60 === 0) {
+      const F = W.ops.frame(g.id);
+      const foes = W.npcs.hostiles();
+      const ours = g.ships.map((id) => W.army.spawned.get(id)).filter(Boolean);
+      console.log(t.toFixed(0), 'raid', raids.status?.phase, 'foes', foes.map((n) => `${n.brain?.plan}/${Math.round(n.group.position.distanceTo(F?.anchor ?? new THREE.Vector3()))}/${Math.round(n.hull)}`).join(' '),
+        '| ours', ours.map((n) => `${n.brain?.plan}/${n.brain?.enemies.length}`).join(' '), 'leash', F?.leash, F?.posture);
+    }
+  }
+  const r = reports[0];
+  if (process.env.DBG) console.log('strzały', shots, 'trafienia', hits.n, 'bolts', W.combat.boltCount);
+  ok(!!r, `nalot zakończony po walce (${r ? Math.round(r.duration) : '?'} s)`);
+  if (r) {
+    ok(r.kills > 0 && (r.killsBy.flota ?? 0) > 0, `zestrzelenia według strzelca: ${JSON.stringify(r.killsBy)} (${r.kills}/${r.n})`);
+    ok(r.before?.ships.length === 5 && r.after, 'migawka floty przed i po');
+    const rep = buildBattleReport({ ...r, race: null });
+    ok(['rozbity', 'przegoniony'].includes(rep.verdict), `werdykt: ${rep.title} — ${rep.text}`);
   }
 }
 

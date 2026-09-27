@@ -1572,6 +1572,17 @@
     .op-log li.op-log-warning { border-left-color: var(--gold); }
     .op-log li.op-log-danger { border-left-color: var(--foe); }
     body.ui-compact .op-grid small, body.ui-compact .op-seg button small { display: none; }
+    /* krok 12c: raport z potyczki w karcie decyzji */
+    .dc-details { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0 0 9px; font-size: 11.5px; line-height: 1.4; }
+    .dc-details dt { color: var(--ink-dim); white-space: nowrap; }
+    .dc-details dd { margin: 0; color: #dfeaf4; }
+    .dc-details dd.dc-good { color: var(--friend); }
+    .dc-details dd.dc-bad { color: #ff9a8a; }
+    .dc-more { display: none; margin: 0 0 6px; padding: 0; background: none; border: 0; color: var(--hud); font: 600 11px var(--body); cursor: pointer; }
+    .dc-k-battle { border-left-color: var(--ember); }
+    body.ui-compact .dc-more { display: block; }
+    body.ui-compact .dc-details { display: none; font-size: 11px; }
+    body.ui-compact .dc-open .dc-details { display: grid; }
     body.ui-compact .op-grid button { padding: 6px 8px; }
   </style>
 

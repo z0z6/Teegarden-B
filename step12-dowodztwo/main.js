@@ -36,10 +36,12 @@ import { createArmy } from '../shared/systems/army.js';
 import { createArmyTab, warshipModel } from '../shared/systems/army-panel.js';
 import { createFleetOps } from '../shared/systems/fleet-ops.js';       // krok 12c: grupy bojowe i operacje
 import { createOpsTab } from '../shared/systems/fleet-ops-panel.js';
+import { createWarmup } from '../shared/systems/warmup.js';
+import { buildBattleReport } from '../shared/systems/battle-report.js'; // krok 12c: raport z potyczki           // krok 12c: rozgrzewka shaderów (bez przycięć przy ataku)
 import { createStrategicMap } from '../shared/systems/strategic-map.js';
 import { racePortrait } from '../shared/data/race-portraits.js';
 import { STATION_ORDER } from '../shared/data/economy.js';
-import { METALS, METAL_ORDER, PLAYER_MINING } from '../shared/data/economy.js';
+import { METALS, METAL_ORDER, PLAYER_MINING, STATIONS } from '../shared/data/economy.js';
 import { createCommand } from '../shared/systems/command.js';
 import { createCommandView } from '../shared/systems/command-view.js';
 import { createCommandPanel } from '../shared/systems/command-panel.js';
@@ -857,6 +859,13 @@ const npcs = createNpcManager(scene, combat, playerProxy, {
     .concat(economy.solids()).concat(rival.solids()), // krok 10-11: NPC omijają planetoidy, stacje i placówki
   getContacts: () => economy.contacts().concat(rival.contacts(), command.contacts()), // krok 10-11: drony, stacje, placówki ras w wojnie; 12b: wieże strażnicze
 });
+// krok 12c: próba generalna poza kadrem pod animacją wejścia - wszystkie modele
+// statków, fałda, bronie i błyski kompilują się teraz, a nie w pierwszej walce
+const warmup = createWarmup({
+  renderer, scene, camera, npcs, combat, weapons, weaponIds: Object.keys(WEAPONS),
+  onDone: (st) => { if (new URLSearchParams(location.search).has('debug')) console.info(`rozgrzewka shaderów: ${st.before} → ${st.after} programów, ${st.ms} ms`); },
+});
+setTimeout(() => warmup.start(), 250);
 const comms = createComms(document.getElementById('comms'));
 const labels = createTargetLabels(document.getElementById('targets'), camera);
 const encounters = createEncounters({
@@ -1028,6 +1037,7 @@ function updateStory(delta) {
   flares.update(delta);
 
   npcs.update(delta);
+  warmup.update(delta);
   combat.update(delta);
   weapons.update(delta);
   updateWeaponHud();
@@ -1592,6 +1602,13 @@ const raids = createRaids({
   canRaid: () => !missions.active && playerState.alive && !playerWarp.active,
   systemName: (id) => SYSTEMS[id]?.name ?? id,
   playerRaceId: () => playerState.raceId,
+  // krok 12c: raport z potyczki - migawka przed/po i karta z werdyktem
+  snapshot: (sysId) => ({
+    ships: army.ships.filter((s) => s.sysId === sysId).map((s) => ({ id: s.id, callsign: s.callsign, cls: s.cls, hull: s.hull })),
+    stations: economy.stationsIn(sysId).filter((s) => s.status === 'gotowa' && STATIONS[s.type]?.hull)
+      .map((s) => ({ id: s.id, name: s.name, hull: s.hull ?? STATIONS[s.type].hull, max: STATIONS[s.type].hull })),
+  }),
+  onReport: (r) => setTimeout(() => battleReportCard(r), 0), // po onEnd strategii (straty rasy już policzone)
   onEvent: (e) => dashboard.show(`raid-${e.key}`, {
     crew: e.key.startsWith('raid-off') || e.key === 'raid-end' ? CREW.quartermaster : CREW.tactical,
     urgency: e.urgency, ttl: e.ttl ?? 7000, text: e.text,
@@ -1718,6 +1735,36 @@ fleetOps = createFleetOps({
   onEvent: (e) => dashboard.show(e.key, { crew: FLEET_CREW, urgency: e.urgency, ttl: e.urgency === 'info' ? 5000 : 7500, text: e.text }),
   onReport: (r) => opsReportCard(r),
 });
+/** Krok 12c: karta "Raport z potyczki" - czy flota przegoniła wroga i co z tego wynikło. */
+function battleReportCard(r) {
+  const rid = r.raceId;
+  const race = rid && !r.pirate && strategy.state.factions[rid] ? {
+    name: RACES[rid].name, shipsAfter: strategy.state.factions[rid].ships, shipsBefore: strategy.state.factions[rid].ships + (r.kills ?? 0),
+    ourPower: strategy.power(PLAYER), theirPower: strategy.power(rid), atWar: strategy.atWar(PLAYER, rid),
+  } : null;
+  const rep = buildBattleReport({ ...r, race, systemName: sysName(r.sysId) });
+  // cel kontrataku: pole tej rasy - najpierw w układzie siedziby
+  const home = command.state.home;
+  const target = race?.atWar ? strategy.fieldsOf(rid).sort((a, b) => (strategy.systemOf(b) === home) - (strategy.systemOf(a) === home))[0] : null;
+  const choices = [{ label: 'Przyjąć', act: 'ok', primary: !rep.advantage }];
+  if (rep.advantage && target) choices.push({ label: 'Kontratak →', act: 'counter', primary: true });
+  if (rep.weak || rep.lostShips.length) choices.push({ label: 'Buduj okręty', act: 'build' });
+  decisions.ask({
+    id: `battle-${r.sysId}-${Math.round(performance.now())}`, kind: 'battle', urgency: rep.tone,
+    title: `Raport z potyczki: ${rep.title}`, text: rep.text, details: rep.rows,
+    portrait: race ? portraitOf(rid, 3, 34, rulingFaction(rid)) : undefined,
+    choices, timeout: 30, defaultAct: 'ok',
+    onChoose: (act) => {
+      if (act === 'counter' && target) {
+        const lvl = strategy.state.fields[target]?.develop ?? 0;
+        opsTab.preset({ kind: lvl <= 2 ? 'zdobycie' : 'uderzenie', field: target, strike: 'obrona' });
+        if (mode !== 'mostek') toBridge();
+        commandPanel.showTab('operacje');
+      }
+      if (act === 'build') { if (mode !== 'mostek') toBridge(); commandPanel.showTab('flota'); }
+    },
+  });
+}
 const armyTab = createArmyTab({ army, strategy, economy, playerRace: () => playerState.raceId, systemName: sysName });
 
 const industryPanel = createEconomyPanel(document.getElementById('industry'), {
@@ -1973,6 +2020,10 @@ const commandView = createCommandView({
   scene, renderer, camera, cameraRig, command, economy, background, quality: QUALITY,
   pipEl: document.getElementById('pip'), pipLabel: document.querySelector('#pip .pip-label'),
 });
+const opsTab = createOpsTab({
+  ops: fleetOps, army, strategy, economy, playerRace: () => playerState.raceId, systemName: sysName,
+  homeSystem: () => command.state.home ?? economy.systemId, onWatch: (gid) => watchGroup(gid),
+});
 const commandPanel = createCommandPanel(document.getElementById('command'), {
   command, economy, strategy, army, raids, playerRace: () => playerState.raceId, systemName: sysName,
   onPilot: () => takeHelm(),
@@ -1985,10 +2036,7 @@ const commandPanel = createCommandPanel(document.getElementById('command'), {
   exchange: createExchange({ economy, command }),
   onTactical: (o) => tacMap.show(o),
   compact: () => compactUI,
-  extraTabs: [createOpsTab({
-    ops: fleetOps, army, strategy, economy, playerRace: () => playerState.raceId, systemName: sysName,
-    homeSystem: () => command.state.home ?? economy.systemId, onWatch: (gid) => watchGroup(gid),
-  })],
+  extraTabs: [opsTab],
 });
 
 // krok 12b: mapa taktyczna - wieże strażnicze i przydział dronów do pól
@@ -2436,7 +2484,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     audio: getAudio(), gameAudio, goToBoard, replayMission, boardUrl, respawn, killPlayer, damagePlayer, engageWarp,
     economy, industryPanel, mining, holdCapacity, unloadNearby, shipAhead, raids,
     strategy, rival, army, stratMap, get waypoint() { return waypoint; },
-    command, commandView, commandPanel, decisions, tacMap, pauseMenu, saveSlots, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet, fleetOps, watchGroup,
+    command, commandView, commandPanel, decisions, tacMap, pauseMenu, saveSlots, setMode, get mode() { return mode; }, toBridge, takeHelm, sendFleet, fleetOps, watchGroup, warmup, battleReportCard,
   };
 }
 
