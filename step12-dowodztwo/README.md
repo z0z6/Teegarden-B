@@ -75,6 +75,65 @@ miejscu przy siedzibie (`economy.findSpot`), a holowniki same dowożą
 metal ze składu. Klasyczne roje doków, rynek i stocznia zostają w panelu
 „Przemysł”.
 
+## Garnizon i flota na widoku
+
+Kampania zaczyna się z **garnizonem siedziby**: trzy eskortowce (najprostsza
+klasa okrętu) od pierwszej minuty bronią pola macierzystego
+(`army.grantGarrison`). Garnizon dostaje się raz na kampanię. Flaga leży
+w zapisie, więc starsze kampanie też go dostały przy pierwszym wczytaniu.
+Utrzymanie garnizonu pokrywa siedziba, więc nie zjada kredytów na starcie.
+Okręty zbudowane później kosztują utrzymanie jak dotąd.
+
+Flota nie jest już schowana w piątej zakładce:
+- **blok „Flota” pod rozkazami** (zawsze na widoku): liczba okrętów, siła,
+  kadłuby, przyciski *Broń bazy*, *Obserwuj* i *Buduj okręty*,
+- **okręty na górnym pasku** (klik otwiera zakładkę Flota),
+- **zakładka Flota** jest wyróżniona kolorem i licznikiem. Buduje się w niej
+  okręty prosto z mostka (trzy klasy, koszt, kolejka z postępem) i zmienia
+  rozkazy okrętów. Gdy nie ma stoczni, zakładka pokazuje przycisk
+  *Postaw stocznię*.
+
+## Zapis i wczytanie gry (`shared/systems/save-slots.js`, `save-panel.js`)
+
+Autozapis działa jak dotąd: bieżący stan kampanii rasy zapisuje się co kilka
+sekund. Przycisk **Zapis** (górny pasek mostka, a na telefonie dolny pasek)
+otwiera okno z własnymi zapisami:
+
+- **Zapisz** tworzy nowy zapis z nazwą (domyślnie rasa, układ i data),
+- **Wczytaj** podmienia autozapis na stan z zapisu i przeładowuje grę
+  z adresem tego zapisu (układ siedziby i statek, czyli rasa). Wczytać można
+  także zapis innej rasy,
+- **Nadpisz**, **Usuń**,
+- **Pobierz** i **Wczytaj z pliku…** działają na pliku `.json`, np. żeby
+  przenieść kampanię z komputera na telefon,
+- **Nowa gra** zaczyna kampanię tej rasy od zera.
+
+Wczytanie, nadpisanie, usunięcie i nowa gra wymagają drugiego kliknięcia
+(„Na pewno?”). Nie ma okien `confirm()`, bo na telefonie wyrzucają z pełnego
+ekranu. **Ctrl+S** robi szybki zapis (slot „Szybki zapis”). Na czas
+wczytywania autozapis jest zamrożony, żeby nie nadpisał podmienionego stanu
+tuż przed przeładowaniem.
+
+## Telefon: tryb kompaktowy
+
+Na małym ekranie (wysokość do 560 px albo szerokość do 760 px, czyli telefon
+w poziomie) strona dostaje klasę `body.ui-compact`. Adres `?ui=kompakt` albo
+`?ui=pelny` wymusza tryb.
+
+- **Mostek**: zasoby w jednym wąskim pasku u góry. Na dole jest **pasek
+  nawigacji** (Rozkazy · Wyprawy · Baza · Flota · Mapa · Przemysł · Zapis ·
+  Za sterami). Naraz otwarty jest najwyżej **jeden arkusz** po prawej.
+  Ponowne dotknięcie chowa go i odsłania widok z mostka. Po wysłaniu
+  wyprawy arkusz sam się zamyka, żeby było widać wylot dronów.
+- **Decyzje**: jedna karta naraz (reszta czeka, „+N czeka”), zwarta, tekst
+  do trzech linii.
+- **Meldunki załogi**: jeden naraz na mostku, dwa w locie, każdy do dwóch
+  linii. Dotknięcie chowa kartę.
+- **Dziennik** (dymek obok głośnika, z licznikiem nowych): pełna lista
+  ostatnich meldunków, także tych, które nie zmieściły się na ekranie. Na
+  komputerze też działa.
+- **Komunikator**: dotknięcie zamyka komunikat bez wyboru.
+
 ## Decyzje zamiast klawiszologii (`shared/systems/decisions.js`)
 
 Karty wyskakują same. Każda ma 1–3 proste przyciski i czasem
@@ -121,7 +180,10 @@ straty), a pierwsze trafienie otwiera kartę z wyborem.
 | `shared/systems/decisions.js` | karty decyzji |
 | `shared/systems/economy-visuals.js` | modele siedziby (mostek, pokład hangaru z pasem świateł, pierścień), huty i reaktora |
 | `shared/systems/economy.js` | nowe typy stacji, skład siedziby w puli, `findSpot` / `placeNear`, hook zasilania |
-| `shared/systems/army.js` | `mods` — mnożniki siły i kadłuba floty z ulepszeń |
+| `shared/systems/army.js` | `mods` — mnożniki siły i kadłuba floty z ulepszeń, `grantGarrison` — garnizon siedziby |
+| `shared/systems/save-slots.js` | nazwane zapisy w localStorage, wczytanie (podmiana autozapisu), eksport / import pliku |
+| `shared/systems/save-panel.js` | okno zapisu gry |
+| `shared/systems/dashboard.js` | meldunki załogi, limit kart naraz, dziennik |
 
 Zapis kampanii kroku 12 jest osobny od kroku 11
 (`teegarden-b.dowodztwo.v1.<rasa>`). Stan dowództwa (hangar, wyprawy,
@@ -158,5 +220,8 @@ Test sprawdza siedzibę zwróconą do pasa, zasilanie i niedobór prądu,
 ogniwa, pełny cykl zwiadu (fazy, „skrót”, odkrycie pola, raport
 i decyzję), górników (pełne ładownie, decyzję, hutę i odzysk), naukę
 (wymagania i odkrycia), ulepszenia (koszt, limit, mnożniki floty),
-autonomię rojów, wyprawę pod ostrzałem, budowę z mostka i zapis.
-W przeglądarce: `node tools/browser-check/check.mjs`, sekcja „Krok 12”.
+autonomię rojów, wyprawę pod ostrzałem, budowę z mostka i zapis, garnizon
+(3 okręty, obrona pola, bez utrzymania, raz na kampanię) oraz zapisy gry
+(sloty, wczytanie, nadpisanie, eksport / import, brak miejsca).
+W przeglądarce: `node tools/browser-check/check.mjs`, sekcje „3d” i „3e”
+(garnizon, zapis → wczytanie z przeładowaniem, telefon 844×390).

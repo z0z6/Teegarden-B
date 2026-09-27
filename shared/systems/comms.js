@@ -48,6 +48,7 @@ export function createComms(root) {
 
   function close() {
     current = null;
+    sayDone = null;
     clearTimeout(sayTimer);
     root.classList.remove('visible');
     el.choices.innerHTML = '';
@@ -75,8 +76,18 @@ export function createComms(root) {
     current = null;
     el.choices.innerHTML = '';
     render({ sender, sub, color, text, portrait });
-    sayTimer = setTimeout(() => { close(); onDone?.(); }, ttl * 1000);
+    sayDone = () => { close(); onDone?.(); };
+    sayTimer = setTimeout(sayDone, ttl * 1000);
   }
+  // komunikat bez wyboru można zamknąć dotknięciem (na telefonie zasłania sporo ekranu)
+  let sayDone = null;
+  root.addEventListener('click', (e) => {
+    if (current || e.target.closest('button') || !root.classList.contains('visible') || !sayDone) return;
+    const done = sayDone;
+    sayDone = null;
+    clearTimeout(sayTimer);
+    done();
+  });
 
   function choose(i) {
     if (!current || !current.choices[i]) return false;

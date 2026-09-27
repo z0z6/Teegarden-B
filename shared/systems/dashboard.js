@@ -27,8 +27,18 @@ export const CREW = {
 
 const URGENCY_ORDER = { danger: 0, warning: 1, info: 2 };
 
-export function createDashboard(container) {
+export function createDashboard(container, { historySize = 60, onLog = () => {} } = {}) {
   const channels = new Map(); // key -> { el, expiresAt, urgency }
+  // krok 12: dziennik komunikatów - każdy NOWY tekst (nie odświeżenie tej
+  // samej karty co klatkę) trafia na listę, do przejrzenia później. Dzięki
+  // temu na małym ekranie może być widać naraz tylko 1-2 karty.
+  const log = [];
+  let maxVisible = 5;
+  // dotknięcie karty chowa ją (do zmiany jej treści) - jest w dzienniku
+  container.addEventListener('click', (e) => {
+    const el = e.target.closest('.crew-alert');
+    for (const entry of channels.values()) if (entry.el === el) entry.dismissed = entry.text;
+  });
 
   function show(key, { crew, text, urgency = 'info', ttl = 1200 }) {
     let entry = channels.get(key);
@@ -59,7 +69,21 @@ export function createDashboard(container) {
     av.style.background = crew.color;
     av.style.setProperty('--crew', crew.color);
     entry.el.querySelector('.crew-role').textContent = crew.role;
-    entry.el.querySelector('.crew-text').textContent = text;
+    if (entry.text !== text) {
+      entry.text = text;
+      entry.bornAt = performance.now();
+      entry.el.querySelector('.crew-text').textContent = text;
+      // trwający warunek z liczbami w tekście (odległość, czas) to wciąż ten
+      // sam komunikat: poprawiamy jego wpis zamiast dopisywać nowy co klatkę
+      const now = Date.now();
+      if (entry.logRef && now - entry.logRef.at < 20000) { entry.logRef.text = text; entry.logRef.urgency = urgency; }
+      else {
+        entry.logRef = { at: now, role: crew.role, color: crew.color, text, urgency };
+        log.unshift(entry.logRef);
+        if (log.length > historySize) log.pop();
+        onLog(entry.logRef);
+      }
+    }
     entry.expiresAt = performance.now() + ttl;
     entry.urgency = urgency;
   }
@@ -74,8 +98,8 @@ export function createDashboard(container) {
 
   /** Wołane raz na klatkę - usuwa karty, których czas minął, i sortuje
    * widoczne wg pilności (danger na górze), ograniczając liczbę naraz
-   * widocznych kart do MAX_VISIBLE (żeby nie zasypać ekranu). */
-  const MAX_VISIBLE = 5;
+   * widocznych kart do maxVisible (żeby nie zasypać ekranu; na telefonie
+   * mniej - setMaxVisible). */
   function tick() {
     const now = performance.now();
     for (const [key, entry] of channels) {
@@ -84,14 +108,21 @@ export function createDashboard(container) {
         channels.delete(key);
       }
     }
-    const sorted = [...channels.values()].sort(
-      (a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
+    for (const entry of channels.values()) if (entry.dismissed != null && entry.dismissed === entry.text) entry.el.style.display = 'none';
+    const sorted = [...channels.values()].filter((e) => e.dismissed == null || e.dismissed !== e.text).sort(
+      // pilność, a przy równej - najnowszy wyżej (przy 1-2 widocznych kartach
+      // nowy meldunek nie czeka, aż zgaśnie stary)
+      (a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] || (b.bornAt ?? 0) - (a.bornAt ?? 0)
     );
     sorted.forEach((entry, i) => {
-      entry.el.style.display = i < MAX_VISIBLE ? '' : 'none';
+      entry.el.style.display = i < maxVisible ? '' : 'none';
       entry.el.style.order = i;
     });
   }
 
-  return { show, clear, tick, CREW };
+  return {
+    show, clear, tick, CREW,
+    setMaxVisible(n) { maxVisible = n; },
+    get log() { return log; },
+  };
 }

@@ -23,7 +23,8 @@ const KIND_ICON = {
   info: () => upgradeIcon(26),
 };
 
-export function createDecisions(root, { onShow = () => {}, onPick = () => {}, max = 3 } = {}) {
+export function createDecisions(root, { onShow = () => {}, onPick = () => {}, max: max0 = 3 } = {}) {
+  let max = max0; // krok 12: na telefonie 1 karta naraz (setMax), reszta czeka w kolejce
   const items = []; // { d, el, left, hover }
 
   function remove(it) {
@@ -96,6 +97,7 @@ export function createDecisions(root, { onShow = () => {}, onPick = () => {}, ma
 
   return {
     ask, update,
+    setMax(n) { if (n !== max) { max = n; layout(); } },
     get items() { return items.map((it) => it.d); },
     /** Test / skrót: wybór w karcie o danym id. */
     choose(id, act) { const it = items.find((x) => x.d.id === id); if (it) choose(it, act); return !!it; },

@@ -1,11 +1,11 @@
-import { METALS, METAL_ORDER, STATIONS, WARSHIPS } from '../data/economy.js';
+import { METALS, METAL_ORDER, STATIONS, WARSHIPS, WARSHIP_ORDER } from '../data/economy.js';
 import { DRONE_TYPES, DRONE_TYPE_ORDER, UPGRADES, UPGRADE_ORDER, TECHS, TECH_ORDER, POWER, EXPEDITION } from '../data/command.js';
 import { RACES } from '../data/races.js';
 import { PHASE_LABEL } from './command.js';
 import { PLAYER } from './strategy.js';
 import {
   metalIcon, creditsIcon, stationIcon, droneTypeIcon, powerIcon, oreIcon, scienceIcon, upgradeIcon, pilotIcon,
-  eyeIcon, fieldIcon, scanIcon, warshipIcon,
+  eyeIcon, fieldIcon, scanIcon, warshipIcon, saveIcon, routeIcon,
 } from '../ui/icons.js';
 
 /**
@@ -17,6 +17,14 @@ import {
  *   dół      - WYPRAWY w toku (faza, postęp, ładownia, Odwołaj / Zarządzaj)
  *   prawo    - Hangar, Moduły (stacje, zasilanie), Ulepszenia, Nauka, Flota
  *   akcje    - Za sterami (lot myśliwcem), Mapa sektora, Przemysł i rynek
+ *   flota    - garnizon i okręty: stały blok pod rozkazami (siła, kadłuby,
+ *              Broń bazy / Obserwuj / Buduj okręty) i zakładka Flota ze
+ *              stocznią (budowa klas okrętów prosto z mostka) i rozkazami
+ *
+ * TRYB KOMPAKTOWY (telefon, body.ui-compact): zamiast czterech paneli naraz
+ * jest dolny pasek nawigacji (cp-mnav), a otwarty jest najwyżej jeden arkusz
+ * (Rozkazy / Wyprawy / Baza / Flota) po prawej stronie ekranu. Ponowne
+ * dotknięcie przycisku chowa arkusz i odsłania widok z mostka.
  *
  * DOM przebudowywany tylko przy zmianie struktury (klucze), paski postępu
  * odświeżane osobno - kliknięcia nie giną w trakcie przebudowy.
@@ -38,18 +46,21 @@ const BUILDABLE = ['huta', 'reaktor', 'magazyn', 'dok', 'wieza', 'stocznia', 'pr
 export function createCommandPanel(root, {
   command, economy, strategy = null, army = null, raids = null, playerRace, systemName = (s) => s,
   onPilot = () => {}, onMap = () => {}, onIndustry = () => {}, onFleet = () => {}, onWatch = () => {}, onHover = () => {},
+  onSaves = () => {}, compact = () => false,
 }) {
   root.innerHTML = `
     <header class="cp-top" data-r="top"></header>
-    <aside class="cp-orders glass" data-r="orders"></aside>
+    <aside class="cp-orders glass"><div class="cp-orders-list" data-r="orders"></div><section class="cp-fleet" data-r="fleetbox"></section></aside>
     <section class="cp-exps" data-r="exps"></section>
     <aside class="cp-side glass"><nav class="cp-tabs" data-r="tabs"></nav><div class="cp-tab" data-r="tab"></div></aside>
     <nav class="cp-actions" data-r="actions"></nav>
     <div class="cp-picker glass" data-r="picker" hidden></div>
+    <nav class="cp-mnav" data-r="mnav" aria-label="Panele mostka"></nav>
     <div class="cp-toast" data-r="toast" aria-live="polite"></div>`;
   const R = Object.fromEntries([...root.querySelectorAll('[data-r]')].map((el) => [el.dataset.r, el]));
   let tab = 'hangar';
   let picker = null; // { type, target, n }
+  let sheet = null;  // tryb kompaktowy: 'orders' | 'exps' | 'side' | null (widok z mostka)
   const keys = {};
   let toastT = 0;
 
@@ -76,7 +87,8 @@ export function createCommandPanel(root, {
     const share = strategy ? Math.round(strategy.share(PLAYER) * 100) : 0;
     const war = strategy && Object.keys(strategy.state.factions).some((f) => strategy.atWar(PLAYER, f));
     const powPct = Math.min(100, pw.demand > 0 ? (pw.supply / pw.demand) * 50 : 100);
-    const key = [fmt(economy.state.credits), ...METAL_ORDER.map((m) => Math.round(pool[m])), Math.round(ore), Math.round(pw.supply), Math.round(pw.demand), rs?.id, share, war, economy.systemId].join('|');
+    const fleetN = army ? army.ships.length : 0;
+    const key = [fmt(economy.state.credits), ...METAL_ORDER.map((m) => Math.round(pool[m])), Math.round(ore), Math.round(pw.supply), Math.round(pw.demand), rs?.id, share, war, economy.systemId, fleetN].join('|');
     set('top', key, () => `
       <div class="cp-hq">${stationIcon('siedziba', 30, race.color)}<div><b>${esc(command.hq()?.name ?? 'Siedziba')}</b><small>${esc(race.name)} · ${esc(systemName(s().home))}${economy.systemId !== s().home ? ` · <em>jesteś w: ${esc(systemName(economy.systemId))}</em>` : ''}</small></div></div>
       <div class="cp-res" title="Kredyty">${creditsIcon(18)}<b>${fmt(economy.state.credits)}</b></div>
@@ -84,7 +96,9 @@ export function createCommandPanel(root, {
       <div class="cp-res" title="Urobek czekający na przetop w hucie">${oreIcon(18)}<b>${fmt(ore)}</b><small>urobek</small></div>
       <div class="cp-res cp-power${pw.ratio < 1 ? ' low' : ''}" title="Zasilanie: podaż / pobór">${powerIcon(18)}<span class="cp-pbar"><i style="width:${powPct}%"></i></span><small>${fmt(pw.supply)} / ${fmt(pw.demand)} MW</small></div>
       <div class="cp-res cp-sci" title="Badanie w toku">${scienceIcon(18)}${rs ? `<span><b>${esc(TECHS[rs.id].name)}</b><span class="cp-pbar"><i data-live="sci"></i></span></span>` : '<small>laboratoria wolne</small>'}</div>
-      <div class="cp-res cp-dom" title="Udział w wartości pól sektora">${fieldIcon(18, '#ffd36b')}<b>${share}%</b><small>sektora${war ? ' · <span class="war">WOJNA</span>' : ''}</small></div>`);
+      ${army ? `<button class="cp-res cp-fleetres" data-act="fleet-tab" title="Flota: okręty i stocznia">${warshipIcon('fregata', 18, '#ff7a45')}<b>${fleetN}</b><small>okr.</small></button>` : ''}
+      <div class="cp-res cp-dom" title="Udział w wartości pól sektora">${fieldIcon(18, '#ffd36b')}<b>${share}%</b><small>sektora${war ? ' · <span class="war">WOJNA</span>' : ''}</small></div>
+      <button class="cp-savebtn" data-act="saves" title="Zapis i wczytanie gry (Ctrl+S — szybki zapis)">${saveIcon(18)}<span>Zapis</span></button>`);
     const bar = R.top.querySelector('[data-live="sci"]');
     if (bar && rs) bar.style.width = `${(1 - rs.t / TECHS[rs.id].time) * 100}%`;
   }
@@ -105,6 +119,27 @@ export function createCommandPanel(root, {
       }).join('')}
       <label class="cp-toggle"><input type="checkbox" data-act="auto" ${s().auto.returns || command.has('automatyka') ? 'checked' : ''} ${command.has('automatyka') ? 'disabled' : ''}/><span>Wyprawy wracają same i ruszają na kolejny kurs</span></label>
       <button class="cp-alarm${economy.alert ? ' on' : ''}" data-act="alarm">${economy.alert ? 'Odwołaj alarm' : 'Zaalarmuj wszystkich'}</button>`);
+  }
+
+  // ------------------------------------------------------------
+  // LEWO, POD ROZKAZAMI: flota (zawsze na widoku)
+  // ------------------------------------------------------------
+  const homeShips = () => (army ? army.ships.filter((x) => x.sysId === s().home) : []);
+  function renderFleetBox() {
+    if (!army) { set('fleetbox', 'none', () => ''); return; }
+    const ships = army.ships, home = homeShips();
+    const race = RACES[playerRace()];
+    const defending = home.filter((x) => x.order === 'obrona').length;
+    const key = `${ships.map((x) => `${x.id}:${x.order}:${x.sysId}:${Math.round((x.hull / WARSHIPS[x.cls].hull) * 10)}`).join()}|${army.queue.length}|${Math.round(army.power() * 10)}|${economy.systemId}`;
+    set('fleetbox', key, () => `
+      <h3>${warshipIcon('fregata', 22, '#ff7a45')} Flota <span class="cp-fleet-n">${ships.length}</span></h3>
+      <p class="cp-fleet-sum">${ships.length ? `siła <b>${army.power().toFixed(1)}</b> · przy bazie <b>${home.length}</b>${defending ? ` · broni pola <b>${defending}</b>` : ''}${army.queue.length ? ` · w budowie <b>${army.queue.length}</b>` : ''}` : 'Brak okrętów — baza bez osłony.'}</p>
+      ${ships.length ? `<div class="cp-fleet-ships">${ships.slice(0, 12).map((x) => `<span title="${esc(`„${x.callsign}” · ${WARSHIPS[x.cls].name} · kadłub ${Math.round((x.hull / WARSHIPS[x.cls].hull) * 100)}%`)}">${warshipIcon(x.cls, 16, race.color)}<i style="--h:${Math.round((x.hull / WARSHIPS[x.cls].hull) * 100)}%"></i></span>`).join('')}${ships.length > 12 ? `<small>+${ships.length - 12}</small>` : ''}</div>` : ''}
+      <div class="cp-fleet-b">
+        <button data-act="fleet-defend" ${home.length ? '' : 'disabled'} title="Wszystkie okręty w układzie bronią pola macierzystego">Broń bazy</button>
+        <button data-act="watch-fleet" ${ships.some((x) => x.sysId === economy.systemId) ? '' : 'disabled'} title="Podgląd floty z bliska">${eyeIcon(14)}</button>
+        <button class="primary" data-act="fleet-tab">Buduj okręty</button>
+      </div>`);
   }
 
   // ------------------------------------------------------------
@@ -142,7 +177,7 @@ export function createCommandPanel(root, {
           <button data-act="alarm">Zaalarmuj pozostałych</button>
         </div>
       </article>`;
-    }).join('') : '<p class="cp-empty">Brak wypraw. Wyślij drony z hangaru — rozkazy po lewej.</p>'));
+    }).join('') : '<p class="cp-empty">Brak wypraw. Wyślij drony z hangaru — Rozkazy.</p>'));
     for (const e of list) {
       const bar = R.exps.querySelector(`[data-live="bar-${e.id}"]`);
       if (bar) bar.style.width = `${phaseProgress(e) * 100}%`;
@@ -155,7 +190,8 @@ export function createCommandPanel(root, {
   // PRAWO: zakładki
   // ------------------------------------------------------------
   function renderTabs() {
-    set('tabs', tab, () => TABS.map(([id, label]) => `<button data-act="tab" data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`).join(''));
+    const n = army ? army.ships.length : 0;
+    set('tabs', `${tab}|${n}`, () => TABS.map(([id, label]) => `<button data-act="tab" data-tab="${id}" class="${tab === id ? 'on' : ''}${id === 'flota' ? ' cp-tab-fleet' : ''}">${label}${id === 'flota' && army ? ` <em>${n}</em>` : ''}</button>`).join(''));
   }
   const can = (cost) => economy.canPayIn(s().home, cost);
 
@@ -237,12 +273,44 @@ export function createCommandPanel(root, {
   function tabFleet() {
     if (!army) return ['f', () => '<p class="cp-note">Brak floty w tym trybie.</p>'];
     const ships = army.ships;
-    const key = `f|${ships.map((x) => `${x.id}:${x.order}:${x.field}:${x.sysId}`).join()}|${army.queue.length}|${Math.round(army.power() * 10)}`;
+    const yard = army.yardHere();
+    const here = economy.systemId === s().home;
+    const race = RACES[playerRace()];
+    const yardAtHome = economy.stationsIn(s().home).find((x) => x.type === 'stocznia');
+    const key = `f|${ships.map((x) => `${x.id}:${x.order}:${x.field}:${x.sysId}`).join()}|${army.queue.length}|${Math.round(army.power() * 10)}|${yard?.id}|${yardAtHome?.status}|${WARSHIP_ORDER.map((c) => economy.canPayCost(WARSHIPS[c].cost)).join()}|${can(STATIONS.stocznia.cost)}|${here}`;
+    const orderOpts = (x) => {
+      const opts = [`<option value="eskorta|"${x.order === 'eskorta' ? ' selected' : ''}>Eskorta (leci z tobą)</option>`];
+      for (const fid of strategy ? strategy.fieldsOf(PLAYER) : []) {
+        const d = strategy.defs.get(fid);
+        opts.push(`<option value="obrona|${fid}"${x.order === 'obrona' && x.field === fid ? ' selected' : ''}>Obrona: ${esc(d.name)}</option>`);
+      }
+      for (const fid of strategy ? strategy.allFields : []) {
+        const o = strategy.foreignOwner(fid);
+        if (!o || !strategy.atWar(PLAYER, o)) continue;
+        opts.push(`<option value="atak|${fid}"${x.order === 'atak' && x.field === fid ? ' selected' : ''}>Atak: ${esc(strategy.defs.get(fid).name)} — ${esc(RACES[o].name)}</option>`);
+      }
+      return opts.join('');
+    };
     return [key, () => `
-      <div class="cp-powerbox">${warshipIcon('fregata', 24, '#ff7a45')}<div><b>Flota: ${ships.length} okr. · siła ${army.power().toFixed(1)}</b><small>Utrzymanie ${fmt(army.upkeepPerMin())} kr/min · w budowie ${army.queue.length} · straty ${army.lost}</small></div></div>
-      <div class="cp-row"><button data-act="industry-fleet">Stocznia i rozkazy</button><button data-act="watch-fleet" ${ships.some((x) => x.sysId === economy.systemId) ? '' : 'disabled'}>${eyeIcon(14)} Obserwuj flotę</button></div>
-      ${ships.length ? ships.map((x) => `<div class="cp-st">${warshipIcon(x.cls, 22, RACES[playerRace()].color)}<div><b>„${esc(x.callsign)}”</b><small>${esc(WARSHIPS[x.cls].name)} · ${x.order === 'obrona' ? `obrona: ${esc(strategy?.defs.get(x.field)?.name ?? '')}` : x.order === 'atak' ? `atak: ${esc(strategy?.defs.get(x.field)?.name ?? '')}` : 'eskorta'} · ${esc(systemName(x.sysId))}</small></div></div>`).join('')
-        : '<p class="cp-note">Nie masz okrętów. Postaw stocznię (Moduły), a potem buduj okręty w panelu Stocznia. Flota broni pól i odbiera je rywalom.</p>'}`];
+      <div class="cp-powerbox cp-fleethead">${warshipIcon('fregata', 26, '#ff7a45')}<div><b>Flota: ${ships.length} okr. · siła ${army.power().toFixed(1)}</b><small>Utrzymanie ${fmt(army.upkeepPerMin())} kr/min${ships.some((x) => x.garrison) ? ' (garnizon siedziby bez opłat)' : ''} · straty ${army.lost}</small></div></div>
+      <div class="cp-row"><button data-act="fleet-defend" ${homeShips().length ? '' : 'disabled'}>Broń bazy</button><button data-act="watch-fleet" ${ships.some((x) => x.sysId === economy.systemId) ? '' : 'disabled'}>${eyeIcon(14)} Obserwuj</button><button data-act="industry-fleet">Rozkazy w innych układach</button></div>
+      <h4>Stocznia</h4>
+      ${yard ? `<p class="cp-note">${esc(yard.name)} buduje okręty z metalu w składzie. Nowe okręty dołączają jako eskorta — zmień rozkaz na liście niżej.</p>`
+        : yardAtHome && yardAtHome.status !== 'gotowa' ? `<p class="cp-note">Stocznia w budowie (${Math.round(yardAtHome.progress * 100)}%). Holowniki dowożą metal ze składu.</p>`
+        : `<div class="cp-yardcta"><p class="cp-note">Bez stoczni flota się nie powiększy. Postaw ją przy siedzibie — potem budujesz okręty tutaj.</p><button class="primary" data-act="station" data-type="stocznia" ${here && can(STATIONS.stocznia.cost) ? '' : 'disabled'}>${stationIcon('stocznia', 18, '#c39bff')} Postaw stocznię</button>${costHtml(STATIONS.stocznia.cost, can(STATIONS.stocznia.cost))}</div>`}
+      ${WARSHIP_ORDER.map((cls) => {
+        const d = WARSHIPS[cls], ok = economy.canPayCost(d.cost);
+        return `<div class="cp-card cp-ship" style="--c:#ff7a45">
+          <div class="cp-card-h">${warshipIcon(cls, 30, race.color)}<div><b>${esc(d.name)}</b><small>${esc(d.role)}</small></div><span class="cp-count">${ships.filter((x) => x.cls === cls).length}</span></div>
+          <div class="cp-stats"><span>siła <b>${d.power}</b></span><span>kadłub <b>${d.hull}</b></span><span>budowa <b>${d.buildTime} s</b></span><span>utrzymanie <b>${d.upkeep * 6} kr/min</b></span></div>
+          <div class="cp-card-b">${costHtml(d.cost, ok)}<button data-act="build-ship" data-cls="${cls}" ${yard && ok ? '' : 'disabled'}>Zbuduj</button></div>
+        </div>`;
+      }).join('')}
+      ${army.queue.length ? `<h4>W budowie</h4>${army.queue.map((q, i) => `<div class="cp-queue">${warshipIcon(q.cls, 18, race.color)}<span>${esc(WARSHIPS[q.cls].name)}</span><span class="cp-bar"><i data-live="shipq-${i}"></i></span></div>`).join('')}` : ''}
+      <h4>Okręty</h4>
+      ${ships.length ? ships.map((x) => `<div class="cp-st cp-shiprow">${warshipIcon(x.cls, 22, race.color)}<div><b>„${esc(x.callsign)}”</b><small>${esc(WARSHIPS[x.cls].name)}${x.garrison ? ' · garnizon' : ''} · ${esc(systemName(x.sysId))}</small><span class="cp-hullbar"><i data-live="hull-${x.id}"></i></span></div>
+          <select data-act="ship-order" data-ship="${x.id}" aria-label="Rozkaz dla ${esc(x.callsign)}">${orderOpts(x)}</select></div>`).join('')
+        : '<p class="cp-note">Nie masz okrętów. Flota broni pól przed nalotami i odbiera pola rywalom.</p>'}`];
   }
 
   function renderTab() {
@@ -250,6 +318,10 @@ export function createCommandPanel(root, {
     set('tab', key, html);
     const q = R.tab.querySelector('[data-live="queue"]');
     if (q && s().queue.length) { const d = DRONE_TYPES[s().queue[0]]; q.style.width = `${s().buildT > 0 ? (1 - s().buildT / (d.buildTime / (1 + 0.5 * command.lvl('hangar')))) * 100 : 0}%`; }
+    if (army) {
+      army.queue.forEach((q, i) => { const el = R.tab.querySelector(`[data-live="shipq-${i}"]`); if (el) el.style.width = `${(1 - q.t / WARSHIPS[q.cls].buildTime) * 100}%`; });
+      for (const x of army.ships) { const el = R.tab.querySelector(`[data-live="hull-${x.id}"]`); if (el) el.style.width = `${(x.hull / WARSHIPS[x.cls].hull) * 100}%`; }
+    }
     const sci = R.tab.querySelector('[data-live="sci2"]');
     if (sci && s().research) sci.style.width = `${(1 - s().research.t / TECHS[s().research.id].time) * 100}%`;
   }
@@ -262,6 +334,29 @@ export function createCommandPanel(root, {
       <button class="cp-pilot" data-act="pilot">${pilotIcon(22)}<span><b>Za sterami</b><small>leć myśliwcem</small></span></button>
       <button data-act="map">${fieldIcon(20, '#ffd36b')}<span><b>Mapa sektora</b><small>pola, rasy, dyplomacja</small></span></button>
       <button data-act="industry">${stationIcon('przeladunek', 20, '#4dd6a0')}<span><b>Przemysł</b><small>rynek, roje, stocznia</small></span></button>`);
+  }
+
+  // tryb kompaktowy: dolny pasek - jeden arkusz naraz
+  function renderMnav() {
+    const exps = command.expeditions().length, fleet = army ? army.ships.length : 0;
+    const on = (k) => (k === 'base' ? sheet === 'side' && tab !== 'flota' : k === 'fleet' ? sheet === 'side' && tab === 'flota' : sheet === k);
+    const alarm = !!raids?.status;
+    const key = `${sheet}|${tab}|${exps}|${fleet}|${alarm}|${command.state.research?.id}`;
+    set('mnav', key, () => `
+      <button data-act="sheet" data-sheet="orders" class="${on('orders') ? 'on' : ''}">${droneTypeIcon('gornik', 20, '#ffb13d')}<span>Rozkazy</span></button>
+      <button data-act="sheet" data-sheet="exps" class="${on('exps') ? 'on' : ''}">${routeIcon(20)}<span>Wyprawy</span>${exps ? `<em>${exps}</em>` : ''}</button>
+      <button data-act="sheet" data-sheet="base" class="${on('base') ? 'on' : ''}">${stationIcon('siedziba', 20, '#ffd36b')}<span>Baza</span></button>
+      <button data-act="sheet" data-sheet="fleet" class="cp-mnav-fleet${on('fleet') ? ' on' : ''}${alarm ? ' alarm' : ''}">${warshipIcon('fregata', 20, '#ff7a45')}<span>Flota</span><em>${fleet}</em></button>
+      <button data-act="map">${fieldIcon(20, '#ffd36b')}<span>Mapa</span></button>
+      <button data-act="industry">${stationIcon('przeladunek', 20, '#4dd6a0')}<span>Przemysł</span></button>
+      <button data-act="saves">${saveIcon(20)}<span>Zapis</span></button>
+      <button data-act="pilot" class="cp-mnav-pilot">${pilotIcon(20)}<span>Za sterami</span></button>`);
+  }
+  function setSheet(k) {
+    if (k === 'base') { if (sheet === 'side' && tab !== 'flota') sheet = null; else { sheet = 'side'; if (tab === 'flota') tab = 'hangar'; } }
+    else if (k === 'fleet') { if (sheet === 'side' && tab === 'flota') sheet = null; else { sheet = 'side'; tab = 'flota'; } }
+    else sheet = sheet === k ? null : k;
+    if (sheet !== 'orders' && picker) { picker = null; onHover(null); }
   }
 
   function renderPicker() {
@@ -300,6 +395,12 @@ export function createCommandPanel(root, {
   root.addEventListener('mousedown', (e) => e.stopPropagation());
   root.addEventListener('change', (e) => {
     if (e.target.dataset.act === 'auto') { s().auto.returns = e.target.checked; economy.save(); keys.orders = null; }
+    if (e.target.dataset.act === 'ship-order' && army) {
+      const [kind, field] = e.target.value.split('|');
+      result(army.setOrder([e.target.dataset.ship], kind, field || null));
+      keys.tab = null; keys.fleetbox = null;
+      refresh();
+    }
   });
   root.addEventListener('pointerover', (e) => {
     const b = e.target.closest('[data-act="target"]');
@@ -314,7 +415,7 @@ export function createCommandPanel(root, {
       case 'target': picker.target = b.dataset.id; break;
       case 'n': picker.n = b.dataset.d === '99' ? 999 : picker.n + Number(b.dataset.d); break;
       case 'cancel': picker = null; keys.orders = null; onHover(null); break;
-      case 'send': result(command.dispatch(picker.type, picker.n, picker.target)); picker = null; keys.orders = null; onHover(null); break;
+      case 'send': result(command.dispatch(picker.type, picker.n, picker.target)); picker = null; keys.orders = null; onHover(null); if (compact()) sheet = null; break;
       case 'alarm': if (economy.alert) { economy.setAlert(false); toast('Alarm odwołany — roje wracają do pracy.'); } else result(command.alarmAll()); break;
       case 'recall': result(command.recall(exp)); break;
       case 'return': { const x = command.expedition(exp); if (x) { x.hold = false; result(command.recall(exp)); } break; }
@@ -331,17 +432,25 @@ export function createCommandPanel(root, {
       case 'research': result(command.research(b.dataset.id)); break;
       case 'industry-fleet': onIndustry('flota'); break;
       case 'watch-fleet': onFleet(null, { watchOnly: true }); break;
+      case 'fleet-defend': onFleet(null, { watch: false }); break;
+      case 'fleet-tab': tab = 'flota'; sheet = 'side'; break;
+      case 'build-ship': if (army) result(army.order(b.dataset.cls)); break;
+      case 'saves': onSaves(); break;
+      case 'sheet': setSheet(b.dataset.sheet); break;
       case 'pilot': onPilot(); break;
       case 'map': onMap(); break;
       case 'industry': onIndustry('eco'); break;
       default: break;
     }
-    for (const k of ['tab', 'tabs', 'exps', 'picker']) keys[k] = act === 'manage' && k === 'exps' ? keys[k] : null;
+    for (const k of ['tab', 'tabs', 'exps', 'picker', 'fleetbox']) keys[k] = act === 'manage' && k === 'exps' ? keys[k] : null;
     refresh();
   });
 
   function refresh() {
-    renderTop(); renderOrders(); renderExps(); renderTabs(); renderTab(); renderActions(); renderPicker();
+    renderTop(); renderOrders(); renderFleetBox(); renderExps(); renderTabs(); renderTab(); renderActions(); renderPicker(); renderMnav();
+    const sh = compact() ? (picker ? 'orders' : sheet ?? '') : 'all';
+    if (root.dataset.sheet !== sh) root.dataset.sheet = sh;
+    root.classList.toggle('has-picker', !!picker);
   }
   let acc = 0;
   return {
@@ -353,8 +462,11 @@ export function createCommandPanel(root, {
       refresh();
     },
     refresh, toast, result,
-    openPicker(type) { picker = { type, target: null, n: DRONE_TYPES[type].group }; refresh(); },
+    openPicker(type) { picker = { type, target: null, n: DRONE_TYPES[type].group }; sheet = 'orders'; refresh(); },
+    /** Tryb kompaktowy: otwarty arkusz ('orders' | 'exps' | 'side' | null). */
+    get sheet() { return sheet; },
+    setSheet(k) { setSheet(k); refresh(); },
     get picker() { return picker; },
-    setTab(t) { tab = t; refresh(); },
+    setTab(t) { tab = t; if (compact()) sheet = 'side'; refresh(); },
   };
 }

@@ -42,6 +42,8 @@ import { createCommand } from '../shared/systems/command.js';
 import { createCommandView } from '../shared/systems/command-view.js';
 import { createCommandPanel } from '../shared/systems/command-panel.js';
 import { createDecisions } from '../shared/systems/decisions.js';
+import { createSaveSlots } from '../shared/systems/save-slots.js';
+import { createSavePanel } from '../shared/systems/save-panel.js';
 import { setSurfaceQuality } from '../shared/systems/surface-detail.js';
 
 // ============================================================
@@ -166,6 +168,13 @@ const urlPack = URLQ.get('wataha') === '1';
 // krok 12: tryb gry - 'mostek' (dowodzenie z siedziby), 'lot' (za sterami), 'podglad' (bitwa zdalnie).
 // Misja z tablicy startuje od razu w locie.
 let mode = urlMission ? 'lot' : 'mostek';
+// krok 12: TRYB KOMPAKTOWY (telefon w poziomie, mały ekran): na mostku jeden
+// panel naraz z dolnym paskiem nawigacji, mniej kart komunikatów i decyzji
+// naraz (reszta w dzienniku / kolejce). ?ui=kompakt albo ?ui=pelny wymusza.
+const COMPACT_MQ = matchMedia('(max-height: 560px), (max-width: 760px)');
+const URL_UI = URLQ.get('ui');
+let compactUI = URL_UI === 'kompakt' || (URL_UI !== 'pelny' && COMPACT_MQ.matches);
+document.body.classList.toggle('ui-compact', compactUI);
 const initialSystem = SYSTEMS[urlSystem] ? urlSystem : 'potrojny';
 const QUALITY = matchMedia('(pointer: coarse)').matches ? 0.6 : 1; // telefony: mniej protuberancji i planetoid
 setSurfaceQuality(QUALITY); // krok 12: szczegół powierzchni (surface-detail.js) - mniej oktaw na telefonach
@@ -627,7 +636,8 @@ function updateCamera(delta) {
 //   - Czujniki:    kurs kolizyjny / zbliżające się gruz i meteoryty
 // "Podłączony, ale bez zawartości": Oficer Taktyczny - w grze nie ma jeszcze
 // wrogów ani sojuszników, więc nie ma czego zgłaszać (patrz README).
-const dashboard = createDashboard(document.getElementById('crew-alerts'));
+let onLogHook = () => {}; // krok 12: dziennik komunikatów (niżej)
+const dashboard = createDashboard(document.getElementById('crew-alerts'), { onLog: (e) => onLogHook(e) });
 
 const tm = {
   speed: document.getElementById('tm-speed'),
@@ -1513,11 +1523,20 @@ function updateMissionHud() {
 const safeStorage = (() => {
   try { const k = '__tb'; localStorage.setItem(k, k); localStorage.removeItem(k); return localStorage; } catch { return null; }
 })();
+// krok 12: gospodarka zapisuje przez tę nakładkę - przed wczytaniem zapisu
+// albo nową grą zamrażamy ją, żeby autozapis nie nadpisał podmienionego
+// stanu w chwili przeładowania strony
+let storageFrozen = false;
+const gameStorage = safeStorage && {
+  getItem: (k) => safeStorage.getItem(k),
+  setItem: (k, v) => { if (!storageFrozen) safeStorage.setItem(k, v); },
+  removeItem: (k) => safeStorage.removeItem(k),
+};
 // krok 11: rasa gracza znana z adresu (statek z tablicy misji) - osobna
 // kampania (zapis) dla każdej rasy
 const PLAYER_RACE0 = raceForShip(SHIPS[urlShipIndex].id);
 const economy = createEconomy({
-  scene, storage: safeStorage, quality: QUALITY,
+  scene, storage: gameStorage, quality: QUALITY,
   fieldsFor: (id, sp) => generateFields(id, sp), saveKey: `teegarden-b.dowodztwo.v1.${PLAYER_RACE0}`, // krok 12: osobna kampania (z siedzibą)
   combat, getHostiles: () => npcs.hostiles(), // drony/stacje w walce, platformy strzelają do wrogów
   onEvent: (e) => dashboard.show(`eco-${e.key}`, {
@@ -1891,6 +1910,9 @@ const command = createCommand({
 // kampania bez siedziby: zakładamy ją w układzie startowym; z zapisem - wracamy do jej układu
 if (!command.state.home) command.found();
 else if (command.state.home !== starSystem.id && !urlMission) { swapSystem(command.state.home); placeAtSpawn(); }
+// garnizon: trzy najprostsze okręty bronią pola macierzystego od pierwszej minuty
+// (raz na kampanię - stare zapisy też go dostają; army.grantGarrison)
+army.grantGarrison({ cls: 'eskorta', n: 3, sysId: command.state.home, field: economy.fieldDefs(command.state.home)[0].id });
 command.hooks.guardFire = (e, p) => gameAudio?.fire('pulse', p.clone(), 'ally');
 command.hooks.fleet = (fid) => sendFleet(fid);
 command.hooks.result = (r) => commandPanel.result(r);
@@ -1907,6 +1929,89 @@ const commandPanel = createCommandPanel(document.getElementById('command'), {
   onFleet: (fid, o) => sendFleet(fid, o),
   onWatch: (e) => watchExpedition(e),
   onHover: (id) => { hoverTarget = id; },
+  onSaves: () => savePanel.toggle(),
+  compact: () => compactUI,
+});
+
+function applyCompact() {
+  compactUI = URL_UI === 'kompakt' || (URL_UI !== 'pelny' && COMPACT_MQ.matches);
+  document.body.classList.toggle('ui-compact', compactUI);
+  dashboard.setMaxVisible(compactUI ? (mode === 'lot' ? 2 : 1) : 5);
+  decisions.setMax(compactUI ? 1 : 3);
+}
+COMPACT_MQ.addEventListener?.('change', () => { applyCompact(); commandPanel.refresh(); });
+applyCompact();
+
+// --- dziennik komunikatów: wszystkie meldunki załogi do przejrzenia ---
+// Na telefonie widać naraz 1-2 karty; reszta nie ginie, tylko trafia tutaj.
+const logBtn = document.getElementById('log-btn');
+const logPanel = document.getElementById('log-panel');
+let logUnread = 0, logOpen = false;
+const logEsc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function renderLog() {
+  logBtn.dataset.unread = logUnread ? String(Math.min(99, logUnread)) : '';
+  if (!logOpen) return;
+  const list = dashboard.log;
+  logPanel.innerHTML = `<header><b>Dziennik</b><small>ostatnie meldunki załogi</small><button type="button" data-act="close" aria-label="Zamknij">×</button></header>
+    <div class="lg-list">${list.length ? list.map((e) => `<div class="lg-e u-${e.urgency}"><span class="lg-t">${new Date(e.at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span><span class="lg-b"><b style="color:${logEsc(e.color)}">${logEsc(e.role)}</b>${logEsc(e.text)}</span></div>`).join('') : '<p class="lg-empty">Na razie cisza.</p>'}</div>`;
+}
+function setLog(v) {
+  logOpen = v;
+  logPanel.classList.toggle('visible', v);
+  logBtn.classList.toggle('on', v);
+  if (v) logUnread = 0;
+  renderLog();
+}
+onLogHook = () => { if (!logOpen) logUnread++; renderLog(); };
+logBtn.addEventListener('click', () => setLog(!logOpen));
+logPanel.addEventListener('click', (e) => { if (e.target.closest('[data-act="close"]')) setLog(false); });
+for (const el of [logBtn, logPanel]) el.addEventListener('mousedown', (e) => e.stopPropagation());
+
+// ============================================================
+// KROK 12: ZAPIS I WCZYTANIE GRY (save-slots.js, save-panel.js)
+// ============================================================
+// Autozapis (economy.save) trzyma bieżący stan kampanii rasy. Sloty to
+// nazwane kopie: wczytanie podmienia autozapis i przeładowuje grę z adresem
+// zapisu (układ siedziby + statek, czyli rasa). Ctrl+S - szybki zapis.
+const LIVE_KEY = `teegarden-b.dowodztwo.v1.${PLAYER_RACE0}`;
+const saveSlots = createSaveSlots({ storage: safeStorage, prefix: 'teegarden-b.dowodztwo' });
+const fmtTime = (t) => { const m = Math.floor(t / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
+function captureSave() {
+  economy.save();
+  const meta = {
+    race: playerState.raceId, raceName: RACES[playerState.raceId].name,
+    home: command.state.home, homeName: sysName(command.state.home),
+    ship: SHIPS[Math.max(0, currentShipIndex)].id,
+    credits: Math.round(economy.state.credits), fleet: army.ships.length, share: Math.round(strategy.share(PLAYER) * 100),
+    time: Math.round(economy.state.time),
+  };
+  const stamp = new Date().toLocaleString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return { data: safeStorage?.getItem(LIVE_KEY) ?? null, meta, liveKey: LIVE_KEY, name: `${meta.raceName} · ${meta.homeName} · ${stamp}` };
+}
+function gameUrl(meta) {
+  const p = new URLSearchParams({ uklad: meta.home ?? initialSystem, statek: meta.ship ?? SHIPS[urlShipIndex].id });
+  return `${location.pathname}?${p}`;
+}
+const savePanel = createSavePanel(document.getElementById('saves'), {
+  slots: saveSlots,
+  capture: captureSave,
+  describe: (m) => [m.raceName, m.homeName, m.credits != null ? `${m.credits.toLocaleString('pl-PL')} kr` : null, m.fleet != null ? `flota ${m.fleet}` : null, m.share != null ? `sektor ${m.share}%` : null, m.time != null ? fmtTime(m.time) : null].filter(Boolean).join(' · '),
+  onLoad: (slot) => {
+    storageFrozen = true;
+    if (!saveSlots.restore(slot.id)) { storageFrozen = false; commandPanel.toast('Nie udało się wczytać zapisu.', true); return; }
+    fadeThen(() => location.assign(gameUrl(slot.meta ?? {})), 350);
+  },
+  onNewGame: () => {
+    storageFrozen = true;
+    try { safeStorage?.removeItem(LIVE_KEY); } catch { /* jw. */ }
+    fadeThen(() => location.assign(gameUrl({ home: command.state.home ?? initialSystem, ship: SHIPS[Math.max(0, currentShipIndex)].id })), 350);
+  },
+});
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyS' || !(e.ctrlKey || e.metaKey) || e.repeat) return;
+  e.preventDefault();
+  const r = savePanel.quickSave();
+  dashboard.show('quicksave', { crew: CREW.quartermaster, urgency: r.ok ? 'info' : 'warning', ttl: 3000, text: r.ok ? 'Szybki zapis gotowy (Zapis → lista).' : r.text });
 });
 
 // cel z listy wyprawy (najechany albo wybrany) - pierścień nad skałą / złożem w widoku z mostka
@@ -1971,6 +2076,8 @@ function setMode(m, { intro = false } = {}) {
     industryPanel.setOpen(false);
   }
   if (m !== 'podglad') commandView.stopSpectate();
+  applyCompact(); // ile kart załogi naraz zależy od trybu
+  if (m !== 'mostek') savePanel.hide();
   if (m === 'mostek' && (prev !== 'mostek' || intro)) {
     commandView.startIntro(intro ? { dur: 6 } : { dur: 2.4, from: { pos: cameraRig.position.clone(), quat: cameraRig.quaternion.clone() } });
     if (intro) showIntroTitle();
@@ -2107,7 +2214,9 @@ function showIntroTitle() {
   setTimeout(() => document.body.classList.remove('intro'), 4400);
   setTimeout(() => comms.say({
     sender: 'Dowództwo', sub: 'mostek siedziby', color: '#ffd36b',
-    text: 'Jesteś na mostku siedziby. Rozkazy po lewej wysyłają drony na wyprawy, panel po prawej to hangar, moduły, nauka i ulepszenia. Decyzje wyskakują same — wystarczy kliknąć. „Za sterami” — lot myśliwcem.',
+    text: compactUI
+      ? 'Jesteś na mostku siedziby. Dolny pasek: Rozkazy wysyłają drony, Baza to hangar, moduły i nauka, Flota — trzy okręty garnizonu i stocznia. Dotknij, by zamknąć.'
+      : 'Jesteś na mostku siedziby. Rozkazy po lewej wysyłają drony na wyprawy, pod nimi flota — trzy okręty garnizonu bronią bazy. Panel po prawej to hangar, moduły, nauka, ulepszenia i stocznia. Decyzje wyskakują same — wystarczy kliknąć. „Za sterami” — lot myśliwcem.',
     ttl: 14,
   }), 4800);
 }
