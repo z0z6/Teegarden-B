@@ -330,10 +330,9 @@ const STYLE = `
 `;
 
 /**
- * Obrazy ras (shared/data/portraits/<rasa>.jpg). Pięć przysłał autor gry,
- * Szczepionych i Pieśniarzy wygenerowano w tym samym stylu (kryształowa
- * istota z komorą w miejscu ust; ptasia głowa, czworo oczu, worek
- * krtaniowy). Adres liczony od tego modułu, więc działa z każdego kroku.
+ * Obrazy ras (shared/data/portraits/<rasa>.jpg) - wszystkie siedem to grafiki
+ * autora gry, nazwa pliku = rasa. Adres liczony od tego modułu, więc działa
+ * z każdego kroku.
  */
 const PHOTO = Object.fromEntries(
   ['wybudzeni', 'rezonanci', 'piesniarze', 'szczepieni', 'wykonawcy', 'heliotropi', 'swietlisci']
